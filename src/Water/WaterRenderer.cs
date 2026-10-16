@@ -52,10 +52,17 @@ namespace Sea
             if (ep == null) return;
             var cam = ep.CameraPos;
 
-            // the waves ships ride (SampleWaves), whoever decides the wind: with WindModel "Off" they follow vanilla's
-            // wind strength. Vanilla's warp only until the first trains are worked out.
+            // the waves ships ride (SampleWaves), whoever decides the wind: with WindModel "Off" they follow Sea's
+            // steady winds (WindModel.SeaWind). Vanilla's warp only until the first trains are worked out.
             var place = sys.CameraWaves;
             int wn = WavesInjected && place.Count > 0 ? place.FillUniforms(WaveUniform, cam.X, cam.Z) : 0;
+            if (wn == 0 && WavesInjected && place.Spectrum != null && sys.Spectrum != null)
+            {
+                // (0.3.7) Sea's sea, and it's flat (WaveScale 0): one train of nothing, since a count of 0 tells the
+                // shader to use vanilla's waves
+                Array.Clear(WaveUniform, 0, 4);
+                wn = 1;
+            }
             LastWaveCount = wn;
 
             clips.Clear();
@@ -67,7 +74,9 @@ namespace Sea
             // nearest first: the nearest get a place (there are MaxClips) and a detailed dry outline (MaxDryShapes)
             if (clips.Count > 1)
             {
-                clips.Sort((p, q) => Dist2(p, cam.X, cam.Z).CompareTo(Dist2(q, cam.X, cam.Z)));
+                nearest.X = cam.X;
+                nearest.Z = cam.Z;
+                clips.Sort(nearest);
             }
 
             int n = 0, dry = 0, shapes = 0;
@@ -116,7 +125,7 @@ namespace Sea
             LastDryCount = dry;
             LastDryShapeCount = shapes;
 
-            foreach (var pass in new[] { EnumShaderProgram.Chunkliquid, EnumShaderProgram.Chunkliquiddepth })
+            foreach (var pass in Passes)
             {
                 var prog = capi.Shader.GetProgram((int)pass);
                 if (prog == null || prog.Disposed || !prog.HasUniform("seaClipCount")) continue;
@@ -145,7 +154,17 @@ namespace Sea
             }
         }
 
-        static double Dist2(in WaterClipBox c, double x, double z) => (c.X - x) * (c.X - x) + (c.Z - z) * (c.Z - z);
+        static readonly EnumShaderProgram[] Passes = { EnumShaderProgram.Chunkliquid, EnumShaderProgram.Chunkliquiddepth };
+
+        /// <summary>Nearest the camera first (one comparer, reused: nothing is allocated per frame).</summary>
+        sealed class Nearest : IComparer<WaterClipBox>
+        {
+            public double X, Z;
+            public int Compare(WaterClipBox p, WaterClipBox q) => Dist2(p).CompareTo(Dist2(q));
+            double Dist2(in WaterClipBox c) => (c.X - X) * (c.X - X) + (c.Z - Z) * (c.Z - Z);
+        }
+
+        readonly Nearest nearest = new();
 
         public void Dispose() { }
     }

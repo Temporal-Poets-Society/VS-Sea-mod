@@ -3,16 +3,6 @@ using System;
 namespace Sea
 {
     /// <summary>
-    /// The wind and the sea, as a pure function of (key, world shape, config, position, game time). The server and
-    /// every client build the same model from the same <see cref="SeaParamsPacket"/>, so they agree without sending
-    /// any wind data. Four layers:
-    ///   1. prevailing winds by latitude (trade winds, westerlies, polar easterlies), shifting with the seasons
-    ///   2. weather drifting over days (smooth noise, stronger in the westerlies than in the trades)
-    ///   3. travelling storms (<see cref="StormField"/>)
-    ///   4. gusts over seconds
-    /// The sea state follows the wind of the past hours at the same place.
-    /// </summary>
-    /// <summary>
     /// A source of prevailing winds for a map (Earth Map could supply the real monthly averages). Must be a pure
     /// function that gives the same answer on the server and every client, and must be thread-safe.
     /// </summary>
@@ -22,6 +12,16 @@ namespace Sea
         Wind At(double x, double z, double totalHours);
     }
 
+    /// <summary>
+    /// The wind and the sea, as a pure function of (key, world shape, config, position, game time). The server and
+    /// every client build the same model from the same <see cref="SeaParamsPacket"/>, so they agree without sending
+    /// any wind data. Four layers:
+    ///   1. prevailing winds by latitude (trade winds, westerlies, polar easterlies), shifting with the seasons
+    ///   2. weather drifting over days (smooth noise, stronger in the westerlies than in the trades)
+    ///   3. travelling storms (<see cref="StormField"/>)
+    ///   4. gusts over seconds
+    /// The sea state follows the wind of the past hours at the same place.
+    /// </summary>
     public sealed class WindModel
     {
         public readonly WorldShape Shape;

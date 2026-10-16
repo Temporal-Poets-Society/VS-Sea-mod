@@ -26,6 +26,8 @@ namespace Sea
 
         public readonly long Key;
         public readonly double Circumference;
+        /// <summary>(0.3.7) The config's WaveScale for the chop (the swell gets it through the sea state's height).</summary>
+        public readonly double ChopScale;
         public int Bins => SwellBins + ChopLengths.Length;
         public int TrainCount => Bins * DirBins;
 
@@ -34,10 +36,11 @@ namespace Sea
         /// <summary>Per bin: how far its direction grid is turned (in steps), so bins don't all line up at once.</summary>
         readonly double[] grid;
 
-        public WaveSpectrum(long key, double circumference)
+        public WaveSpectrum(long key, double circumference, double chopScale = 1)
         {
             Key = key;
             Circumference = circumference;
+            ChopScale = double.IsFinite(chopScale) ? Math.Max(0, chopScale) : 1;
             int n = TrainCount;
             Kx = new double[n]; Kz = new double[n]; Omega = new double[n]; Phase = new double[n];
             grid = new double[Bins];
@@ -113,7 +116,7 @@ namespace Sea
                 }
             }
             // chop from the wind right here
-            double ws = wind.Strength, chop = 0.03 + 0.12 * Math.Min(1.5, ws);
+            double ws = wind.Strength, chop = (0.03 + 0.12 * Math.Min(1.5, ws)) * ChopScale;
             double tc = ws > 1e-6 ? Math.Atan2(wind.Z, wind.X) : theta0;
             Split(SwellBins, tc, chop, a);
             Split(SwellBins + 1, tc - 35 * Math.PI / 180, chop * 0.6, a);
@@ -157,10 +160,9 @@ namespace Sea
         public Wind Wind { get; private set; }
         public WaveSpectrum Spectrum => spectrum;
 
-        /// <summary>Forget what was sampled (the place moved far, or it's reused for another).</summary>
+        /// <summary>Forget what was sampled (the place moved far, or it's reused for another). Keeps its buffers.</summary>
         public void Reset()
         {
-            spectrum = null;
             sample = long.MinValue;
             Count = 0;
         }
@@ -229,11 +231,16 @@ namespace Sea
                 blended[i] = a;
                 order[c++] = i;
             }
+            // more trains than the shader takes (only while the sea turns): keep the strongest, each less the strongest
+            // one left out, so a train joins or leaves them at nothing as their order changes (0.3.7; cutting it off
+            // made the surface jump by a few centimetres)
+            double cut = 0;
             if (c > MaxWaves)
             {
-                // more trains than the shader takes (only right after a sudden change): keep the strongest
-                var bl = blended;
-                Array.Sort(order, 0, c, System.Collections.Generic.Comparer<int>.Create((p, q) => bl[q].CompareTo(bl[p])));
+                strongest ??= new Strongest();
+                strongest.Amp = blended;
+                Array.Sort(order, 0, c, strongest);
+                cut = blended[order[MaxWaves]];
                 c = MaxWaves;
             }
             for (int j = 0; j < c; j++)
@@ -243,10 +250,19 @@ namespace Sea
                 Kz[j] = spec.Kz[id];
                 Omega[j] = spec.Omega[id];
                 Phase[j] = spec.Phase[id];
-                Amp[j] = blended[id];
+                Amp[j] = blended[id] - cut;
             }
             Count = c;
         }
+
+        /// <summary>Strongest first; ties by train, so every side keeps the same ones.</summary>
+        sealed class Strongest : IComparer<int>
+        {
+            public double[] Amp;
+            public int Compare(int p, int q) { int c = Amp[q].CompareTo(Amp[p]); return c != 0 ? c : p.CompareTo(q); }
+        }
+
+        Strongest strongest;
 
         /// <summary>
         /// Run exactly these trains at wave time t, with deep-water speeds (for tests, or a mod making its own sea).
@@ -344,7 +360,7 @@ namespace Sea
         /// </summary>
         public void Add(HoursAnchor a, long now)
         {
-            if (a == null || !(a.HoursPerSample >= 0) || double.IsNaN(a.Hours) || double.IsInfinity(a.Hours)) return;
+            if (a == null || !(a.HoursPerSample >= 0) || !double.IsFinite(a.HoursPerSample) || !double.IsFinite(a.Hours)) return;
             lock (sync)
             {
                 if (local) { anchors = Array.Empty<HoursAnchor>(); local = false; }

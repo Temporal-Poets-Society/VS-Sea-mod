@@ -120,7 +120,8 @@ namespace Sea
             var k = (cx, cz, slot);
             if (cache.TryGetValue(k, out var list)) return list;
             if (cache.Count > 1024) cache.Clear();
-            return cache.GetOrAdd(k, _ => Build(cx, cz, slot));
+            // (a static factory: a lambda capturing these would be allocated on every lookup, cached or not)
+            return cache.GetOrAdd(k, static (key, self) => self.Build(key.Item1, key.Item2, key.Item3), this);
         }
 
         Storm[] Build(long catX, long catZ, long slot)

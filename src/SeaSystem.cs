@@ -273,9 +273,10 @@ namespace Sea
             return place.HeightAt(x, z) * WaveFactorAt(x, z);
         }
 
-        void BuildSpectrum(long key, double circumference)
+        void BuildSpectrum(long key, double circumference, double waveScale)
         {
-            if (Spectrum == null || Spectrum.Key != key || Spectrum.Circumference != circumference) Spectrum = new WaveSpectrum(key, circumference);
+            if (Spectrum == null || Spectrum.Key != key || Spectrum.Circumference != circumference || Spectrum.ChopScale != waveScale)
+                Spectrum = new WaveSpectrum(key, circumference, waveScale);
         }
 
         /// <summary>Client: register something with hulls in the water; Sea keeps the waves out of them. Any time, even before Sea started.</summary>
@@ -357,7 +358,7 @@ namespace Sea
         {
             sapi = api;
             serverInstance = this;
-            try { Config = api.LoadModConfig<SeaConfig>(ConfigFile) ?? new SeaConfig(); }
+            try { Config = (api.LoadModConfig<SeaConfig>(ConfigFile) ?? new SeaConfig()).Checked(); }
             catch (Exception e) { Mod.Logger.Error("Bad ModConfig/{0}, using defaults: {1}", ConfigFile, e.Message); Config = new SeaConfig(); }
             api.StoreModConfig(Config, ConfigFile);
 
@@ -403,11 +404,11 @@ namespace Sea
             byte[] data = sapi.WorldManager.SaveGame.GetData(OverrideKey);
             if (data != null && data.Length > 0)
             {
-                try { model.Override = SerializerUtil.Deserialize<WindOverride>(data); }
+                try { model.Override = WindOverride.Checked(SerializerUtil.Deserialize<WindOverride>(data)); }
                 catch (Exception e) { Mod.Logger.Warning("Could not read the saved fixed wind: {0}", e.Message); }
             }
             Model = model;
-            BuildSpectrum(key, circumference);
+            BuildSpectrum(key, circumference, Config.WaveScale);
             sampleHours.Clear();
             PublishAnchor(0);
             sentParams = new SeaParamsPacket
@@ -472,6 +473,7 @@ namespace Sea
         public void SetOverride(WindOverride ov)
         {
             if (Model == null || sentParams == null) return;
+            ov = WindOverride.Checked(ov);
             Model.Override = ov;
             sentParams.Override = ov;
             serverChannel.BroadcastPacket(sentParams);
@@ -521,18 +523,19 @@ namespace Sea
         void OnParams(SeaParamsPacket p)
         {
             RegionSize = capi.World.BlockAccessor.RegionSize;
-            Config = p.Config ?? new SeaConfig();
+            Config = (p.Config ?? new SeaConfig()).Checked();
+            var ov = WindOverride.Checked(p.Override);
             var m = Model;
             // the same inputs again (only the fixed wind changed): keep the model and its storm cache
             if (m != null && m.Shape.RingStart == p.RingStart && m.Shape.Circumference == p.Circumference && sentKey == p.Key && SameConfig(m.Config, Config))
             {
-                m.Override = p.Override;
+                m.Override = ov;
                 return;
             }
             sentKey = p.Key;
-            var model = new WindModel(MakeShape(p.RingStart, p.Circumference, p.DaysPerYear, p.HoursPerDay), Config, p.Key) { Override = p.Override, PrevailingSource = prevailingSource };
+            var model = new WindModel(MakeShape(p.RingStart, p.Circumference, p.DaysPerYear, p.HoursPerDay), Config, p.Key) { Override = ov, PrevailingSource = prevailingSource };
             Model = model;
-            BuildSpectrum(p.Key, p.Circumference);
+            BuildSpectrum(p.Key, p.Circumference, Config.WaveScale);
         }
 
         double LocalSeconds => capi.InWorldEllapsedMilliseconds / 1000.0;
@@ -544,9 +547,14 @@ namespace Sea
             clock.Advance(dt);
             clientWaveTime = clock.Now(LocalSeconds);
             var ep = capi.World?.Player?.Entity;
+            if (ep != null) playerDimension = ep.Pos.Dimension;
             if (ep == null || Model == null) return;
             SampleWaves(CameraWaves, ep.CameraPos.X, ep.CameraPos.Z);
         }
+
+        /// <summary>Client: the dimension the local player is in (0 = the world itself), as of this frame. Safe from any thread.</summary>
+        public int PlayerDimension => playerDimension;
+        volatile int playerDimension;
 
         sealed class FrameStart : IRenderer
         {
@@ -579,6 +587,8 @@ namespace Sea
             if (ep == null || Model == null || !Controls(Hours))
             {
                 Hooks.LocalWind = null;
+                // (.sea's "wind here": vanilla's strength then, not the last of Sea's)
+                LocalWind = ep == null ? default : WindAt(ep.Pos.X, ep.Pos.Z);
                 return;
             }
             double h = Hours;

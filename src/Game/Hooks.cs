@@ -217,14 +217,14 @@ namespace Sea
         {
             if (__result <= 0) return;
             var eye = CameraEye(__instance);
-            if (eye != null && SeaSystem.For(EnumAppSide.Client)?.IsDry(eye.X, eye.Y, eye.Z) == true) __result = 0;
+            if (eye != null && ClientInWorld() && SeaSystem.For(EnumAppSide.Client)?.IsDry(eye.X, eye.Y, eye.Z) == true) __result = 0;
         }
 
         static void EyesInWaterColorShiftPostfix(object __instance, ref int __result)
         {
             if (__result <= 0) return;
             var eye = CameraEye(__instance);
-            if (eye != null && SeaSystem.For(EnumAppSide.Client)?.IsDry(eye.X, eye.Y, eye.Z) == true) __result = 0;
+            if (eye != null && ClientInWorld() && SeaSystem.For(EnumAppSide.Client)?.IsDry(eye.X, eye.Y, eye.Z) == true) __result = 0;
         }
 
         /// <summary>
@@ -239,6 +239,7 @@ namespace Sea
             var sys = SeaSystem.For(EnumAppSide.Server);
             if (sys == null || sys.DrySpaceSources == 0) return;
             var pos = e.Pos;
+            if (pos.Dimension != 0) return;   // dry places are in the world itself (IDrySpaces gets no dimension)
             double eyeY = pos.Y + (e.Swimming ? e.Properties.SwimmingEyeHeight : e.Properties.EyeHeight);
             double eyeX = pos.X + (e.LocalEyePos?.X ?? 0), eyeZ = pos.Z + (e.LocalEyePos?.Z ?? 0);
             var block = e.World.BlockAccessor.GetBlock(new BlockPos((int)Math.Floor(eyeX), (int)Math.Floor(eyeY), (int)Math.Floor(eyeZ), pos.Dimension), BlockLayersAccess.MostSolid);
@@ -258,21 +259,28 @@ namespace Sea
             var sys = SeaSystem.For(e.World.Side);
             if (sys == null || sys.DrySpaceSources == 0) return true;
             var pos = e.Pos;
-            return !sys.IsDry(pos.X, pos.Y + 0.1, pos.Z);
+            return pos.Dimension != 0 || !sys.IsDry(pos.X, pos.Y + 0.1, pos.Z);
         }
+
+        /// <summary>
+        /// (0.3.7) The local player is in the world itself, not in another dimension. Dry places are asked by world
+        /// position only (<see cref="IDrySpaces"/> gets no dimension), and ships sail in the world itself, so elsewhere
+        /// there are none: a spot at the same coordinates in another dimension isn't in a hull.
+        /// </summary>
+        static bool ClientInWorld() => (SeaSystem.For(EnumAppSide.Client)?.PlayerDimension ?? 0) == 0;
 
         /// <summary>For <see cref="DryParticles"/> (the client's particle thread).</summary>
         static bool ClientDry(double x, double y, double z)
         {
             var sys = SeaSystem.For(EnumAppSide.Client);
-            return sys != null && sys.DrySpaceSources > 0 && sys.IsDry(x, y, z);
+            return sys != null && sys.DrySpaceSources > 0 && ClientInWorld() && sys.IsDry(x, y, z);
         }
 
         /// <summary>For <see cref="DryParticles"/>: dry at any moment of a particle's life (the client's particle thread; 0.3.5).</summary>
         static bool ClientDryWithin(double x, double y, double z, double seconds)
         {
             var sys = SeaSystem.For(EnumAppSide.Client);
-            return sys != null && sys.DrySpaceSources > 0 && sys.IsDryWithin(x, y, z, seconds);
+            return sys != null && sys.DrySpaceSources > 0 && ClientInWorld() && sys.IsDryWithin(x, y, z, seconds);
         }
 
         // ---------------------------------------------------------------- wind

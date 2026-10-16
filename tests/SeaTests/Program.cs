@@ -457,6 +457,8 @@ namespace SeaTests
             }
 
             DryWaterParticles();
+            BadInputs();
+            WaveBudget();
 
             Console.WriteLine(failures == 0 ? "ALL OK" : $"{failures} FAILED");
             return failures == 0 ? 0 : 1;
@@ -801,6 +803,114 @@ namespace SeaTests
                 Check(snapped && worstRate <= WaveClock.MaxSlew + 1e-9 && caughtUp && Math.Abs(c.Now(local) - 9000) < 1e-9,
                     $"the wave clock follows the server's: snaps on joining, eases {worstRate:P1} at most, snaps when far off");
             }
+        }
+
+        /// <summary>(0.3.7) Numbers Sea can't use (a hand-edited config, an admin's typo, a mod's degenerate hull) are refused or come back to defaults.</summary>
+        static void BadInputs()
+        {
+            Console.WriteLine("bad inputs");
+            bool parse = Compass.Parse("NaN") == null && Compass.Parse("Infinity") == null && Compass.Parse("-Infinity") == null
+                && Compass.Parse("270") == 270 && Compass.Parse("sw") == 225;
+            var nan = new WindOverride { FromDegrees = double.NaN, Strength = 1 };
+            var inf = new WindOverride { FromDegrees = 90, Strength = 1, UntilHours = double.PositiveInfinity };
+            var strong = WindOverride.Checked(new WindOverride { FromDegrees = 90, Strength = 9, StartHours = 10 });
+            var weak = WindOverride.Checked(new WindOverride { FromDegrees = 90, Strength = double.NaN });
+            Check(parse && WindOverride.Checked(nan) == null && WindOverride.Checked(inf) == null && weak == null && WindOverride.Checked(null) == null
+                && strong != null && strong.Strength == WindModel.MaxStrength && strong.StartHours == 10,
+                "a fixed wind with NaN or infinite numbers is refused (the direction, the strength, the hours), a too strong one clamped");
+
+            var bad = new SeaConfig { StormSpeed = -350, StormRadius = float.NaN, WaveScale = float.PositiveInfinity, Gusts = -1, SeasonShift = 400, StormFrequency = 0 }.Checked();
+            var d = new SeaConfig();
+            Check(bad.StormSpeed == d.StormSpeed && bad.StormRadius == d.StormRadius && bad.WaveScale == d.WaveScale && bad.Gusts == d.Gusts
+                && bad.SeasonShift == 45 && bad.StormFrequency == 0,
+                "a config's negative, NaN or infinite numbers go back to the defaults (0 stays 0: no storms)");
+
+            // the server's settings reach clients as they are, zeros included (protobuf leaves zeros out, and the
+            // client's object starts from the defaults)
+            {
+                var sent = new SeaParamsPacket
+                {
+                    Key = 7, Circumference = 0, DaysPerYear = 108, HoursPerDay = 24,
+                    Config = new SeaConfig { WindModel = "Steady", PrevailingStrength = 0, Variability = 0, Gusts = 0, StormFrequency = 0, StormRadius = 0, StormSpeed = 0, SeasonShift = 0, WaveScale = 0 }
+                };
+                // (the game's own serializer, as its network channels use it)
+                var got = Vintagestory.API.Util.SerializerUtil.Deserialize<SeaParamsPacket>(Vintagestory.API.Util.SerializerUtil.Serialize(sent)).Config;
+                Check(got.WindModel == "Steady" && got.PrevailingStrength == 0 && got.Variability == 0 && got.Gusts == 0 && got.StormFrequency == 0
+                    && got.StormRadius == 0 && got.StormSpeed == 0 && got.SeasonShift == 0 && got.WaveScale == 0,
+                    $"a config of zeros arrives as zeros (gusts {got.Gusts}, storms {got.StormFrequency}, wave scale {got.WaveScale})");
+            }
+
+            // WaveScale 0 flattens the whole sea, the chop too
+            var spec0 = new WaveSpectrum(4242, 0, 0);
+            var amps = new double[spec0.TrainCount];
+            spec0.Amplitudes(new SeaState(0, 1, 0, 2.5), Wind.FromCompass(270, 1), amps);
+            double most = 0;
+            foreach (var x in amps) most = Math.Max(most, Math.Abs(x));
+            var spec1 = new WaveSpectrum(4242, 0, 1);
+            spec1.Amplitudes(new SeaState(0, 1, 0, 2.5), Wind.FromCompass(270, 1), amps);
+            double chop1 = 0;
+            foreach (var x in amps) chop1 = Math.Max(chop1, x);
+            Check(most == 0 && chop1 > 0.1, $"WaveScale 0: no waves at all, chop included ({most:0.000}; at 1 the chop is {chop1:0.00})");
+
+            // a hull with no outline left: nothing dry, and no exception
+            bool threw = false, dry = false;
+            try
+            {
+                foreach (bool detailed in new[] { false, true })
+                {
+                    var noLength = new WaterClipBox { Dry = true, HalfLength = 0, HalfWidth = 2, DryDepth = 5, DryHeight = 5, WaterY = 110 };
+                    var insetAll = new WaterClipBox { Dry = true, HalfLength = 4, DryInset = 4, HalfWidth = 2, DryDepth = 5, DryHeight = 5, WaterY = 110,
+                        DryProfile = new float[WaterShader.DryStations * WaterShader.DryLevels], DryLevelStep = 1 };
+                    dry |= noLength.InDryHull(0, 109, 0, detailed) | insetAll.InDryHull(0, 109, 0, detailed);
+                }
+            }
+            catch (Exception) { threw = true; }
+            Check(!threw && !dry, "a dry hull with no length, or inset by all of it, has nothing dry and doesn't throw");
+        }
+
+        /// <summary>
+        /// (0.3.7) While the sea turns, more trains run than the shader takes: those kept are each less the strongest left
+        /// out, so the surface doesn't jump when their order changes (Codex's case: key 4242, a 2.5-block sea turning from
+        /// east to south; cutting the weakest off made it jump about 0.06 blocks).
+        /// </summary>
+        static void WaveBudget()
+        {
+            Console.WriteLine("wave budget");
+            var spec = new WaveSpectrum(4242, 0);
+            var east = new SeaState(2.5, 1, 0, 7.6);
+            var south = new SeaState(2.5, 0, 1, 7.6);
+            var wind0 = Wind.FromCompass(270, 1.0);
+            var wind1 = Wind.FromCompass(0, 1.0);
+            var p = new WavePlace();
+            const double dt = 1e-4;
+            double worst = 0, worstMotion = 0;
+            int most = 0;
+            bool swapped = false;
+            var before = new System.Collections.Generic.HashSet<(double, double)>();
+            var now = new System.Collections.Generic.HashSet<(double, double)>();
+            double[] prevH = new double[16];
+            for (int i = 0; i <= 10000; i++)
+            {
+                double t = 300 + i * dt;
+                p.Update(spec, Math.Min(t, 300.99999), east, wind0, south, wind1);
+                most = Math.Max(most, p.Count);
+                now.Clear();
+                for (int j = 0; j < p.Count; j++) now.Add((p.Kx[j], p.Kz[j]));
+                if (i > 0 && !now.SetEquals(before)) swapped = true;
+                (before, now) = (now, before);
+                // how far the surface may move in dt from the trains' own running and growing
+                double motion = 0;
+                for (int j = 0; j < p.Count; j++) motion += p.Amp[j] * p.Omega[j] * dt + 2.5 * dt;
+                for (int k = 0; k < prevH.Length; k++)
+                {
+                    double h = p.HeightAt(1000 + k * 13.7, 2000 + k * 7.3);
+                    if (i > 0) worst = Math.Max(worst, Math.Abs(h - prevH[k]));
+                    prevH[k] = h;
+                }
+                worstMotion = Math.Max(worstMotion, motion);
+            }
+            Check(most == WavePlace.MaxWaves && swapped && worst < 0.01,
+                $"the surface doesn't jump when the strongest {WavePlace.MaxWaves} trains change (over budget: {most == WavePlace.MaxWaves}, kept ones changed: {swapped}; biggest step {worst:0.0000} in {dt * 1000:0.0} ms, running alone moves up to {worstMotion:0.0000})");
         }
     }
 }

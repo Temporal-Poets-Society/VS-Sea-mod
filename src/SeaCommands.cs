@@ -12,7 +12,7 @@ namespace Sea
     /// <summary>
     /// /sea                 wind and waves where you stand (what a sailor can see and feel)
     /// /sea storms [range]  storms nearby (admins; players have to read the sky and the wind)
-    /// /sea setwind &lt;from&gt; &lt;strength&gt; [hours]   fix the wind everywhere (admins, for testing and events)
+    /// /sea setwind &lt;from&gt; &lt;strength&gt; [hours] [built]   fix the wind everywhere (admins, for testing and events)
     /// /sea clearwind       back to the weather
     /// </summary>
     public static class SeaCommands
@@ -40,6 +40,7 @@ namespace Sea
                         if (sys.Model == null) return TextCommandResult.Error("The wind model isn't ready yet.");
                         double? from = Compass.Parse(args[0] as string);
                         if (from == null) return TextCommandResult.Error("Direction must be a compass point (N, NNE, NE … NW) or degrees.");
+                        if (!double.IsFinite((double)args[1]) || !double.IsFinite((double)args[2])) return TextCommandResult.Error("Strength and hours must be numbers.");
                         double strength = Math.Clamp((double)args[1], 0, WindModel.MaxStrength);
                         double hours = Math.Max(0, (double)args[2]);
                         double now = sys.Hours;
@@ -108,13 +109,14 @@ namespace Sea
             double s = w.Strength;
             if (s < 0.02) sb.Append("Wind: calm.");
             else sb.Append($"Wind: from the {Compass.Name(w.FromDegrees)} ({w.FromDegrees:0}°), {s:0.00}: Beaufort {Beaufort.Force(s)}, {Beaufort.Name(s)}.");
-            sb.Append($"\nSea: waves {sea.Height:0.0} blocks, running toward the {Compass.Name(sea.ToDegrees)}, every {sea.Period:0} s.");
+            double here = sys.WaveFactorAt(pos.X, pos.Z);
+            sb.Append($"\nSea: waves {sea.Height:0.0} blocks out at sea{(here < 0.99 ? $" ({sea.Height * here:0.0} here, sheltered)" : "")}, running toward the {Compass.Name(sea.ToDegrees)}, every {sea.Period:0} s.");
             if (m != null)
             {
                 sb.Append($"\nYou're at {LatText(m.Shape.LatitudeDeg(pos.Z))}, in {m.BeltName(pos.Z, h)}.");
                 var ov = m.Override;
                 if (ov != null && ov.Covers(h)) sb.Append(ov.UntilHours > 0 ? $"\n(An admin fixed the wind for another {ov.UntilHours - h:0.#} game hours.)" : "\n(An admin fixed the wind.)");
-                else if (m.Mode == WindMode.Off) sb.Append("\n(Sea's wind model is off: vanilla wind, no direction.)");
+                else if (m.Mode == WindMode.Off) sb.Append("\n(Sea's wind model is off: vanilla wind, no direction. The sea follows Sea's steady winds.)");
             }
             else sb.Append("\n(Sea's wind model isn't running yet.)");
             return sb.ToString();

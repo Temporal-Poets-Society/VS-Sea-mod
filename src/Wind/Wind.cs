@@ -84,7 +84,8 @@ namespace Sea
         public static double? Parse(string s)
         {
             if (string.IsNullOrWhiteSpace(s)) return null;
-            if (double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d)) return WorldShape.Mod(d, 360);
+            if (double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d))
+                return double.IsFinite(d) ? WorldShape.Mod(d, 360) : null;   // ("NaN" and "Infinity" parse too)
             int i = Array.IndexOf(Points, s.Trim().ToUpperInvariant());
             return i < 0 ? null : i * 22.5;
         }

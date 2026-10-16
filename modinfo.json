@@ -2,7 +2,7 @@
   "type": "code",
   "modid": "sea",
   "name": "Sea",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Wind with a direction and weather you can learn: trade winds, westerlies and doldrums by latitude, storms that travel and turn around their centre, and seas that build up and calm down with them. Owns the water shader for ship mods.",
   "authors": [ "Your Name" ],
   "side": "Universal",

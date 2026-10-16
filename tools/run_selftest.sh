@@ -40,6 +40,12 @@ json.dump({"Enabled": True, "Shutdown": True}, open(ts + "/ModConfig/sea-selftes
 EOF
 
 cd "$VS"
-./VintagestoryServer.exe --dataPath "$(cygpath -w "$TS")" > "$TS/server-console.log" 2>&1 || true
-echo "server exited"
-grep -h "SELFTEST\|\[sea\]\|sea.*rror\|Exception" "$TS/Logs/server-main.log" | head -80 || true
+status=0
+./VintagestoryServer.exe --dataPath "$(cygpath -w "$TS")" > "$TS/server-console.log" 2>&1 || status=$?
+echo "server exited ($status)"
+LOG="$TS/Logs/server-main.log"
+grep -h "SELFTEST\|\[sea\]\|sea.*rror\|Exception" "$LOG" 2>/dev/null | head -80 || true
+# a gate: the run passes only if the self-test finished and every check held
+if grep -q "SELFTEST ALL OK" "$LOG" 2>/dev/null; then exit 0; fi
+echo "self-test did not pass (no 'SELFTEST ALL OK' in $LOG)" >&2
+exit 1

@@ -371,6 +371,8 @@ bool seaDry(vec3 p) {
             HullFrame(SlopeAlong, SlopeAcross, fwd, dy, side, out double lx, out double hl, out double lz);
             double along = lx - CentreOffset, across = Math.Abs(lz);
             if (hl < -DryDepth || hl > DryHeight) return false;
+            // (no outline left: nothing is dry; dividing by it below would give NaN, and an index from that throws)
+            if (HalfLength <= 0 || HalfLength - DryInset <= 0) return false;
             if (detailed && HasDryProfile)
             {
                 double len = HalfLength - DryInset;
@@ -383,7 +385,8 @@ bool seaDry(vec3 p) {
     /// <summary>
     /// Something with dry places where the world has water (a ship mod's hulls). Sea asks before it treats a spot as
     /// under water: the camera's underwater fog, tint and muffled sound (client), and whether a creature there can
-    /// breathe (server). Register it on both sides (<see cref="SeaSystem.AddDrySpaces"/>). It's asked every tick for
+    /// breathe (server). Only asked about the world itself (dimension 0, where ships sail; 0.3.7): a creature or camera
+    /// in another dimension is never in a dry place. Register it on both sides (<see cref="SeaSystem.AddDrySpaces"/>). It's asked every tick for
     /// the camera and for each creature in water, so answer quickly; it may be asked from the sound thread.
     /// </summary>
     public interface IDrySpaces

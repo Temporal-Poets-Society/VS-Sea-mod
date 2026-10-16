@@ -4,7 +4,7 @@ Vanilla wind has a strength but no direction, and its waves are the same random 
 world a wind you can learn and plan around, and waves that follow it. It also owns the water shaders, so ship mods
 (Magelan) ask Sea to keep waves out of their hulls instead of each patching the shaders.
 
-Version 0.3.6:
+Version 0.3.7:
 
 - **Stage 1: water shaders.** Sea adds its code to vanilla's water shaders. That code keeps waves out of ship hulls,
   which Magelan used to do itself.
@@ -32,6 +32,13 @@ Version 0.3.6:
   there instead of a wedge behind it and a swell beside the stern quarters. 0.3.3: a dry hull with water in it (a leak,
   a hole) gives its flood level (`Flooded`, `FloodY`), and under it the sea isn't cut away. 0.3.6: the cut follows the
   hull's exact tilt, so a hull that's pitched and rolled together has no strips of water left inside.
+
+0.3.7 (review fixes, no new features): a server's config settings of 0 (no storms, no gusts, `WaveScale` 0) reach
+clients as 0 (they used to arrive as 1, so clients had storms and gusts the server didn't); a fixed wind with a NaN or infinite number in it is refused (it used to reach
+every client's waves); a config's negative or NaN numbers go back to the defaults; `WaveScale` scales the chop too (0
+now draws a flat sea); while the sea turns, the strongest 24 trains change without the surface jumping; dry places only
+apply in the world itself, not in other dimensions; less garbage per frame and per wind lookup; `/sea` shows the
+sheltered wave height where you are; `tools/run_selftest.sh` fails when the self-test does.
 
 ## The wind
 
@@ -136,6 +143,7 @@ Nothing about the wind or the waves is sent while you play, except a clock:
   - `built` makes the sea fully up at once, as if the wind had blown for a day. Without it, the sea builds over
     about 3 game hours.
   - Example: `/sea setwind E 1.5 0 built`.
+  - `NaN` and `Infinity` are refused for every number (0.3.7).
   - A fixed wind is saved with the world.
 - `/sea clearwind` (admins): back to the weather.
 
@@ -163,7 +171,10 @@ force it with `/weather setprecip 1`, and go back to the weather with `/weather 
 | `StormRadius` | 2000 | typical storm size in blocks |
 | `StormSpeed` | 350 | blocks per game hour (≈ 3 blocks/s at the default day length; the carrack does 7) |
 | `SeasonShift` | 8 | degrees the belts move with the seasons |
-| `WaveScale` | 1 | multiplies wave heights |
+| `WaveScale` | 1 | multiplies wave heights, the chop too (0.3.7) |
+
+A negative, NaN or infinite number goes back to its default when the server loads the file (0.3.7; `SeasonShift` may be
+negative, up to ±45).
 
 ## Dry hulls (for ship mods)
 
@@ -208,6 +219,8 @@ blocks. A ship mod that wants rooms down there tells Sea two things.
     method: unless you do, it's `IsDry` now) with whether the place is dry at any moment of the next seconds, e.g. from
     where your hull will be as it sails, rolls and heaves.
   - Players riding a ship are never counted as swimming, so nothing else needs changing for them.
+  - Only the world itself (dimension 0, where ships sail) has dry places (0.3.7). `IsDry` gets no dimension, so a
+    creature, camera or particle in another dimension is never treated as dry.
 - **If a graphics driver won't take the new shader code:** Sea logs the compiler's error and tries again without the
   dry-hull cut, and if that fails too with vanilla's water. `.sea` says so.
 
@@ -249,7 +262,7 @@ keeps the old `Sea.dll` and refuses the new one ("Assembly with same name is alr
 dotnet build -c Release                  # release/sea-<version>.zip (version from modinfo.json); deletes older sea-*.zip there
 dotnet run --project tests/SeaTests      # offline: belts, seasons, storms, cache, sea state, speed, waves, shader injection, dry hulls, water particles
 dotnet run --project tests/ShaderCheck   # on this machine's GPU: the edited water and particle shaders compile and link; the dry cut is right
-tools/run_selftest.sh [--with-cworld]    # headless server: vanilla sees Sea's wind, fixed wind, the ring, the waves, speed, breathing in dry places
+tools/run_selftest.sh [--with-cworld]    # headless server: vanilla sees Sea's wind, fixed wind, the ring, the waves, speed, breathing in dry places; exits 1 unless "SELFTEST ALL OK"
 ```
 
 `tests/ShaderCheck` needs a desktop session. It opens a hidden window with the game's own OpenTK and GLFW. It builds
