@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Compiles the game's water and particle shaders with Sea's edits on this machine's graphics driver (a hidden
+       window through the game's own OpenTK and GLFW), the way the game does: includes expanded, its #defines added.
+       Needs a desktop session. Runs on the game's .NET 10 runtime like the other tests. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RollForward>LatestMajor</RollForward>
+    <UseAppHost>false</UseAppHost>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <VintageStoryPath Condition="'$(VintageStoryPath)' == ''">$(VINTAGE_STORY)</VintageStoryPath>
+    <VintageStoryPath Condition="'$(VintageStoryPath)' == ''">$(APPDATA)\Vintagestory</VintageStoryPath>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <NetCoreRuntimeDir>$([System.IO.Directory]::GetDirectories('$(NetCoreRoot)shared\Microsoft.NETCore.App', '10.*')[0])</NetCoreRuntimeDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="..\..\src\Water\WaterShader.cs" Link="Water\WaterShader.cs" />
+    <Compile Include="..\..\src\Water\WaveField.cs" Link="Water\WaveField.cs" />
+    <Compile Include="..\..\src\Wind\*.cs" Link="Wind\%(Filename).cs" />
+    <Compile Include="..\..\src\SeaConfig.cs" Link="SeaConfig.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="$(NetCoreRuntimeDir)\System.*.dll" Exclude="$(NetCoreRuntimeDir)\System.Private.*.dll;$(NetCoreRuntimeDir)\System.IO.Compression.Native.dll" Private="false" />
+    <Reference Include="$(NetCoreRuntimeDir)\System.Private.CoreLib.dll" Private="false" />
+    <Reference Include="$(NetCoreRuntimeDir)\netstandard.dll" Private="false" />
+    <Reference Include="$(NetCoreRuntimeDir)\mscorlib.dll" Private="false" />
+    <Reference Include="protobuf-net"><HintPath>$(VintageStoryPath)\Lib\protobuf-net.dll</HintPath></Reference>
+    <Reference Include="OpenTK.Core"><HintPath>$(VintageStoryPath)\Lib\OpenTK.Core.dll</HintPath></Reference>
+    <Reference Include="OpenTK.Graphics"><HintPath>$(VintageStoryPath)\Lib\OpenTK.Graphics.dll</HintPath></Reference>
+    <Reference Include="OpenTK.Mathematics"><HintPath>$(VintageStoryPath)\Lib\OpenTK.Mathematics.dll</HintPath></Reference>
+    <Reference Include="OpenTK.Windowing.Common"><HintPath>$(VintageStoryPath)\Lib\OpenTK.Windowing.Common.dll</HintPath></Reference>
+    <Reference Include="OpenTK.Windowing.Desktop"><HintPath>$(VintageStoryPath)\Lib\OpenTK.Windowing.Desktop.dll</HintPath></Reference>
+    <Reference Include="OpenTK.Windowing.GraphicsLibraryFramework"><HintPath>$(VintageStoryPath)\Lib\OpenTK.Windowing.GraphicsLibraryFramework.dll</HintPath></Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- the game's native GLFW, next to the tool so OpenTK finds it -->
+    <None Include="$(VintageStoryPath)\Lib\glfw3.dll" CopyToOutputDirectory="PreserveNewest" Link="glfw3.dll" />
+  </ItemGroup>
+</Project>

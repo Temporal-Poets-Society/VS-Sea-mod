@@ -1,0 +1,150 @@
+using System;
+using System.Linq;
+using System.Text;
+using Vintagestory.API.Client;
+using Vintagestory.API.Common;
+using Vintagestory.API.Config;
+using Vintagestory.API.Common.Entities;
+using Vintagestory.API.Server;
+
+namespace Sea
+{
+    /// <summary>
+    /// /sea                 wind and waves where you stand (what a sailor can see and feel)
+    /// /sea storms [range]  storms nearby (admins; players have to read the sky and the wind)
+    /// /sea setwind &lt;from&gt; &lt;strength&gt; [hours]   fix the wind everywhere (admins, for testing and events)
+    /// /sea clearwind       back to the weather
+    /// </summary>
+    public static class SeaCommands
+    {
+        public static void Register(ICoreServerAPI api, SeaSystem sys)
+        {
+            var parsers = api.ChatCommands.Parsers;
+            api.ChatCommands.Create("sea")
+                .WithDescription("Wind and waves where you are")
+                .RequiresPrivilege(Privilege.chat)
+                .RequiresPlayer()
+                .HandleWith(args => TextCommandResult.Success(Report(sys, args.Caller.Player.Entity.Pos)))
+                .BeginSubCommand("storms")
+                    .WithDescription("Storms near you (admins)")
+                    .RequiresPrivilege(Privilege.controlserver)
+                    .WithArgs(parsers.OptionalDouble("range", 25000))
+                    .HandleWith(args => TextCommandResult.Success(Storms(sys, args.Caller.Player.Entity.Pos, (double)args[0])))
+                .EndSubCommand()
+                .BeginSubCommand("setwind")
+                    .WithDescription("Fix the wind everywhere: from (N, SW, 270…), strength (0.15 light breeze, 0.3 medium, 0.6 strong, 1 storm, max 1.5), game hours (0 = until /sea clearwind), 'built' = the sea is already up (otherwise it builds over ~3 game hours)")
+                    .RequiresPrivilege(Privilege.controlserver)
+                    .WithArgs(parsers.Word("from"), parsers.Double("strength"), parsers.OptionalDouble("hours", 0), parsers.OptionalWordRange("sea", "built"))
+                    .HandleWith(args =>
+                    {
+                        if (sys.Model == null) return TextCommandResult.Error("The wind model isn't ready yet.");
+                        double? from = Compass.Parse(args[0] as string);
+                        if (from == null) return TextCommandResult.Error("Direction must be a compass point (N, NNE, NE … NW) or degrees.");
+                        double strength = Math.Clamp((double)args[1], 0, WindModel.MaxStrength);
+                        double hours = Math.Max(0, (double)args[2]);
+                        double now = sys.Hours;
+                        // "built": as if it had been blowing for a day already, so the sea is fully up at once
+                        bool built = (args[3] as string) == "built";
+                        sys.SetOverride(new WindOverride { FromDegrees = from.Value, Strength = strength, StartHours = built ? now - 24 : now, UntilHours = hours > 0 ? now + hours : 0 });
+                        return TextCommandResult.Success($"Wind fixed: {strength:0.00} from the {Compass.Name(from.Value)} ({from.Value:0}°), Beaufort {Beaufort.Force(strength)}"
+                            + (hours > 0 ? $", for {hours:0.#} game hours" : ", until /sea clearwind")
+                            + (built ? ". The sea is already up." : ". The sea builds up over ~3 game hours (add 'built' to skip that)."));
+                    })
+                .EndSubCommand()
+                .BeginSubCommand("clearwind")
+                    .WithDescription("Let the weather decide the wind again (admins)")
+                    .RequiresPrivilege(Privilege.controlserver)
+                    .HandleWith(args =>
+                    {
+                        if (sys.Model?.Override == null) return TextCommandResult.Success("The wind isn't fixed.");
+                        sys.SetOverride(null);
+                        return TextCommandResult.Success("The weather decides the wind again.");
+                    })
+                .EndSubCommand();
+        }
+
+        /// <summary>.sea on a client: what Sea is doing there (for checking that the client side works).</summary>
+        public static void RegisterClient(ICoreClientAPI capi, SeaSystem sys)
+        {
+            capi.ChatCommands.Create("sea")
+                .WithDescription("What Sea is doing on your client: wind, waves, water shader, patches")
+                .HandleWith(args => TextCommandResult.Success(ClientReport(capi, sys)));
+        }
+
+        static string ClientReport(ICoreClientAPI capi, SeaSystem sys)
+        {
+            var sb = new StringBuilder();
+            var m = sys.Model;
+            if (m == null) return "Sea: no wind model on this client (the server's parameters haven't arrived).";
+            var ov = m.Override;
+            sb.Append($"Sea on this client: model {m.Mode}, {(ov != null && ov.Covers(sys.Hours) ? $"fixed wind {ov.Strength:0.00} from {Compass.Name(ov.FromDegrees)}" : "weather wind")}, deciding the wind: {sys.Controls(sys.Hours)}.");
+            var w = sys.LocalWind;
+            sb.Append($"\nWind here: {w} (Beaufort {Beaufort.Force(w.Strength)}); vanilla sees {GlobalConstants.CurrentWindSpeedClient.X:0.00} (surface {GlobalConstants.CurrentSurfaceWindSpeedClient.X:0.00}).");
+            var cw = sys.CameraWaves;
+            var t = cw.Sea;
+            sb.Append($"\nSea state here: {t.Height:0.00} blocks toward the {Compass.Name(t.ToDegrees)}, {t.Wavelength:0} blocks long, every {t.Period:0.0} s (builds up over game hours).");
+            var ep = capi.World.Player.Entity;
+            sb.Append($"\nDrawn waves: {cw.SignificantHeight:0.00} blocks from {cw.Count} wave trains ({sys.DrawnWaveCount} in the shader), here × {sys.WaveFactorAt(ep.Pos.X, ep.Pos.Z):0.00} (open sea 1, sheltered 0.2).");
+            sb.Append($"\nWave clock: {sys.WaveTime:0.0} s, {(sys.WaveClockSynced ? $"{sys.WaveClockError * 1000:+0;-0} ms from the server's" : "not heard from the server yet")}.");
+            sb.Append($"\nWater shader: Sea code {(WaterRenderer.Injected ? "in" : "MISSING")}, Sea waves {(WaterRenderer.WavesInjected ? "in" : "MISSING (vanilla waves)")}, hulls kept dry this frame: {sys.DrawnHullCount}.");
+            var eye = capi.World.Player.Entity.CameraPos.AddCopy(capi.World.Player.Entity.LocalEyePos);
+            if (Hooks.WaterCodeLevel > 0) sb.Append($"\nYour graphics driver didn't take all of Sea's water code: {(Hooks.WaterCodeLevel == 1 ? "no dry-hull cut" : "vanilla water")} (see the client log).");
+            sb.Append($"\nDry hulls: water cut out {(Hooks.DryHullsInjected ? "in the shader" : "MISSING")},{sys.DrawnDryHullCount} drawn this frame, {sys.DrySpaceSources} mod(s) with dry places; your eyes are {(sys.IsDry(eye.X, eye.Y, eye.Z) ? "in a dry place" : "not in a dry place")}; {DryParticles.Dropped} water specks, splashes and spray kept out of dry places so far.");
+            var lw = Hooks.LocalWind;
+            sb.Append($"\nRain, snow and clouds: {(lw != null ? $"blowing toward the {Compass.Name(Compass.Bearing(lw[0], lw[1]))}" : "vanilla (east)")}; rain streaks {(Hooks.RainStreaksInjected ? "lean along the drops' paths" : "vanilla (always toward east)")}.");
+            sb.Append($"\nPatches in: {string.Join(", ", Hooks.Active)}.");
+            return sb.ToString();
+        }
+
+        static string LatText(double deg) => $"{Math.Abs(deg):0}°{(deg >= 0 ? "N" : "S")}";
+
+        public static string Report(SeaSystem sys, EntityPos pos)
+        {
+            var m = sys.Model;
+            double h = sys.Hours;
+            var w = sys.WindAt(pos.X, pos.Z);
+            var sea = sys.SeaAt(pos.X, pos.Z);
+            var sb = new StringBuilder();
+            double s = w.Strength;
+            if (s < 0.02) sb.Append("Wind: calm.");
+            else sb.Append($"Wind: from the {Compass.Name(w.FromDegrees)} ({w.FromDegrees:0}°), {s:0.00}: Beaufort {Beaufort.Force(s)}, {Beaufort.Name(s)}.");
+            sb.Append($"\nSea: waves {sea.Height:0.0} blocks, running toward the {Compass.Name(sea.ToDegrees)}, every {sea.Period:0} s.");
+            if (m != null)
+            {
+                sb.Append($"\nYou're at {LatText(m.Shape.LatitudeDeg(pos.Z))}, in {m.BeltName(pos.Z, h)}.");
+                var ov = m.Override;
+                if (ov != null && ov.Covers(h)) sb.Append(ov.UntilHours > 0 ? $"\n(An admin fixed the wind for another {ov.UntilHours - h:0.#} game hours.)" : "\n(An admin fixed the wind.)");
+                else if (m.Mode == WindMode.Off) sb.Append("\n(Sea's wind model is off: vanilla wind, no direction.)");
+            }
+            else sb.Append("\n(Sea's wind model isn't running yet.)");
+            return sb.ToString();
+        }
+
+        static string Storms(SeaSystem sys, EntityPos pos, double range)
+        {
+            var m = sys.Model;
+            if (m == null) return "The wind model isn't ready yet.";
+            if (m.Mode != WindMode.Earthlike || !m.Storms.Enabled) return "Storms are off (WindModel must be Earthlike and StormFrequency above 0).";
+            double h = sys.Hours;
+            var list = m.Storms.ActiveWithin(pos.X, pos.Z, h, range)
+                .Select(s =>
+                {
+                    s.Centre(m.Shape, h, out double cx, out double cz);
+                    double dx = m.Shape.DeltaX(pos.X, cx), dz = cz - pos.Z;
+                    return (s, cx, cz, dist: Math.Sqrt(dx * dx + dz * dz), bearing: Compass.Bearing(dx, dz));
+                })
+                .OrderBy(e => e.dist).ToList();
+            if (list.Count == 0) return $"No storms within {range:0} blocks.";
+            var sb = new StringBuilder($"{list.Count} storm(s) within {range:0} blocks:");
+            foreach (var e in list)
+            {
+                var s = e.s;
+                double inten = s.Intensity(h);
+                sb.Append($"\n- {e.dist / 1000:0.0}k blocks {Compass.Name(e.bearing)} ({e.bearing:0}°) at {LatText(m.Shape.LatitudeDeg(e.cz))}: ")
+                  .Append($"{(s.Tropical ? "tropical, " : "")}{inten:0.00} at the eyewall (Beaufort {Beaufort.Force(inten)}), gales out to ~{s.Radius:0} blocks, ")
+                  .Append($"heading {Compass.Name(Compass.Bearing(s.VX, s.VZ))} at {s.Speed:0} blocks/h, {h - s.T0:0} of {s.Life:0} h");
+            }
+            return sb.ToString();
+        }
+    }
+}

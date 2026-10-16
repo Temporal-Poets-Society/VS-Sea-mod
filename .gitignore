@@ -1,0 +1,13 @@
+# build output
+bin/
+obj/
+tests/*/bin/
+tests/*/obj/
+# release zips (built by `dotnet build -c Release`)
+release/
+# the local dedicated test server: worlds, player data, logs, configs
+testserver/
+# editor files
+.vs/
+.vscode/
+*.user
