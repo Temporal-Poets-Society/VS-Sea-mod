@@ -143,6 +143,12 @@ namespace Sea
                 else if (!p.VertexShader.Code.Contains(RainShader.Marker)) log?.Warning("Particle shader has changed; rain streaks keep vanilla's slant (always toward east)");
                 return;
             }
+            if (p.PassName == "farterrain" && p.AssetDomain == "wmap" && p.FragmentShader != null && !CelestialFarDisabled)
+            {
+                string far = CelestialRenderer.FarFragment(p.FragmentShader.Code);
+                if (far != null) p.FragmentShader.Code = far;
+                return;
+            }
             if (Array.IndexOf(WaterShader.Passes, p.PassName) < 0) return;
             injectedLevel = WaterCodeLevel;
             if (WaterCodeLevel >= 2)
@@ -160,6 +166,16 @@ namespace Sea
             }
             if (!waves) log?.Warning("Water shader {0}: vanilla's wave call has changed; it keeps vanilla's waves", p.PassName);
             p.VertexShader.Code = code;
+            if (p.PassName == "chunkliquid" && waves && !CelestialDisabled)
+            {
+                string cv = CelestialShader.Vertex(code), cf = CelestialShader.Fragment(p.FragmentShader?.Code);
+                if (cv != null && cf != null)
+                {
+                    p.VertexShader.Code = cv;
+                    p.FragmentShader.Code = cf;
+                }
+                else log?.Warning("[sea] Celestial reflection anchors missing; keeping vanilla highlights.");
+            }
             WaterRenderer.Injected = true;
             if (waves) WaterRenderer.WavesInjected = true;
             if (!dry)
@@ -186,13 +202,30 @@ namespace Sea
         /// with its code, so a driver that won't take it never leaves the sea undrawn.
         /// </summary>
         public static int WaterCodeLevel;
+        public static bool CelestialDisabled;
+        public static bool CelestialFarDisabled;
         static int injectedLevel = -1;
         /// <summary>Set by the client: recompile the shaders soon (on the main thread).</summary>
         public static Action RequestShaderReload;
 
         static void CompilePostfix(object __instance, bool __result)
         {
-            if (__result || !(__instance is IShaderProgram p) || Array.IndexOf(WaterShader.Passes, p.PassName) < 0) return;
+            if (__result || !(__instance is IShaderProgram p)) return;
+            if (!CelestialFarDisabled && p.PassName == "farterrain" && p.AssetDomain == "wmap" && p.FragmentShader?.Code?.Contains("seaNightFloor") == true)
+            {
+                CelestialFarDisabled = true;
+                log?.Warning("[sea] Wmap night floor shader failed; reloading Wmap without Sea's optional brightness adjustment.");
+                RequestShaderReload?.Invoke();
+                return;
+            }
+            if (Array.IndexOf(WaterShader.Passes, p.PassName) < 0) return;
+            if (!CelestialDisabled && p.FragmentShader?.Code?.Contains(CelestialShader.Marker) == true)
+            {
+                CelestialDisabled = true;
+                log?.Warning("[sea] Celestial water shader failed; reloading with vanilla highlights and keeping Sea's waves/dry hulls.");
+                RequestShaderReload?.Invoke();
+                return;
+            }
             if (p.VertexShader?.Code?.Contains(WaterShader.Marker) != true) return;   // vanilla's own code failed: not ours to fix
             if (WaterCodeLevel != injectedLevel || WaterCodeLevel >= 2) return;      // already stepped down for this load
             WaterCodeLevel = injectedLevel + 1;

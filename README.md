@@ -4,7 +4,15 @@ Vanilla wind has a strength but no direction, and its waves are the same random 
 world a wind you can learn and plan around, and waves that follow it. It also owns the water shaders, so ship mods
 (Magelan) ask Sea to keep waves out of their hulls instead of each patching the shaders.
 
-Version 0.3.7:
+Version **0.3.8-pre.3** (pre.1 crashed on load; pre.2 reflections were invisible: both fixed) adds sun glitter, phase-aware moon trails and faint source-sky star reflections using Sea's
+wave normals. A separate outdoor night-visibility floor aims for useful clear-night navigation, with reduced light
+under clouds, rain and fog. Vanilla works without astronomy, geography or ship mods; AstraTerra **0.15.0** has an
+optional source-data adapter. Wmap distant lighting has an optional adapter and near reflections fade before its edge.
+These are implemented pre-release features: GPU/automated checks pass; **appearance, navigation brightness and
+in-game compatibility are not verified**. See [inspection, controls and comparison procedure](docs/sky-water.md)
+and [build/verification record](docs/verification-celestial.md).
+
+Existing wind and water foundation (through 0.3.7):
 
 - **Stage 1: water shaders.** Sea adds its code to vanilla's water shaders. That code keeps waves out of ship hulls,
   which Magelan used to do itself.
@@ -172,6 +180,9 @@ force it with `/weather setprecip 1`, and go back to the weather with `/weather 
 | `StormSpeed` | 350 | blocks per game hour (≈ 3 blocks/s at the default day length; the carrack does 7) |
 | `SeasonShift` | 8 | degrees the belts move with the seasons |
 | `WaveScale` | 1 | multiplies wave heights, the chop too (0.3.7) |
+| `CelestialReflections` | 1 | sun/moon trails; 0 restores vanilla highlights; range 0–2 |
+| `SkyReflections` | 1 | faint filtered star/night-sky reflections; 0 disables; range 0–2 |
+| `NightVisibility` | 1 | outdoor ambient night floor/local-moon correction; 0 keeps existing ambient lighting; range 0–2 |
 
 A negative, NaN or infinite number goes back to its default when the server loads the file (0.3.7; `SeasonShift` may be
 negative, up to ±45).
@@ -259,9 +270,11 @@ Quit the game completely before swapping the zip in your Mods folder: a world lo
 keeps the old `Sea.dll` and refuses the new one ("Assembly with same name is already loaded").
 
 ```bash
-dotnet build -c Release                  # release/sea-<version>.zip (version from modinfo.json); deletes older sea-*.zip there
+dotnet build -c Release                  # release/sea-<version>.zip; refuses an existing ZIP, preserves older snapshots
 dotnet run --project tests/SeaTests      # offline: belts, seasons, storms, cache, sea state, speed, waves, shader injection, dry hulls, water particles
 dotnet run --project tests/ShaderCheck   # on this machine's GPU: the edited water and particle shaders compile and link; the dry cut is right
+dotnet run --project tests/SkyIntegrationCheck -- --vanilla # no-AstraTerra adapter path, without a game/save
+dotnet run --project tests/SkyIntegrationCheck # exact installed DLL extracted to obj/sky-inspection/AstraTerra.dll
 tools/run_selftest.sh [--with-cworld]    # headless server: vanilla sees Sea's wind, fixed wind, the ring, the waves, speed, breathing in dry places; exits 1 unless "SELFTEST ALL OK"
 ```
 
@@ -286,3 +299,5 @@ Earth, Terra Prety and other world generators: `docs/compatibility.md`.
   rainfall noise, so a storm's wind can arrive under a clear sky.
 - **Waves don't know about coasts.** Only the ocean map shelters them (lakes and inland water get a fifth); a bay or
   the lee of an island on the open sea gets the whole sea.
+
+For isolated comparisons, use `tools/New-CelestialTestProfile.ps1`; see [the procedure](docs/sky-water.md#reproducible-in-game-comparison-pending). It creates a fresh data directory without overwriting packages or saves. The older shell self-test resets its testserver save/log folders, so use the fresh-profile workflow to retain those snapshots. For another Release build, choose a new version or a fresh explicit `-p:PackageFile=C:\path\to\a-new-unique.zip`.

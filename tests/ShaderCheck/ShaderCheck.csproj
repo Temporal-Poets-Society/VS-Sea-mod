@@ -20,6 +20,8 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="..\..\src\Water\WaterShader.cs" Link="Water\WaterShader.cs" />
+    <Compile Include="..\..\src\Water\CelestialShader.cs" Link="Water\CelestialShader.cs" />
+    <Compile Include="..\..\src\Water\StarCubemap.cs" Link="Water\StarCubemap.cs" />
     <Compile Include="..\..\src\Water\WaveField.cs" Link="Water\WaveField.cs" />
     <Compile Include="..\..\src\Wind\*.cs" Link="Wind\%(Filename).cs" />
     <Compile Include="..\..\src\SeaConfig.cs" Link="SeaConfig.cs" />

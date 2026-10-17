@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Offline checks of the wind model and the water shader injection.
+       Runs on the game's .NET 10 runtime (same trick as the mod: compile against its runtime assemblies). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RollForward>LatestMajor</RollForward>
+    <UseAppHost>false</UseAppHost>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <VintageStoryPath Condition="'$(VintageStoryPath)' == ''">$(VINTAGE_STORY)</VintageStoryPath>
+    <VintageStoryPath Condition="'$(VintageStoryPath)' == ''">$(APPDATA)\Vintagestory</VintageStoryPath>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <NetCoreRuntimeDir>$([System.IO.Directory]::GetDirectories('$(NetCoreRoot)shared\Microsoft.NETCore.App', '10.*')[0])</NetCoreRuntimeDir>
+  </PropertyGroup>
+  <ItemGroup><Compile Include="Program.cs" /><ProjectReference Include="..\..\Sea.csproj" /></ItemGroup>
+  <ItemGroup>
+    <Reference Include="$(NetCoreRuntimeDir)\System.*.dll" Exclude="$(NetCoreRuntimeDir)\System.Private.*.dll;$(NetCoreRuntimeDir)\System.IO.Compression.Native.dll" Private="false" />
+    <Reference Include="$(NetCoreRuntimeDir)\System.Private.CoreLib.dll" Private="false" />
+    <Reference Include="$(NetCoreRuntimeDir)\netstandard.dll" Private="false" />
+    <Reference Include="$(NetCoreRuntimeDir)\mscorlib.dll" Private="false" />
+    <Reference Include="protobuf-net"><HintPath>$(VintageStoryPath)\Lib\protobuf-net.dll</HintPath></Reference>
+    <!-- the particle patches (DryParticles): the game's methods they change, read as Harmony reads them -->
+    <Reference Include="VintagestoryAPI"><HintPath>$(VintageStoryPath)\VintagestoryAPI.dll</HintPath></Reference>
+    <Reference Include="VSEssentials"><HintPath>$(VintageStoryPath)\Mods\VSEssentials.dll</HintPath></Reference>
+    <Reference Include="0Harmony"><HintPath>$(VintageStoryPath)\Lib\0Harmony.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>
+

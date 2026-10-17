@@ -142,7 +142,8 @@ are in Magelan's `docs/engine-notes.md`.
 - **Waves regardless of the setting:** vanilla's warp only runs with the "waving stuff" graphics option on
   (`#if WAVINGSTUFF == 1`). Sea's waves run either way.
 - **`applyPerceptionWarping`** (the drunk effect) is defined outside that `#if`, and Sea still calls it.
-- **Normals aren't changed.** Lighting and reflections use the vertex's packed flat normal, as with vanilla's waves.
+- **Through 0.3.7 normals weren't changed.** Since 0.3.8-pre.1, celestial reflection shading interpolates the analytic
+  gradient of Sea's waves. Packed normals still select top/side faces and vanilla foam/lighting behavior.
 - **Phases:** `worldPos` is camera-relative, so each wave's phase is uploaded for the camera position (computed in
   doubles on the CPU relative to an anchor near the player). The shader only works with small numbers.
 - **Hull clip:** it uses the unwarped position (`xyz + origin`) to find the footprint and to calm the waves around it.
@@ -180,3 +181,7 @@ are in Magelan's `docs/engine-notes.md`.
   precision like the shader (`(float)dy < FloodUniform`); the GPU check's heights stay clear of the flood's so a
   rounding difference there can't show.
 
+
+## Celestial water and outdoor night presentation (0.3.8-pre.1)
+
+The source audit, exact installed AstraTerra 0.15.0 package hash, engine/astronomy type and shader references, implementation boundaries and verification distinctions are in [sky-water.md](sky-water.md). The engine sky lookup does not capture stars or the moon. Source cubemap/projected-star data avoid camera-frustum dependence; full graphical-client comparisons remain pending. Night presentation uses the existing propagated sunlight channel, with a floor and a narrowly detected local-moon correction, without changing gamma, exposure or calendar state.

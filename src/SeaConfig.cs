@@ -38,6 +38,13 @@ namespace Sea
         /// <summary>Multiplies wave heights.</summary>
         [ProtoMember(9, IsRequired = true)] public float WaveScale = 1;
 
+        /// <summary>0 restores vanilla highlights, 1 enables Sea's sun/moon trails.</summary>
+        [ProtoMember(10, IsRequired = true)] public float CelestialReflections = 1;
+        /// <summary>Faint reflected sky and stars; 0 disables, 1 is the restrained default.</summary>
+        [ProtoMember(11, IsRequired = true)] public float SkyReflections = 1;
+        /// <summary>Outdoor night visibility floor on the existing sunlight channel; 0 disables.</summary>
+        [ProtoMember(12, IsRequired = true)] public float NightVisibility = 1;
+
         public WindMode Mode => WindModel?.ToLowerInvariant() switch
         {
             "off" => WindMode.Off,
@@ -61,6 +68,9 @@ namespace Sea
             StormSpeed = Ok(StormSpeed, d.StormSpeed);
             SeasonShift = float.IsFinite(SeasonShift) ? System.Math.Clamp(SeasonShift, -45, 45) : d.SeasonShift;
             WaveScale = Ok(WaveScale, d.WaveScale);
+            CelestialReflections = System.Math.Clamp(Ok(CelestialReflections, d.CelestialReflections), 0, 2);
+            SkyReflections = System.Math.Clamp(Ok(SkyReflections, d.SkyReflections), 0, 2);
+            NightVisibility = System.Math.Clamp(Ok(NightVisibility, d.NightVisibility), 0, 2);
             return this;
         }
     }

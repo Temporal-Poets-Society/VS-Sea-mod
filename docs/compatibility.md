@@ -1,6 +1,10 @@
 # Compatibility: vanilla, Earth and other world-generation mods
 
 Status: analysis as of 0.3.6 (16 October 2026).
+Celestial update, 17 October (0.3.8-pre.1): vanilla sun/moon/stars require no optional mod. The exact installed
+AstraTerra 0.15.0 DLL was inspected and its optional sky adapter exercised offline. Wmap 0.4.1's optional distant
+lighting patch compiles on the GPU; reflections fade before its near edge. **Graphical-client combinations remain
+unverified**. See [source audit, limits and comparison matrix](sky-water.md) and [verification record](verification-celestial.md).
 - **Vanilla:** verified by `tools/run_selftest.sh` (a vanilla world, seed 4242, no Earth, no Cylinder World).
 - **Terra Prety:** read from its mod page and one source file in its public repository (`TerraPrety/src/Patch.cs`, which
   may not match the 7.11 release). It has not been run with Sea.

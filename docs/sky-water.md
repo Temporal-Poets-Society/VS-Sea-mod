@@ -1,0 +1,170 @@
+# Celestial water and night visibility — 0.3.8-pre.3
+
+pre.3: sun/moon glints were invisible in pre.1/pre.2 (added RGB without alpha in a premultiplied OIT pass); they now
+mix toward the light and raise alpha like vanilla's highlight. 0.3.8-pre.1 crashed on its first in-game frame (null camera matrix); pre.2 fixes it. See [verification](verification-celestial.md).
+
+Implemented 17 October 2026. **Pre-release: no graphical in-game comparison has been run.** Shader compilation,
+GPU equation/resource tests, adapter checks and a disposable vanilla server self-test are separate evidence below.
+Comfortable navigation, visual quality, actual ship interiors and the Wmap seam still require the comparison.
+
+## Inspection and sources
+
+Primary evidence was the locally installed Vintage Story **1.22.7** shaders and decompiled assemblies, the exact
+installed **AstraTerra-0.15.0.zip**, Sea production source and Wmap 0.4.1 source. No astronomy/geography/ship assembly
+is a new build or manifest dependency. Inspection outputs and test logs are in `obj/sky-inspection/` (not packaged).
+
+| Mechanism | Verified source behavior | Implementation choice |
+|---|---|---|
+| Vanilla water (`chunkliquid.fsh`, `ChunkRenderer.RenderOIT`) | One procedural sun highlight; `sunPosRel` is the sun, not the moon. `SunSpecularIntensity` comes from a screen occlusion query in `SystemRenderSunMoon.OnRenderFrame3DPost` | Retain the original highlight behind `CelestialReflections = 0`; otherwise replace it, with no second sun highlight. Use source directions and local sunlight/shadow exposure, without the screen query |
+| Water normals (`chunkliquid.vsh`, Sea `WaterShader`) | Sea previously displaced vertices but left flat packed normals; vanilla's highlight invented unrelated noise normals | Analytic gradients of the same uploaded Sea trains, divided by the same oceanity/weak-wave factor, interpolated between vertices |
+| Vanilla stars (`SystemRenderNightSky`, `nightsky.vsh/fsh`) | A complete six-face star cubemap rotated by a model matrix. It exists independently of the view frustum. `ClientPlatformWindows.Load3DTextureCube` uploads only level 0 with linear filters | Copy all faces to a private, at-most-512px cube and generate mipmaps; sample with the inverse source rotation. No modification to the sky renderer's texture |
+| Engine `sky`/`glow` textures (`SystemRenderSkyColor`, `skycolor.fsh`) | Colour lookup images, **not captures of rendered sky objects**. They contain neither the rendered moon nor AstraTerra stars | No claim that sampling these captures custom objects. Reflections use source sky data instead of screen pixels |
+| Vanilla moon (`ClientGameCalendar.Update`, `SystemRenderSunMoon`, `celestialobject.fsh`) | Position from the calendar; displayed phase shading uses sun/moon directions. Calendar moon ambient brightness has its own phase table | Vanilla trail uses the source moon direction and illuminated fraction from the displayed sun/moon separation |
+| AstraTerra stars (`SkyStarSunMoonRenderer`) | `DrawableStars` contains the projected sky, filtered by horizon/brightness, not camera frustum. Meshes add a residual sidereal rotation below the 0.05-degree projection threshold | A smooth 1024×512 atlas of these stars, refreshed only when source cache inputs change and at most four times a second. Grayscale brightness, not an exact rendering of each sprite; cache/residual/throttle error is below the reflection blur during ordinary time progression |
+| AstraTerra moon (`MoonDiscRenderer.Draw`, `LocalMoonTime`, `VanillaMoonPhase`, `MoonDiscMeshBuilder`) | With `MoonArt` pixel/photo, position uses `TotalDays + ObserverLongitude / 360`; terminator uses local `ExactAt`. With vanilla art the vanilla moon remains | Reflect the same local moon and phase when replaced. Check actual renderer replacement flags each frame; no forced change to AstraTerra settings |
+| AstraTerra solar/extra light (`LongitudeAwareSunController`, `NearBodyLightPatchHost`) | Solar delegate can change longitude/tilt. Near-body lighting adjusts calendar light for planetshine/eclipses | Read the resulting calendar sun; never add a separate AstraTerra light source |
+| Night ambient (`AmbientManager.UpdateDaylight/UpdateAmbient`, `fogandlight.vsh`) | Vanilla already combines sun/moon light, dims scene brightness at night, and multiplies ambient by each surface's propagated sunlight. Block and point lights are separate | A client presentation floor on **ambient sunlight**, not gamma, exposure, `MINBRIGHT`, block lighting or server light levels |
+| Weather | Blended cloud/fog modifiers and actual `WeatherSystemClient.GetPrecipitation`, including the rain-cloud overlay | Attenuate added effects using these inputs. Sea wind storms alone do not imply overcast: precipitation is still vanilla weather |
+| Wmap (`FarTerrain.LoadShader`, `farterrain.fsh`) | Separate opaque distant surface; no celestial specular sampler; starts at 0.75× view distance | New near-water effects fade from 0.50–0.74× view distance. Optional shader adapter applies the same ambient floor to Wmap land/water; no Wmap source edit or hard dependency |
+
+The installed `wmap_0.4.1.zip` shader was also inspected: unlike the current Wmap working tree, it lacks the
+nighttime haze limit. Sea's optional adapter supplies that limit when `NightVisibility > 0`, without changing
+Wmap source or its package. Setting that control to 0 restores the installed shader's original haze behavior. Wmap 0.4.2 has its own night
+haze limit; with it Sea adds only the ambient floor.
+
+Installed AstraTerra package SHA-256:
+`2757eb941f602f69fa192c6dcbfe4ac3a6e978c31a227237bffa66e1ebcc03ec`.
+The inspected installed config uses `StarfieldMode: astraterra`, `MoonArt: vanilla`, `LongitudeAwareSun: true`,
+`NearBodyLighting: true`, `GeneratedWorldTilt: true`. Comparison profiles copy that config into their own directory.
+
+## Behavior and scope
+
+Sun glitter and moon trails follow the reflected source direction, with continuous wave slope movement, a wider
+lobe as seas grow, horizon fade, weather attenuation and angle-dependent Fresnel weighting. Sheltered water scales
+both slope and roughness. Stars are faint, spatially filtered and contain no frame-random seeds. The night sky
+also contributes a very faint blue background. This is a low-frequency approximation, not a textured moon-disc
+reflection or a capture of clouds, planets, Milky Way, meteors or constellation overlays.
+
+The added shader writes RGB only, before the existing fog application. Water alpha, underwater effects, depth pass,
+foam and dry-hull discard remain owned by their existing paths. Added reflections require upward, sky-exposed
+water and a camera above water. The eye ray comes from the inverse camera matrix, including third-person offsets.
+Directional sun shadows are retained; moon and star occlusion use the water's existing skylight exposure flag,
+not a new terrain ray trace. Weather attenuation is a local average, not exact occlusion by each visible cloud.
+
+Night visibility extends Sea's water-only responsibility by one small client environment hook. At default strength,
+the clear, fully dark ambient target is 0.075 for a moonless sky and up to 0.225 with a high full moon (blue channel;
+red ×0.78, green ×0.88). Twilight fades it out smoothly. These are **deliberate gameplay values**, brighter than
+physical starlight. They aim to make shores and decks readable while leaving lanterns useful for colour, detail and
+enclosed spaces. Their gameplay adequacy has not been assessed in game.
+
+The floor takes a maximum with existing lighting. For AstraTerra's pixel/photo moon only, a known vanilla calendar
+moon contribution can be scaled down when that moon disagrees with the displayed local moon. This scaling is
+limited to the unmodified sun/moon calendar maximum; stronger extra light and eclipse changes are preserved.
+Calendar fields, exposure/gamma and light propagation are unchanged. Every rendered surface still attenuates sky
+light by its sunlight channel. A sealed block room/cave with no sunlight receives essentially none of this floor;
+openings retain ordinary light spill. The floor/correction are disabled underwater and outside dimension 0.
+Moving ships still supply their own interior lighting: Hansa/Magelan's existing interior light overrides are outside
+Sea's authority and require the ship comparison. No new enclosure, room, save or ship API is introduced.
+
+If AstraTerra's near-body catalogue hides the vanilla moon, Sea suppresses the vanilla moon trail. Reflections of
+arbitrary near-body planets/replacement satellites are outside this implementation. If optional adapter members
+change or a texture fails, Sea logs the failure and suppresses unsupported star/moon trails. A water compile failure
+first retries without celestial effects, then retains the existing no-dry-cut/vanilla-water fallbacks. Wmap's optional
+floor has its own compile fallback. None of these fallbacks establishes visual compatibility with other shader mods.
+
+## Configuration
+
+Server `ModConfig/sea.json`, sent to clients (matching Sea version required). Existing files gain defaults on load.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `CelestialReflections` | 1 | Sun/moon highlight strength. 0 restores vanilla's highlight |
+| `SkyReflections` | 1 | Faint stars and night-sky background. 0 disables them |
+| `NightVisibility` | 1 | Outdoor ambient floor/local-moon correction. 0 keeps existing ambient lighting |
+
+Values are limited to 0–2; invalid/negative values return to defaults. All three at 0 disable the added appearance.
+Zero values are explicitly serialized. Restart the server/client after config edits; no new live config command.
+`.sea` reports shader activation, sky source/cube readiness, custom star count, clear-sky factor, sun/moon altitudes,
+illuminated fraction, ambient target and total days. A target is not proof of visible brightness or an active shader.
+
+## Performance
+
+No new sky render passes or per-pixel wave loop. Wave gradients add at most 24 cosines per water vertex. Water
+pixels add two smooth lobes and up to two filtered sky samples. Sky sampling uses texture units 10 and 11.
+The private vanilla cube uses at most 8 MiB with mipmaps; the custom atlas about 1.33 MiB on the GPU plus a 2 MiB
+CPU buffer. Initial cube filtering copies six faces once; source texture replacement rebuilds the copy.
+The AstraTerra atlas rebuilds at most 4 Hz, ordinarily on its projection-cache cadence. A synthetic 6000-star CPU
+splat measured 4.58 ms in a Debug probe here; it excludes texture upload, mip generation, source enumeration and
+game frame cost. No in-game FPS/frame-time impact has been measured. Weather sampling is limited to 4 Hz.
+
+## Verification performed
+
+| Category | Result and practical limit |
+|---|---|
+| Build | Debug build passed with zero warnings/errors; Release/package result recorded in `verification-celestial.md` |
+| Automated offline | Existing suite plus night ordering, weather attenuation, disable, local-moon correction, source anchors and config serialization. Final result recorded in `verification-celestial.md` |
+| Exact optional adapter | `tests/SkyIntegrationCheck` initializes the actual adapter against the DLL extracted from the installed ZIP, checks the real star struct, longitude correction and Wmap source anchor; deterministic atlas/seam/subpixel-energy checks pass. Separate process checks absence of AstraTerra. No client rendering exercised |
+| GPU | AMD Radeon RX 6600, OpenGL 3.3, driver 26.8.1. Water/particle shaders and new celestial variants compile/link at low/high settings, dry cut enabled/disabled; Wmap shader adapter also compiles/links. GPU lobe alignment/broadening/horizon and cube-copy/mipmap/state checks pass. Existing six dry-hull pixel comparisons pass |
+| Server | Existing self-test passed in a newly created vanilla-only directory, `testserver/celestial-20261017-210957-8e83a164`. Wind/wave/dry-space regression check only; no rendering |
+| In-game | **Not run.** No claim of visual quality, navigability, cave/interior darkness, no shimmer or Wmap seam continuity yet |
+
+## Reproducible in-game comparison (pending)
+
+Build once, then create isolated data profiles from the Sea directory:
+
+```powershell
+$vanilla = .\tools\New-CelestialTestProfile.ps1
+$vanillaOff = .\tools\New-CelestialTestProfile.ps1 -Baseline
+$astra = .\tools\New-CelestialTestProfile.ps1 -AstraTerra
+$astraOff = .\tools\New-CelestialTestProfile.ps1 -AstraTerra -Baseline
+$mapped = .\tools\New-CelestialTestProfile.ps1 -AstraTerra -Geography -Wmap -Ship
+$mappedOff = .\tools\New-CelestialTestProfile.ps1 -AstraTerra -Geography -Wmap -Ship -Baseline
+# Launch exactly one profile at a time:
+& "$env:APPDATA\Vintagestory\Vintagestory.exe" --dataPath $vanilla
+```
+
+The script copies packages into new directories; it never installs into the regular Mods directory or copies player
+saves. It requires the exact named installed packages for each selected option and refuses missing ones. Seed is
+4242; world size 8192×8192×256. Start a creative world only in the selected data directory. Establish the scene once,
+quit fully, and copy that **disposable** closed world's save to an effects-off sibling profile of the same geography
+if exact geometry is needed. Do not copy an open SQLite save or use a player world. Fully quit between package or
+profile changes. Keep identical graphics, gamma, view distance and camera coordinates for each pair.
+
+Use an open-sea location with a shoreline, terrain markers at 16/32/64 blocks, a ship when included, a closed
+stone room and a covered cave/tunnel with no skylight. Place one lantern/torch outside and one inside; compare lit
+and unlit versions. Also test underwater and a dry ship hold below the waterline. Record coordinates, dimensions,
+total days and `.sea` output; capture fixed-camera pairs and a slow pan/30-second stationary clip.
+
+Time/weather controls verified from the installed command source:
+
+- `/time set day`, `/time set sunset`, `/time set midnight`; `/time stop` holds the test moment. To seek another
+  lunar phase, `/time add 1 days` at the same hour and inspect `.sea`. Record the resulting total days, rather than
+  assuming a phase from time of day. For moonlit night require fraction ≥0.8 and moon altitude ≥20°; for moonless
+  require fraction ≤0.05 or moon below the horizon. Include the horizon crossing and both twilight directions.
+- `/weather acp off`, `/weather seti clearsky`, `/weather setprecip -1` for clear conditions; check the visible sky
+  and `.sea` clear factor after modifiers settle. `/weather seti overcast`, `/weather setprecip 0` for overcast;
+  `/weather setprecip 1` for heavy precipitation. `/weather lp` lists installed pattern codes. Restore with
+  `/weather acp on` and `/weather setprecipa` in test worlds if continuing normal play.
+- `/sea setwind E 0 0 built` for calm water; `/sea setwind E 1 0 built` for rough water. Hold wind fixed between
+  on/off pairs. Sea wind is independent of rain/clouds; test both clear rough seas and cloudy calm water.
+- Repeat AstraTerra with the copied installed `MoonArt: vanilla`, then change **only the disposable profile's**
+  `astraterra.json` to `MoonArt: pixel` (or `photo`), fully restart, and repeat. Test a nonzero world longitude in
+  the geography profile, plus a second longitude; record positions/time because the sky is intentionally local.
+
+For every sky state in the table, test calm and rough water, the sun/moon on screen and above/behind the camera
+while the reflecting water stays visible, and repeat a slow pan across the horizon. Brightness/trails should not
+switch merely because a celestial body leaves the screen. At low view distance, face the same direction from shore
+and ship and scan the 0.50–0.75× view-distance handoff with Wmap, checking brightness as well as the disappearing trail.
+
+| Sky state | Open sea / shore | Ship deck / dry hold | Closed room / cave / underwater | Wmap boundary |
+|---|---|---|---|---|
+| Day | pending | pending | pending | pending |
+| Sunrise/sunset twilight | pending | pending | pending | pending |
+| Clear moonlit night | pending | pending | pending | pending |
+| Clear moonless night | pending | pending | pending | pending |
+| Overcast / heavy precipitation night | pending | pending | pending | pending |
+
+Run the table for vanilla and AstraTerra 0.15.0 (installed vanilla moon and pixel/photo moon). Judge gameplay
+separately: can the player navigate, identify the 16–64-block shoreline/ship markers, and work on deck without
+losing the lantern's advantage? Overcast/storm must be noticeably darker. Reject/tune defaults if those comparisons
+fail; automated/GPU tests do not settle them.

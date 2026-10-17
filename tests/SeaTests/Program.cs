@@ -305,6 +305,27 @@ namespace SeaTests
 
             Waves();
 
+            Console.WriteLine("night sky presentation");
+            {
+                float full = NightSkyMath.Visibility(-0.7f, 0.7f, 1, 1, 1);
+                float dark = NightSkyMath.Visibility(-0.7f, 0.7f, 0, 1, 1);
+                float low = NightSkyMath.Visibility(-0.7f, -0.1f, 1, 1, 1);
+                float storm = NightSkyMath.ClearSky(1, 0.01f, 1);
+                Check(full > dark * 2 && dark > 0 && low == dark, "moonlit > moonless > black; moon below horizon contributes nothing");
+                Check(storm < 0.02f && NightSkyMath.ClearSky(0, 0.001f, 0) == 1, "overcast, rain and fog attenuate clear sky");
+                Check(NightSkyMath.Visibility(0.2f, 1, 1, 1, 1) == 0 && NightSkyMath.Visibility(-1, 1, 1, 1, 0) == 0, "daytime and disable add no outdoor floor");
+                Check(NightSkyMath.MoonAmbientScale(0.02f, 0.33f, 0.33f, -0.2f, 1) < 0.1f
+                    && NightSkyMath.MoonAmbientScale(0.02f, 0.33f, 0.7f, -0.2f, 1) == 1
+                    && NightSkyMath.MoonAmbientScale(1, 0.2f, 1, -0.2f, 1) == 1,
+                    "local moon removes a false vanilla ambient moon; stronger external lighting and daylight are preserved");
+                string vf = File.ReadAllText(Path.Combine(Environment.GetEnvironmentVariable("APPDATA"), "Vintagestory/assets/game/shaders/chunkliquid.vsh"));
+                string ff = File.ReadAllText(Path.Combine(Environment.GetEnvironmentVariable("APPDATA"), "Vintagestory/assets/game/shaders/chunkliquid.fsh"));
+                string cv = CelestialShader.Vertex(WaterShader.Inject(vf)), cf = CelestialShader.Fragment(ff);
+                Check(cv != null && cf != null && CelestialShader.Vertex(cv) == null && CelestialShader.Fragment(cf) == null, "celestial anchors apply once to installed water shader");
+                Check(cf.Contains("if (seaEffects.x <= 0.0)") && cf.Contains("cameraUnderwater < 0.01") && cf.Contains("skyExposed > 0") && cf.Contains("c.a = max(c.a, max(sun, moon))") && cf.Contains("texColor = seaGlints(") && !cf.Contains("texColor.a += added"),
+                    "vanilla highlight retained behind disable; water-only sky gates; sun/moon glints raise alpha (premultiplied OIT), faint sky light doesn't");
+            }
+
             Console.WriteLine("water shader");
             string shaders = Path.Combine(Environment.GetEnvironmentVariable("APPDATA") ?? "", "Vintagestory", "assets", "game", "shaders");
             foreach (string pass in WaterShader.Passes)
@@ -819,10 +840,10 @@ namespace SeaTests
                 && strong != null && strong.Strength == WindModel.MaxStrength && strong.StartHours == 10,
                 "a fixed wind with NaN or infinite numbers is refused (the direction, the strength, the hours), a too strong one clamped");
 
-            var bad = new SeaConfig { StormSpeed = -350, StormRadius = float.NaN, WaveScale = float.PositiveInfinity, Gusts = -1, SeasonShift = 400, StormFrequency = 0 }.Checked();
+            var bad = new SeaConfig { StormSpeed = -350, StormRadius = float.NaN, WaveScale = float.PositiveInfinity, Gusts = -1, SeasonShift = 400, StormFrequency = 0, CelestialReflections = 8, SkyReflections = float.NaN, NightVisibility = -1 }.Checked();
             var d = new SeaConfig();
             Check(bad.StormSpeed == d.StormSpeed && bad.StormRadius == d.StormRadius && bad.WaveScale == d.WaveScale && bad.Gusts == d.Gusts
-                && bad.SeasonShift == 45 && bad.StormFrequency == 0,
+                && bad.SeasonShift == 45 && bad.StormFrequency == 0 && bad.CelestialReflections == 2 && bad.SkyReflections == 1 && bad.NightVisibility == 1,
                 "a config's negative, NaN or infinite numbers go back to the defaults (0 stays 0: no storms)");
 
             // the server's settings reach clients as they are, zeros included (protobuf leaves zeros out, and the
@@ -831,12 +852,12 @@ namespace SeaTests
                 var sent = new SeaParamsPacket
                 {
                     Key = 7, Circumference = 0, DaysPerYear = 108, HoursPerDay = 24,
-                    Config = new SeaConfig { WindModel = "Steady", PrevailingStrength = 0, Variability = 0, Gusts = 0, StormFrequency = 0, StormRadius = 0, StormSpeed = 0, SeasonShift = 0, WaveScale = 0 }
+                    Config = new SeaConfig { WindModel = "Steady", PrevailingStrength = 0, Variability = 0, Gusts = 0, StormFrequency = 0, StormRadius = 0, StormSpeed = 0, SeasonShift = 0, WaveScale = 0, CelestialReflections = 0, SkyReflections = 0, NightVisibility = 0 }
                 };
                 // (the game's own serializer, as its network channels use it)
                 var got = Vintagestory.API.Util.SerializerUtil.Deserialize<SeaParamsPacket>(Vintagestory.API.Util.SerializerUtil.Serialize(sent)).Config;
                 Check(got.WindModel == "Steady" && got.PrevailingStrength == 0 && got.Variability == 0 && got.Gusts == 0 && got.StormFrequency == 0
-                    && got.StormRadius == 0 && got.StormSpeed == 0 && got.SeasonShift == 0 && got.WaveScale == 0,
+                    && got.StormRadius == 0 && got.StormSpeed == 0 && got.SeasonShift == 0 && got.WaveScale == 0 && got.CelestialReflections == 0 && got.SkyReflections == 0 && got.NightVisibility == 0,
                     $"a config of zeros arrives as zeros (gusts {got.Gusts}, storms {got.StormFrequency}, wave scale {got.WaveScale})");
             }
 

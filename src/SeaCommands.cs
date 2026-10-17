@@ -94,6 +94,7 @@ namespace Sea
             var lw = Hooks.LocalWind;
             sb.Append($"\nRain, snow and clouds: {(lw != null ? $"blowing toward the {Compass.Name(Compass.Bearing(lw[0], lw[1]))}" : "vanilla (east)")}; rain streaks {(Hooks.RainStreaksInjected ? "lean along the drops' paths" : "vanilla (always toward east)")}.");
             sb.Append($"\nPatches in: {string.Join(", ", Hooks.Active)}.");
+            sb.Append("\n" + sys.CelestialStatus);
             return sb.ToString();
         }
 

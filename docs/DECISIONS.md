@@ -51,3 +51,12 @@ Status values: **Active** (implemented and current), **Superseded**, **Proposal*
 | SEA-P03 | Run-time check with Terra Prety + Watersheds (and other generators) | [compatibility.md](compatibility.md), "What to verify" |
 | SEA-P04 | Optional `WaterClipBox` field for the waterline's height above the hull's origin, making SEA-D17 exact for any origin | Only if a ship mod's origin is far from its waterline |
 | SEA-P05 | Coexistence with other water-shader mods: more tolerant anchors, or an explicit include file they can keep | Only once a concrete mod is reported to conflict |
+
+## Celestial presentation — 17 October 2026
+
+| ID | Status | Decision and reason | Evidence / remaining work |
+|---|---|---|---|
+| SEA-D26 | Active in 0.3.8-pre.1 | Source-based water reflections replace the vanilla sun highlight when enabled. Wave gradients shape trails; the full vanilla star cube and optional AstraTerra 0.15.0 projected stars avoid camera visibility queries. No astronomy/geography/ship dependency | [Audit and boundaries](sky-water.md). GPU compilation, equations and resource checks pass; in-game appearance pending |
+| SEA-D27 | Active in 0.3.8-pre.1 | Small client environment extension: weather/phase/altitude-aware ambient sunlight floor for playable nights; propagated skylight still gates surfaces. No gamma, exposure, block-light or server changes. Correct only a detected stale vanilla moon contribution when AstraTerra displays a local replacement; preserve stronger calendar lighting | User's explicit clear-night navigation target. Defaults and cave/ship/interior behavior await graphical comparison; `NightVisibility = 0` disables both floor and correction |
+| SEA-D28 | Active in 0.3.8-pre.1 | Fade added reflections before Wmap's 0.75-view-distance handoff and optionally apply the same ambient floor to its shader. Shader failure first removes the new effect before existing dry-hull fallbacks | Wmap source adapter and GPU link checked; actual seam continuity pending |
+| SEA-D29 | Active in 0.3.8-pre.1 | Release packaging must preserve older snapshots and refuse overwriting an existing ZIP; comparisons use newly created data directories | User's explicit preservation constraint. `New-CelestialTestProfile.ps1` never deletes a package/save |

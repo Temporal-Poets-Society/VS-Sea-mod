@@ -39,6 +39,8 @@ namespace Sea
         IServerNetworkChannel serverChannel;
         SeaParamsPacket sentParams;
         WaterRenderer waterRenderer;
+        CelestialRenderer celestialRenderer;
+        public string CelestialStatus => celestialRenderer?.Status ?? "Celestial presentation unavailable.";
 
         public SeaConfig Config = new();
         /// <summary>The wind model; null until the world is ready (server) or the server's parameters arrived (client).</summary>
@@ -110,6 +112,11 @@ namespace Sea
                 Hooks.LocalWind = null;
             }
             if (waterRenderer != null) capi?.Event.UnregisterRenderer(waterRenderer, EnumRenderStage.Opaque);
+            if (celestialRenderer != null)
+            {
+                capi.Event.UnregisterRenderer(celestialRenderer, EnumRenderStage.Opaque);
+                celestialRenderer.Dispose();
+            }
             if (frameStart != null) capi?.Event.UnregisterRenderer(frameStart, EnumRenderStage.Before);
             Hooks.Remove();
         }
@@ -508,6 +515,8 @@ namespace Sea
             api.Event.RegisterRenderer(frameStart, EnumRenderStage.Before, "sea-waves");
             waterRenderer = new WaterRenderer(api, this, waterSources);
             api.Event.RegisterRenderer(waterRenderer, EnumRenderStage.Opaque, "sea-water");
+            celestialRenderer = new CelestialRenderer(api, this);
+            api.Event.RegisterRenderer(celestialRenderer, EnumRenderStage.Opaque, "sea-celestial");
             api.Event.RegisterGameTickListener(_ => UpdateLocalWind(), 250);
             SeaCommands.RegisterClient(api, this);
 

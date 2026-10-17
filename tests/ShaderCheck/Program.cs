@@ -73,18 +73,156 @@ namespace ShaderCheck
                     }
                     int fallback = Build(pass + ": with Sea's code but no dry-hull cut (the fallback)", WaterShader.Inject(v, out _, false), f, defs);
                     if (fallback != 0) GL.DeleteProgram(fallback);
+                    if (pass == "chunkliquid")
+                    {
+                        foreach (bool dry in new[] { true, false })
+                        {
+                            string cv = CelestialShader.Vertex(WaterShader.Inject(v, out _, dry));
+                            string cf = CelestialShader.Fragment(dry ? WaterShader.InjectFragment(f) : f);
+                            int cp = Build("celestial water, dry cut " + dry, cv, cf, defs);
+                            if (cp != 0)
+                            {
+                                foreach (string u in new[] { "seaSun", "seaMoon", "seaEffects", "seaCustomStars", "seaVanillaStars", "seaStarMatrix", "seaWeather", "seaEye" })
+                                    Check(GL.GetUniformLocation(cp, u) >= 0, "celestial uniform live: " + u);
+                                GL.DeleteProgram(cp);
+                            }
+                        }
+                    }
                 }
                 string pv = Load(shaders, RainShader.Pass + ".vsh"), pf = Load(shaders, RainShader.Pass + ".fsh");
                 Build(RainShader.Pass + ": vanilla (the check itself)", pv, pf, defs);
                 int rain = Build(RainShader.Pass + ": with Sea's rain streaks", RainShader.Inject(pv), pf, defs);
                 if (rain != 0) GL.DeleteProgram(rain);
+                string wm = Path.GetFullPath("../Wmap/assets/wmap");
+                if (Directory.Exists(wm))
+                {
+                    foreach (string f in Directory.GetFiles(Path.Combine(wm, "shaderincludes"))) includes[Path.GetFileName(f)] = File.ReadAllText(f);
+                    int wp = Build("Wmap distant terrain with Sea night floor", Load(Path.Combine(wm, "shaders"), "farterrain.vsh"), CelestialShader.FarFragment(Load(Path.Combine(wm, "shaders"), "farterrain.fsh")), defs);
+                    if (wp != 0) GL.DeleteProgram(wp);
+                    const string installed = "obj/sky-inspection/installed-farterrain.fsh";
+                    if (File.Exists(installed))
+                    {
+                        includes["wmapfartiles.ash"] = File.ReadAllText("obj/sky-inspection/installed-wmapfartiles.ash");
+                        int ip = Build("installed Wmap 0.4.1 with Sea night floor and haze correction",
+                            Includes(File.ReadAllText("obj/sky-inspection/installed-farterrain.vsh"), new HashSet<string>()),
+                            CelestialShader.FarFragment(Includes(File.ReadAllText(installed), new HashSet<string>())), defs);
+                        if (ip != 0) GL.DeleteProgram(ip);
+                    }
+                }
             }
 
             Console.WriteLine("the dry-hull cut, run on the GPU");
             DryCutMatches();
+            CelestialLobes();
+            CelestialVisible();
+            StarCubeCopy();
 
             Console.WriteLine(failures == 0 ? "ALL OK" : $"{failures} FAILED");
             return failures == 0 ? 0 : 1;
+        }
+
+        static void StarCubeCopy()
+        {
+            int original = GL.GenTexture(); GL.BindTexture(TextureTarget.TextureCubeMap, original);
+            var data = new byte[16 * 16 * 4]; Array.Fill(data, (byte)128);
+            for (int i = 0; i < 6; i++) GL.TexImage2D((TextureTarget)((int)TextureTarget.TextureCubeMapPositiveX + i), 0, PixelInternalFormat.Rgba8, 16, 16, 0, PixelFormat.Rgba, PixelType.UnsignedByte, data);
+            GL.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+            GL.GetInteger(GetPName.ReadFramebufferBinding, out int beforeRead); GL.GetInteger(GetPName.DrawFramebufferBinding, out int beforeDraw);
+            int copy = StarCubemap.Create(original);
+            GL.GetInteger(GetPName.ReadFramebufferBinding, out int afterRead); GL.GetInteger(GetPName.DrawFramebufferBinding, out int afterDraw);
+            GL.GetInteger(GetPName.TextureBindingCubeMap, out int afterCube);
+            GL.GetTexParameter(TextureTarget.TextureCubeMap, GetTextureParameter.TextureMinFilter, out int filter);
+            GL.BindTexture(TextureTarget.TextureCubeMap, copy);
+            GL.GetTexLevelParameter(TextureTarget.TextureCubeMapPositiveX, 2, GetTextureParameter.TextureWidth, out int width);
+            float[] pixels = new float[4 * 4 * 4]; GL.GetTexImage(TextureTarget.TextureCubeMapPositiveX, 2, PixelFormat.Rgba, PixelType.Float, pixels);
+            Check(width == 4 && Math.Abs(pixels[0] - 128f / 255) < 0.01 && afterCube == original && beforeRead == afterRead && beforeDraw == afterDraw && filter == (int)TextureMinFilter.Linear,
+                "GPU: star cube copy preserves pixels, builds mipmaps, restores framebuffer/binding and leaves sky filtering unchanged");
+            GL.BindTexture(TextureTarget.TextureCubeMap, 0); GL.DeleteTexture(copy); GL.DeleteTexture(original);
+        }
+
+        // What reaches the screen: the OIT pass shows rgb * alpha over the scene, so a glint must survive that.
+        static void CelestialVisible()
+        {
+            const string v = "#version 330 core\nvoid main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0,1); }";
+            string f = "#version 330 core\n" + CelestialShader.Declarations + @"
+uniform vec3 testEye;
+out vec4 outColor;
+void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); vec4 c=seaGlints(vec4(0.02,0.03,0.04,0.4), r, 0.6, 1.0); outColor=vec4(c.rgb*c.a, c.a); }";
+            int vs = Compile(ShaderType.VertexShader, v, out string vl), fs = Compile(ShaderType.FragmentShader, f, out string fl);
+            if (vs == 0 || fs == 0) { Check(false, "celestial visibility program compiles", vl + fl); return; }
+            int p = GL.CreateProgram(); GL.AttachShader(p, vs); GL.AttachShader(p, fs); GL.LinkProgram(p);
+            GL.GetProgram(p, GetProgramParameterName.LinkStatus, out int linked);
+            if (linked != 1) { Check(false, "celestial visibility program links", GL.GetProgramInfoLog(p)); return; }
+            int tex = GL.GenTexture(), fb = GL.GenFramebuffer(), vao = GL.GenVertexArray();
+            GL.BindTexture(TextureTarget.Texture2D, tex);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba32f, 1, 1, 0, PixelFormat.Rgba, PixelType.Float, IntPtr.Zero);
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, fb);
+            GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, tex, 0);
+            GL.BindVertexArray(vao); GL.Viewport(0, 0, 1, 1); GL.UseProgram(p);
+            GL.Uniform3(GL.GetUniformLocation(p, "testEye"), 0f, -0.5f, 0.8660254f);
+            GL.Uniform3(GL.GetUniformLocation(p, "seaSunColor"), 1f, 0.95f, 0.85f);
+            GL.Uniform4(GL.GetUniformLocation(p, "seaWeather"), 1f, 1f, 0f, 0f);
+            float[] Read(float effects, float clear, vec4 sun, vec4 moon)
+            {
+                GL.Uniform2(GL.GetUniformLocation(p, "seaEffects"), effects, effects);
+                GL.Uniform4(GL.GetUniformLocation(p, "seaWeather"), clear, 1f, 0f, 0f);
+                GL.Uniform4(GL.GetUniformLocation(p, "seaSun"), sun.x, sun.y, sun.z, sun.w);
+                GL.Uniform4(GL.GetUniformLocation(p, "seaMoon"), moon.x, moon.y, moon.z, moon.w);
+                GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
+                float[] result = new float[4]; GL.ReadPixels(0, 0, 1, 1, PixelFormat.Rgba, PixelType.Float, result); return result;
+            }
+            var down = new vec4(0, -1, 0, 0);
+            // the renderer's strengths: sun 1.6; moon 0.75 × illuminated fraction × night
+            var fullMoon = Read(1, 1, down, new vec4(0, 0.5f, 0.8660254f, 0.75f));
+            var crescent = Read(1, 1, down, new vec4(0, 0.5f, 0.8660254f, 0.75f * 0.15f));
+            var overcast = Read(1, 0.08f, down, new vec4(0, 0.5f, 0.8660254f, 0.75f));
+            var sun = Read(1, 1, new vec4(0, 0.5f, 0.8660254f, 1.6f), down);
+            var off = Read(0, 1, new vec4(0, 0.5f, 0.8660254f, 1.6f), new vec4(0, 0.5f, 0.8660254f, 0.75f));
+            float baseB = 0.04f * 0.4f;
+            Check(fullMoon[2] > 0.15f && crescent[2] > baseB * 2 && crescent[2] < fullMoon[2] * 0.5f && overcast[2] < fullMoon[2] * 0.2f
+                && sun[0] > 0.8f && Math.Abs(off[2] - baseB) < 1e-4f,
+                "GPU: glints are visible after OIT's alpha premultiply (water 0.04 → full moon " + fullMoon[2].ToString("0.00") + ", crescent " + crescent[2].ToString("0.000")
+                + ", overcast " + overcast[2].ToString("0.000") + ", sun " + sun[0].ToString("0.00") + "); off leaves the water unchanged");
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0); GL.UseProgram(0);
+            GL.DeleteVertexArray(vao); GL.DeleteFramebuffer(fb); GL.DeleteTexture(tex); GL.DeleteProgram(p); GL.DeleteShader(vs); GL.DeleteShader(fs);
+        }
+
+        readonly struct vec4 { public readonly float x, y, z, w; public vec4(float x, float y, float z, float w) { this.x = x; this.y = y; this.z = z; this.w = w; } }
+
+        static void CelestialLobes()
+        {
+            const string v = "#version 330 core\nvoid main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0,1); }";
+            string f = "#version 330 core\n" + CelestialShader.Declarations + @"
+uniform vec3 testEye;
+uniform vec3 testBody;
+out vec4 outColor;
+void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); outColor=vec4(seaLobe(r,testBody,0.002),seaLobe(r,testBody,0.02),0,1); }";
+            int vs = Compile(ShaderType.VertexShader, v, out string vl), fs = Compile(ShaderType.FragmentShader, f, out string fl);
+            if (vs == 0 || fs == 0) { Check(false, "celestial equation program compiles", vl + fl); return; }
+            int p = GL.CreateProgram(); GL.AttachShader(p, vs); GL.AttachShader(p, fs); GL.LinkProgram(p);
+            GL.GetProgram(p, GetProgramParameterName.LinkStatus, out int linked);
+            if (linked != 1) { Check(false, "celestial equation program links", GL.GetProgramInfoLog(p)); return; }
+            int tex = GL.GenTexture(), fb = GL.GenFramebuffer(), vao = GL.GenVertexArray();
+            GL.BindTexture(TextureTarget.Texture2D, tex);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba32f, 1, 1, 0, PixelFormat.Rgba, PixelType.Float, IntPtr.Zero);
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, fb);
+            GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, tex, 0);
+            GL.BindVertexArray(vao); GL.Viewport(0, 0, 1, 1); GL.UseProgram(p);
+            GL.Uniform4(GL.GetUniformLocation(p, "seaWeather"), 1f, 1f, 0f, 0f);
+            GL.Uniform3(GL.GetUniformLocation(p, "testEye"), 0f, -0.5f, 0.8660254f);
+            float[] Read(float x, float y, float z)
+            {
+                GL.Uniform3(GL.GetUniformLocation(p, "testBody"), x, y, z);
+                GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
+                float[] result = new float[4]; GL.ReadPixels(0, 0, 1, 1, PixelFormat.Rgba, PixelType.Float, result); return result;
+            }
+            var aligned = Read(0, 0.5f, 0.8660254f);
+            var offset = Read(0.1f, 0.5f, MathF.Sqrt(0.74f));
+            var below = Read(0, -0.5f, 0.8660254f);
+            Check(aligned[0] > 0.99 && aligned[1] > 0.99 && offset[1] > offset[0] && below[0] == 0,
+                "GPU: trail aligns with reflected celestial direction, rough lobe broadens, below-horizon body gives zero");
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0); GL.UseProgram(0);
+            GL.DeleteVertexArray(vao); GL.DeleteFramebuffer(fb); GL.DeleteTexture(tex); GL.DeleteProgram(p); GL.DeleteShader(vs); GL.DeleteShader(fs);
         }
 
         /// <summary>
