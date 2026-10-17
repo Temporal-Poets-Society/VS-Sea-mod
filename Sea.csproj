@@ -47,18 +47,16 @@
   </ItemGroup>
 
   <!-- Release build also produces a ready-to-install zip in .\release, named with the version from modinfo.json
-       (release\sea-0.2.0.zip); older zips there are removed. -->
+       (release\sea-<version>.zip). Never deletes or overwrites a release snapshot. -->
   <PropertyGroup>
     <ModVersion>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\modinfo.json')), '"version"\s*:\s*"([^"]+)"').Groups[1].Value)</ModVersion>
   </PropertyGroup>
   <Target Name="PackageMod" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
     <Error Condition="'$(ModVersion)' == ''" Text="No version found in modinfo.json" />
     <MakeDir Directories="$(MSBuildProjectDirectory)\release" />
-    <ItemGroup>
-      <OldModZips Include="$(MSBuildProjectDirectory)\release\sea.zip;$(MSBuildProjectDirectory)\release\sea-*.zip" />
-    </ItemGroup>
-    <Delete Files="@(OldModZips)" />
-    <ZipDirectory SourceDirectory="$(OutputPath)" DestinationFile="$(MSBuildProjectDirectory)\release\sea-$(ModVersion).zip" Overwrite="true" />
+    <Error Text="Package already exists. Preserve release snapshots: choose a new version or an explicit PackageFile." Condition="'$(PackageFile)' == '' and Exists('$(MSBuildProjectDirectory)\release\sea-$(ModVersion).zip')" />
+    <PropertyGroup><PackageFile Condition="'$(PackageFile)' == ''">$(MSBuildProjectDirectory)\release\sea-$(ModVersion).zip</PackageFile></PropertyGroup>
+    <ZipDirectory SourceDirectory="$(OutputPath)" DestinationFile="$(PackageFile)" Overwrite="false" />
   </Target>
 
 </Project>
