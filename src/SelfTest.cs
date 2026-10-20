@@ -17,10 +17,11 @@ namespace Sea
     }
 
     /// <summary>
-    /// Headless server check (tools/run_selftest.sh): the wind model is built, vanilla's wind lookups and weather
-    /// regions give Sea's wind, a fixed wind takes over and clears, the ring lines up at Cylinder World's seam, the
-    /// waves are ready on the server and the same for everyone who asks, and it's fast enough. Writes SELFTEST lines
-    /// to the server log.
+    /// Headless server check (tools/run_selftest.sh): the wind model is built, Sea leaves vanilla's weather alone,
+    /// without a wind provider the wind is vanilla's and the sea follows the config's steady wind, a provider's wind
+    /// reaches ships, the sea and Wmap (0.4.0), a fixed wind takes over and clears, the waves are ready on the server
+    /// and the same for everyone who asks (seamless on Cylinder World's ring), and it's fast enough. Writes SELFTEST
+    /// lines to the server log.
     /// </summary>
     public class SeaSelfTest : ModSystem
     {
@@ -188,51 +189,41 @@ namespace Sea
         {
             var sys = sapi.ModLoader.GetModSystem<SeaSystem>();
             var m = sys?.Model;
-            Check(m != null, $"wind model built ({sys?.Config.Mode})");
+            Check(m != null, $"wind model built (wind from {sys?.WindProviderName ?? "vanilla"})");
             if (m == null) return;
 
             var spawn = sapi.World.DefaultSpawnPosition;
             double x = spawn.X, z = spawn.Z, h = sys.Hours;
             int sea = sapi.World.SeaLevel;
-            Log($"spawn {x:0},{z:0}: latitude {m.Shape.LatitudeDeg(z):0.0}°, {m.BeltName(z, h)}; wind {m.At(x, z, h)}; waves {m.SeaAt(x, z, h).Height:0.00}");
+            Log($"spawn {x:0},{z:0}: latitude {m.Shape.LatitudeDeg(z):0.0}°; wind {sys.WindAt(x, z)}; waves {m.SeaAt(x, z, h).Height:0.00}");
 
-            // vanilla's lookup (what trees, waves, rain and wind chill read) gives Sea's strength
-            var v = sapi.World.BlockAccessor.GetWindSpeedAt(new Vec3d(x, sea, z));
-            double want = m.At(x, z, sys.Hours).Strength;
-            Check(Math.Abs(v.X - want) < 1e-6, $"GetWindSpeedAt gives Sea's wind ({v.X:0.0000} vs {want:0.0000})");
-            var hi = sapi.World.BlockAccessor.GetWindSpeedAt(new Vec3d(x, sea + 60, z));
-            Check(hi.X >= v.X - 1e-9 && hi.X <= WindModel.MaxStrength + 1e-9, $"stronger higher up, capped ({hi.X:0.000} at +60)");
-
-            // the weather region (wind sound) agrees
-            var ws = sapi.ModLoader.GetModSystem<WeatherSystemServer>();
-            int rs = sapi.World.BlockAccessor.RegionSize;
-            var region = ws?.getOrCreateWeatherSimForRegion((int)(x / rs), (int)(z / rs));
-            if (region != null)
+            // (0.4.0) Sea leaves vanilla's weather alone: the wind lookups, region wind, rain and clouds are Earth's
+            var patched = new[]
             {
-                double rw = region.GetWindSpeed(sea);
-                double rwant = m.At(((int)(x / rs) + 0.5) * rs, ((int)(z / rs) + 0.5) * rs, sys.Hours, false).Strength;
-                Check(Math.Abs(rw - rwant) < 1e-6, $"weather region wind is Sea's ({rw:0.0000} vs {rwant:0.0000})");
-            }
-            else Log("skip weather region (none)");
+                AccessTools.Method(typeof(WeatherSimulationRegion), nameof(WeatherSimulationRegion.GetWindSpeed)),
+                AccessTools.Method(typeof(WeatherSimulationParticles), "asyncParticleSpawn"),
+                AccessTools.Method(AccessTools.TypeByName("Vintagestory.GameContent.CloudRenderer"), "CloudTick"),
+            }.Where(mi => mi != null && Harmony.GetPatchInfo(mi)?.Owners.Contains("sea") == true).Select(mi => mi.Name).ToList();
+            Check(patched.Count == 0 && typeof(SeaSystem).GetMethod("OnGetWindSpeed", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic) == null,
+                $"Sea patches none of vanilla's weather ({(patched.Count == 0 ? "none" : string.Join(", ", patched))})");
+
+            // Earth binds the provider calls by reflection, with BCL types only
+            var setProvider = typeof(SeaSystem).GetMethod("SetWindProvider", new[] { typeof(string), typeof(System.Func<double, double, double, bool, ValueTuple<double, double>>), typeof(System.Func<double, double, double, ValueTuple<double, double>>) });
+            var clearProvider = typeof(SeaSystem).GetMethod("ClearWindProvider", new[] { typeof(string) });
+            Check(setProvider?.ReturnType == typeof(bool) && clearProvider?.ReturnType == typeof(void) && typeof(SeaSystem).GetProperty("WindProviderName")?.PropertyType == typeof(string),
+                "a reflection binding (Earth's) finds SetWindProvider, ClearWindProvider and WindProviderName");
+
+            string earlier = sys.WindProviderName;
+            if (earlier != null) Log($"skip no-provider and provider checks ({earlier} decides the wind here)");
+            else ProviderChecks(sys, m, x, z, sea);
 
             // an admin's fixed wind takes over and clears
             sys.SetOverride(new WindOverride { FromDegrees = 90, Strength = 0.8, StartHours = sys.Hours - 0.01 });
             var fixedW = sys.WindAt(x, z);
-            var fv = sapi.World.BlockAccessor.GetWindSpeedAt(new Vec3d(x, sea, z));
-            Check(Math.Abs(fixedW.Strength - 0.8) < 1e-9 && Math.Abs(fixedW.FromDegrees - 90) < 1e-6 && Math.Abs(fv.X - 0.8) < 1e-9,
-                $"fixed wind from the east at 0.8 ({fixedW}, vanilla sees {fv.X:0.00})");
+            Check(Math.Abs(fixedW.Strength - 0.8) < 1e-9 && Math.Abs(fixedW.FromDegrees - 90) < 1e-6 && m.SeaWind(x, z, sys.Hours).X < -0.79,
+                $"fixed wind from the east at 0.8 ({fixedW}), the sea follows it");
             sys.SetOverride(null);
-            Check(Math.Abs(sys.WindAt(x, z).Strength - m.At(x, z, sys.Hours).Strength) < 1e-9, "cleared fixed wind");
-
-            // the same everywhere around the ring
-            if (m.Shape.Wraps)
-            {
-                double c = m.Shape.Circumference;
-                var a = m.At(x, z, h);
-                var b = m.At(x + c, z, h);
-                Check(Math.Abs(a.X - b.X) < 1e-9 && Math.Abs(a.Z - b.Z) < 1e-9, $"wind repeats around the {c:0}-block ring");
-            }
-            else Log("skip ring (the world doesn't wrap)");
+            Check(m.Override == null && !(earlier == null && sys.Controls(sys.Hours)), "cleared fixed wind");
 
             // the waves: the same trains here as on every client, running on the server's wave clock
             Check(sys.Spectrum != null && sys.Spectrum.Circumference == m.Shape.Circumference, $"wave trains built ({sys.Spectrum?.TrainCount} of them)");
@@ -258,7 +249,7 @@ namespace Sea
                 Check(Math.Abs(p1.HeightAt(x, z) - p1.HeightAt(x + c, z)) < 1e-6, "the waves repeat around the ring: no seam");
             }
 
-            // cost: vanilla asks for wind often (particles, sound, every region every 25 ms)
+            // cost: ships, the waves and Wmap ask for wind often (with a provider, most of it is the provider's)
             var sw = Stopwatch.StartNew();
             int n = 20000;
             double sum = 0;
@@ -270,13 +261,77 @@ namespace Sea
             Check(sw.Elapsed.TotalMilliseconds / 200 < 2, $"sea state takes {sw.Elapsed.TotalMilliseconds * 1000 / 200:0} µs");
 
             // the client-side patches are applied here too (same code): check they went in
-            var spawnRain = AccessTools.Method(typeof(WeatherSimulationParticles), "asyncParticleSpawn");
-            var rainWind = AccessTools.Method(typeof(Hooks), nameof(Hooks.RainWind));
-            Check(PatchProcessor.GetCurrentInstructions(spawnRain).Any(ci => ci.Calls(rainWind)), "rain, snow and hail take Sea's wind direction");
-            Check(Hooks.Active.Count(a => a.StartsWith("clouds")) == 2, $"both cloud renderers drift with Sea's wind ({string.Join(", ", Hooks.Active)})");
-            Check(Hooks.ShaderPatched, "water shader loader patched");
+            Check(Hooks.ShaderPatched, $"water shader loader patched ({string.Join(", ", Hooks.Active)})");
 
             Log(SeaCommands.Report(sys, new Vintagestory.API.Common.Entities.EntityPos(x, sea, z)).Replace("\n", " | "));
+        }
+
+        /// <summary>
+        /// (0.4.0) Without a provider: vanilla's wind, and the sea follows the config's steady wind. With one: its wind
+        /// for ships, the sea and Wmap, an admin's fixed wind still first; answers Sea can't use count as calm.
+        /// </summary>
+        void ProviderChecks(SeaSystem sys, WindModel m, double x, double z, int sea)
+        {
+            double h = sys.Hours;
+            var v = sapi.World.BlockAccessor.GetWindSpeedAt(new Vec3d(x, sea, z));
+            var w = sys.WindAt(x, z);
+            Check(m.Mode == WindMode.Off && !sys.Controls(h) && Math.Abs(w.X - v.X) < 1e-9 && w.Z == 0,
+                $"no provider: vanilla's wind ({w.X:0.000} toward the east, vanilla says {v.X:0.000})");
+            var steady = m.SteadySeaWind;
+            var st = m.SeaAt(x, z, h);
+            var sw0 = m.SeaWind(x, z, h);
+            Check(sw0.X == steady.X && sw0.Z == steady.Z && Math.Abs(st.Height - m.DevelopedHeight(steady.Strength)) < 1e-9
+                && Math.Abs(st.DirX * steady.Strength - steady.X) < 1e-9 && m.At(x, z, h).Strength == 0 && m.Prevailing(x, z, h).Strength == 0,
+                $"no provider: the sea follows the config's steady wind ({steady}, {st.Height:0.00} blocks), Sea's own wind is calm");
+
+            // a provider: a wind turning with x, gusts 10 % stronger, its own prevailing wind
+            System.Func<double, double, double, bool, ValueTuple<double, double>> windAt = (px, pz, ph, gusts) => (0.4 * Math.Cos(px / 1000) * (gusts ? 1.1 : 1), 0.4 * Math.Sin(px / 1000) * (gusts ? 1.1 : 1));
+            System.Func<double, double, double, ValueTuple<double, double>> prevailingAt = (px, pz, ph) => (0.2, -0.1);
+            bool set = sys.SetWindProvider("selftest", windAt, prevailingAt);
+            bool other = sys.SetWindProvider("someone else", windAt, null);
+            bool again = sys.SetWindProvider("selftest", windAt, prevailingAt);
+            Check(set && !other && again && sys.WindProviderName == "selftest" && m.Mode == WindMode.Provider && sys.Controls(sys.Hours),
+                "a wind provider is accepted, another one refused while it holds, the same one again accepted");
+            h = sys.Hours;
+            var want = windAt(x, z, h, true);
+            var calm = windAt(x, z, h, false);
+            w = sys.WindAt(x, z);
+            var steadyNow = m.At(x, z, h, false);
+            var pw = m.Prevailing(x, z, h);
+            var sw = m.SeaWind(x, z, h, false);
+            Check(Math.Abs(w.X - want.Item1) < 1e-12 && Math.Abs(w.Z - want.Item2) < 1e-12 && Math.Abs(steadyNow.X - calm.Item1) < 1e-12
+                && pw.X == 0.2 && pw.Z == -0.1 && Math.Abs(sw.Z - calm.Item2) < 1e-12,
+                $"the provider's wind reaches ships ({w}), the sea (without gusts) and Wmap's prevailing layer ({pw})");
+            var sp = m.SeaAt(x, z, h);
+            Check(Math.Abs(sp.Height - m.DevelopedHeight(0.4)) < 1e-9 && sp.DirX * calm.Item1 + sp.DirZ * calm.Item2 > 0.39,
+                $"the sea builds up with the provider's steady wind ({sp.Height:0.00} blocks toward the {Compass.Name(sp.ToDegrees)})");
+
+            // an admin's fixed wind wins over the provider
+            sys.SetOverride(new WindOverride { FromDegrees = 0, Strength = 1.0, StartHours = sys.Hours - 0.01 });
+            var ow = sys.WindAt(x, z);
+            Check(Math.Abs(ow.Z - 1) < 1e-9 && Math.Abs(m.SeaWind(x, z, sys.Hours, false).Z - 1) < 1e-9, $"a fixed wind wins over the provider ({ow})");
+            sys.SetOverride(null);
+
+            // only the provider itself clears it
+            sys.ClearWindProvider("someone else");
+            bool kept = sys.WindProviderName == "selftest";
+            sys.ClearWindProvider("selftest");
+            Check(kept && sys.WindProviderName == null && m.Provider == null && m.Mode == WindMode.Off, "only the provider itself can clear it");
+
+            // answers Sea can't use: NaN, too strong, throwing; and no prevailing function
+            sys.SetWindProvider("selftest-bad", (px, pz, ph, g) => px < x ? (double.NaN, 0.0) : px < x + 10 ? (3.0, 0.0) : throw new InvalidOperationException("bad"), null);
+            var nan = sys.WindAt(x - 1, z);
+            var strong = sys.WindAt(x + 1, z);
+            var thrown = sys.WindAt(x + 20, z);
+            var noPrevailing = m.Prevailing(x + 1, z, sys.Hours);
+            int refused = sys.WindProvider?.Failures ?? -1;
+            sys.ClearWindProvider("selftest-bad");
+            Check(nan.Strength == 0 && Math.Abs(strong.Strength - WindModel.MaxStrength) < 1e-12 && thrown.Strength == 0 && refused == 2
+                && Math.Abs(noPrevailing.X - WindModel.MaxStrength) < 1e-12,
+                $"a provider's NaN or exception counts as calm ({refused} refused), a too strong wind is capped, no prevailing function means its steady wind");
+            v = sapi.World.BlockAccessor.GetWindSpeedAt(new Vec3d(x, sea, z));
+            w = sys.WindAt(x, z);
+            Check(sys.WindProviderName == null && Math.Abs(w.X - v.X) < 1e-9 && w.Z == 0, "cleared: vanilla's wind again");
         }
     }
 }

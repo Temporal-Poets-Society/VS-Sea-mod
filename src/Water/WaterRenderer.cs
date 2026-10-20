@@ -52,8 +52,8 @@ namespace Sea
             if (ep == null) return;
             var cam = ep.CameraPos;
 
-            // the waves ships ride (SampleWaves), whoever decides the wind: with WindModel "Off" they follow Sea's
-            // steady winds (WindModel.SeaWind). Vanilla's warp only until the first trains are worked out.
+            // the waves ships ride (SampleWaves), whoever decides the wind: without a wind provider they follow the
+            // config's steady wind (WindModel.SeaWind). Vanilla's warp only until the first trains are worked out.
             var place = sys.CameraWaves;
             int wn = WavesInjected && place.Count > 0 ? place.FillUniforms(WaveUniform, cam.X, cam.Z) : 0;
             if (wn == 0 && WavesInjected && place.Spectrum != null && sys.Spectrum != null)

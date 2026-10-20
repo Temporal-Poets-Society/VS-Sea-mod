@@ -10,16 +10,18 @@ using Vintagestory.API.Util;
 namespace Sea
 {
     /// <summary>
-    /// Sea's mod system, on both sides. The server builds the wind model from its config, the world seed and the
-    /// world's shape, and sends clients the same inputs so they compute the same wind. Both sides then answer
-    /// vanilla's wind lookups (trees, waves, rain, wind chill, sound) with Sea's wind strength.
+    /// Sea's mod system, on both sides. The server builds the wind model from its config and the world's shape, and
+    /// sends clients the same inputs so they compute the same sea. (0.4.0) Sea has no weather of its own: the wind
+    /// comes from a provider mod (<see cref="SetWindProvider"/>, Earth), which also drives vanilla's weather; without
+    /// one it's vanilla's wind, and the sea follows the config's steady wind (SEA-D30).
     ///
     /// The waves are the same on every side too: a fixed library of wave trains (<see cref="WaveSpectrum"/>) whose
     /// strengths follow the sea state, run on a clock the server shares (<see cref="WaveClock"/>), so a ship riding
     /// them moves the same for everyone.
     ///
     /// Other mods: <c>api.ModLoader.GetModSystem&lt;SeaSystem&gt;()</c>, then <see cref="WindAt"/>,
-    /// <see cref="SeaAt"/>, <see cref="SampleWaves"/>, and on clients <see cref="AddWaterClipSource"/>.
+    /// <see cref="SeaAt"/>, <see cref="SampleWaves"/>, <see cref="SetWindProvider"/>, and on clients
+    /// <see cref="AddWaterClipSource"/>.
     /// </summary>
     public class SeaSystem : ModSystem
     {
@@ -66,51 +68,13 @@ namespace Sea
             this.api = api;
             api.Network.RegisterChannel(ChannelName).RegisterMessageType<SeaParamsPacket>().RegisterMessageType<SeaClockPacket>();
             Hooks.Apply(Mod.Logger);
-            api.Event.RegisterGameTickListener(_ => WatchLatitudes(), 1000);
-        }
-
-        // ---------------------------------------------------------------- latitudes
-
-        double latitudePrint = double.NaN;
-        WindModel latitudeModel;
-
-        /// <summary>
-        /// (0.3.6) Storms are rolled by latitude. On a client the game's latitudes can arrive after the model was built
-        /// (vanilla swaps the data behind a function it installed earlier; a map mod may swap the function), so once a
-        /// second the latitudes are fingerprinted, and the storms worked out from other ones are forgotten.
-        /// </summary>
-        void WatchLatitudes()
-        {
-            var m = Model;
-            var cal = api.World?.Calendar;
-            if (m == null || cal?.OnGetLatitude == null) return;
-            double print;
-            try { print = LatitudePrint(cal, api.World.BlockAccessor.MapSizeZ); }
-            catch (Exception) { return; }
-            if (m == latitudeModel && print.Equals(latitudePrint)) return;
-            // a new model, or new latitudes (the model may have rolled storms before this first look)
-            m.Storms.Forget();
-            latitudeModel = m;
-            latitudePrint = print;
-        }
-
-        /// <summary>The latitudes at a few places down the map, folded into one number.</summary>
-        static double LatitudePrint(IGameCalendar cal, int mapSizeZ)
-        {
-            double print = 0, size = Math.Max(1024, mapSizeZ);
-            for (int k = 0; k < 9; k++) print = print * 1.6180339887 + cal.OnGetLatitude(size * (k + 0.37) / 9);
-            return print;
         }
 
         public override void Dispose()
         {
             if (api == null) return;
             if (api.Side == EnumAppSide.Server && serverInstance == this) serverInstance = null;
-            if (api.Side == EnumAppSide.Client && clientInstance == this)
-            {
-                clientInstance = null;
-                Hooks.LocalWind = null;
-            }
+            if (api.Side == EnumAppSide.Client && clientInstance == this) clientInstance = null;
             if (waterRenderer != null) capi?.Event.UnregisterRenderer(waterRenderer, EnumRenderStage.Opaque);
             if (celestialRenderer != null)
             {
@@ -123,23 +87,22 @@ namespace Sea
 
         // ---------------------------------------------------------------- API
 
-        /// <summary>Is Sea deciding the wind right now (a wind model is on, or an admin fixed the wind)?</summary>
-        public bool Controls(double hours)
-        {
-            var m = Model;
-            if (m == null) return false;
-            if (m.Mode != WindMode.Off) return true;
-            var ov = m.Override;
-            return ov != null && ov.Covers(hours);
-        }
+        /// <summary>Is Sea's wind (a provider's, or an admin's fixed one) deciding the wind at this time? Otherwise it's vanilla's.</summary>
+        public bool Controls(double hours) => Model?.Decides(hours) ?? provider != null;
 
-        /// <summary>The wind at a place now. Without a model (or with WindModel "Off") it's vanilla's strength, blowing east like vanilla's.</summary>
+        /// <summary>
+        /// The wind at a place now: an admin's fixed wind, else the provider's (gusts included), else vanilla's
+        /// strength, blowing east like vanilla's.
+        /// </summary>
         public Wind WindAt(double x, double z) => WindAt(x, z, Hours);
 
         /// <summary>The wind at a place and game time (vanilla's is only known now).</summary>
         Wind WindAt(double x, double z, double hours)
         {
-            if (Controls(hours)) return Model.At(x, z, hours);
+            var m = Model;
+            if (m != null && m.Decides(hours)) return m.At(x, z, hours);
+            var p = provider;
+            if (p != null) return p.At(x, z, hours, true);
             return new Wind(api.World.BlockAccessor.GetWindSpeedAt(new Vec3d(x, api.World.SeaLevel, z)).X, 0);
         }
 
@@ -149,25 +112,84 @@ namespace Sea
         SeaState SeaAt(double x, double z, double hours)
         {
             var m = Model;
-            // (with WindModel "Off" too: the sea follows Sea's steady winds, the same on every side; WindModel.SeaWind)
+            // (without a provider too: the sea follows the config's steady wind, the same on every side; WindModel.SeaWind)
             if (m != null) return m.SeaAt(x, z, hours);
-            // no model yet: a sea fully built for vanilla's wind strength right away, running east like it
+            // no model yet: a sea fully built for the wind right away
             var w = WindAt(x, z, hours);
-            double hgt = (0.1 + 2.4 * w.Strength * w.Strength) * Config.WaveScale;
-            return new SeaState(hgt, 1, 0, 2.5 + 3.2 * Math.Sqrt(hgt));
+            double s = w.Strength, hgt = (0.1 + 2.4 * s * s) * Config.WaveScale;
+            return new SeaState(hgt, s > 1e-6 ? w.X / s : 1, s > 1e-6 ? w.Z / s : 0, 2.5 + 3.2 * Math.Sqrt(hgt));
         }
+
+        // ---------------------------------------------------------------- wind provider
 
         /// <summary>
-        /// Replace Earth's belts with a map's own prevailing winds (e.g. Earth Map's real monthly winds). Call it on
-        /// both sides with the same source, any time; null goes back to the belts.
+        /// (0.4.0) Let a mod decide the wind (Earth's climate and weather). Call it on each side, the server and every
+        /// client, with the same functions, any time (before or after the world is ready); Sea's wind, sea state, ships
+        /// (<see cref="WindAt"/>) and Wmap then follow it. An admin's fixed wind (/sea setwind) still wins over it.
+        /// <para><paramref name="windAt"/>(x, z, totalHours, gusts) is the wind toward (X, Z) in vanilla wind units
+        /// (+X east, +Z south; the length is the strength, 0..1.5), like <see cref="Wind"/>. gusts = false is the steady
+        /// wind the sea state follows (16 game hours back); true includes the provider's gusts.
+        /// <paramref name="prevailingAt"/>(x, z, totalHours) is the month's prevailing wind (Wmap's prevailing layer),
+        /// or null: windAt without gusts then.</para>
+        /// <para>Both must be pure, thread-safe and the same on every side: the sea state and the waves ships ride are
+        /// worked out from them on each side separately. One provider at a time: true when accepted; false when the
+        /// arguments are missing or another provider (by name) holds it (clear it first).</para>
+        /// Earth binds this by reflection, so the signature uses BCL types only.
         /// </summary>
-        public void SetPrevailingWinds(IPrevailingWinds source)
+        public bool SetWindProvider(string name, System.Func<double, double, double, bool, ValueTuple<double, double>> windAt, System.Func<double, double, double, ValueTuple<double, double>> prevailingAt)
         {
-            prevailingSource = source;
-            if (Model != null) Model.PrevailingSource = source;
+            if (string.IsNullOrWhiteSpace(name) || windAt == null) return false;
+            string other = null;
+            lock (providerSync)
+            {
+                if (provider != null && provider.Name != name) other = provider.Name;
+                else
+                {
+                    provider = new WindProvider(name, windAt, prevailingAt);
+                    var m = Model;
+                    if (m != null) m.Provider = provider;
+                }
+            }
+            if (other != null)
+            {
+                Mod?.Logger.Warning("{0} asked to decide the wind, but {1} does already; ignored", name, other);
+                return false;
+            }
+            Mod?.Logger.Notification("The wind now comes from {0} ({1} side)", name, api?.Side.ToString() ?? "unknown");
+            return true;
         }
 
-        IPrevailingWinds prevailingSource;
+        /// <summary>(0.4.0) Stop taking the wind from this provider (by name; another provider is left alone): vanilla's wind again.</summary>
+        public void ClearWindProvider(string name)
+        {
+            lock (providerSync)
+            {
+                if (provider == null || provider.Name != name) return;
+                provider = null;
+                var m = Model;
+                if (m != null) m.Provider = null;
+            }
+            Mod?.Logger.Notification("The wind no longer comes from {0}: vanilla's wind; the sea follows a steady wind", name);
+        }
+
+        /// <summary>(0.4.0) The name of the mod deciding the wind on this side, or null (vanilla's wind).</summary>
+        public string WindProviderName => provider?.Name;
+
+        /// <summary>(0.4.0) The provider on this side, or null (its name, and how many of its answers were refused).</summary>
+        public WindProvider WindProvider => provider;
+
+        volatile WindProvider provider;
+        readonly object providerSync = new();
+
+        /// <summary>Make this the model, with the provider as it is now (no provider change can slip in between).</summary>
+        void UseModel(WindModel model)
+        {
+            lock (providerSync)
+            {
+                model.Provider = provider;
+                Model = model;
+            }
+        }
 
         // ---------------------------------------------------------------- waves
 
@@ -337,15 +359,6 @@ namespace Sea
         volatile IDrySpaces[] drySpaces = Array.Empty<IDrySpaces>();
         readonly object drySync = new();
 
-        void OnGetWindSpeed(Vec3d pos, ref Vec3d windSpeed)
-        {
-            var m = Model;
-            if (m == null || api.World?.Calendar == null) return;
-            double h = api.World.Calendar.TotalHours;
-            if (!Controls(h)) return;
-            windSpeed.X = Hooks.AltitudeScale(m.At(pos.X, pos.Z, h).Strength, pos.Y, api.World.SeaLevel);
-        }
-
         WorldShape MakeShape(double ringStart, double circumference, double daysPerYear, double hoursPerDay)
         {
             var world = api.World;
@@ -370,8 +383,6 @@ namespace Sea
             api.StoreModConfig(Config, ConfigFile);
 
             serverChannel = api.Network.GetChannel(ChannelName);
-            // after vanilla's handler (subscribed in Start), so ours has the last word
-            api.Event.OnGetWindSpeed += OnGetWindSpeed;
             // Cylinder World sets up its ring at WorldReady
             api.Event.ServerRunPhase(EnumServerRunPhase.RunGame, BuildServerModel);
             api.Event.PlayerJoin += p =>
@@ -406,7 +417,7 @@ namespace Sea
             ReadRing(out double ringStart, out double circumference);
             long key = WindKey();
             var shape = MakeShape(ringStart, circumference, cal.DaysPerYear, cal.HoursPerDay);
-            var model = new WindModel(shape, Config, key) { PrevailingSource = prevailingSource };
+            var model = new WindModel(shape, Config);
 
             byte[] data = sapi.WorldManager.SaveGame.GetData(OverrideKey);
             if (data != null && data.Length > 0)
@@ -414,7 +425,7 @@ namespace Sea
                 try { model.Override = WindOverride.Checked(SerializerUtil.Deserialize<WindOverride>(data)); }
                 catch (Exception e) { Mod.Logger.Warning("Could not read the saved fixed wind: {0}", e.Message); }
             }
-            Model = model;
+            UseModel(model);
             BuildSpectrum(key, circumference, Config.WaveScale);
             sampleHours.Clear();
             PublishAnchor(0);
@@ -425,13 +436,12 @@ namespace Sea
             };
             serverChannel.BroadcastPacket(sentParams);
 
-            Mod.Logger.Notification("Wind model {0}{1}; storms {2}", Config.Mode,
-                circumference > 0 ? $", wrapping every {circumference:0} blocks from x={ringStart:0}" : "",
-                Config.Mode == WindMode.Earthlike && Config.StormFrequency > 0 ? "on" : "off");
+            Mod.Logger.Notification("Sea ready{0}; wind from {1}", circumference > 0 ? $", waves wrapping every {circumference:0} blocks from x={ringStart:0}" : "",
+                WindProviderName ?? $"vanilla (no wind provider yet; the sea follows a steady {model.SteadySeaWind})");
         }
 
         /// <summary>
-        /// (0.3.6) The world's wind key: random, made once and kept in the save. It used to be a mix of the seed, which
+        /// (0.3.6) The world's wind key (since 0.4.0 it only picks the wave trains' phases): random, made once and kept in the save. It used to be a mix of the seed, which
         /// a client could undo (the mix is invertible) to learn the seed; the key is sent to every client.
         /// </summary>
         long WindKey()
@@ -476,7 +486,10 @@ namespace Sea
             }
         }
 
-        /// <summary>Fix the wind everywhere (null = back to the model), tell every client, remember it in the save.</summary>
+        /// <summary>
+        /// Fix the wind everywhere (null = back to the provider's or vanilla's), tell every client, remember it in the
+        /// save. It decides Sea's wind and sea (ships, waves); vanilla's weather is the provider's (Earth's) to drive.
+        /// </summary>
         public void SetOverride(WindOverride ov)
         {
             if (Model == null || sentParams == null) return;
@@ -507,7 +520,6 @@ namespace Sea
                     long now = WavePlace.SampleIndex(clock.Now(LocalSeconds));
                     if (p.Anchors != null) foreach (var a in p.Anchors) sampleHours.Add(a, now);
                 });
-            api.Event.OnGetWindSpeed += OnGetWindSpeed;
             // if a water shader won't compile with Sea's code on this machine, Sea steps down and asks for this
             Hooks.RequestShaderReload = () => api.Event.EnqueueMainThreadTask(() => api.Shader.ReloadShaders(), "sea-shaders");
 
@@ -520,12 +532,12 @@ namespace Sea
             api.Event.RegisterGameTickListener(_ => UpdateLocalWind(), 250);
             SeaCommands.RegisterClient(api, this);
 
-            // the water and particle shaders were compiled before our patch existed: recompile them with Sea's code
+            // the water shaders were compiled before our patch existed: recompile them with Sea's code
             api.Event.LevelFinalize += () =>
             {
-                if (Hooks.ShaderPatched && (!WaterRenderer.Injected || !Hooks.RainStreaksInjected)) api.Shader.ReloadShaders();
-                if (Hooks.ShaderPatched && !WaterRenderer.Injected) Mod.Logger.Warning("Could not add Sea's code to the water shaders; waves may show inside ships");
-                if (Hooks.ShaderPatched && !Hooks.RainStreaksInjected) Mod.Logger.Warning("Could not add Sea's rain streaks to the particle shader; rain keeps leaning east");
+                if (!Hooks.ShaderPatched || WaterRenderer.Injected) return;
+                api.Shader.ReloadShaders();
+                if (!WaterRenderer.Injected) Mod.Logger.Warning("Could not add Sea's code to the water shaders; waves may show inside ships");
             };
         }
 
@@ -535,15 +547,14 @@ namespace Sea
             Config = (p.Config ?? new SeaConfig()).Checked();
             var ov = WindOverride.Checked(p.Override);
             var m = Model;
-            // the same inputs again (only the fixed wind changed): keep the model and its storm cache
+            // the same inputs again (only the fixed wind changed): keep the model (mods bound to it keep it too)
             if (m != null && m.Shape.RingStart == p.RingStart && m.Shape.Circumference == p.Circumference && sentKey == p.Key && SameConfig(m.Config, Config))
             {
                 m.Override = ov;
                 return;
             }
             sentKey = p.Key;
-            var model = new WindModel(MakeShape(p.RingStart, p.Circumference, p.DaysPerYear, p.HoursPerDay), Config, p.Key) { Override = ov, PrevailingSource = prevailingSource };
-            Model = model;
+            UseModel(new WindModel(MakeShape(p.RingStart, p.Circumference, p.DaysPerYear, p.HoursPerDay), Config) { Override = ov });
             BuildSpectrum(p.Key, p.Circumference, Config.WaveScale);
         }
 
@@ -579,9 +590,7 @@ namespace Sea
         long sentKey;
 
         static bool SameConfig(SeaConfig a, SeaConfig b) =>
-            a.WindModel == b.WindModel && a.PrevailingStrength == b.PrevailingStrength && a.Variability == b.Variability && a.Gusts == b.Gusts &&
-            a.StormFrequency == b.StormFrequency && a.StormRadius == b.StormRadius && a.StormSpeed == b.StormSpeed &&
-            a.SeasonShift == b.SeasonShift && a.WaveScale == b.WaveScale;
+            a.WaveScale == b.WaveScale && a.SeaWindFrom == b.SeaWindFrom && a.SeaWindStrength == b.SeaWindStrength;
 
         /// <summary>Client: the wind at the player right now (updated 4× a second).</summary>
         public Wind LocalWind { get; private set; }
@@ -591,21 +600,8 @@ namespace Sea
 
         void UpdateLocalWind()
         {
-            Hooks.ClientMs = capi.ElapsedMilliseconds;
             var ep = capi.World?.Player?.Entity;
-            if (ep == null || Model == null || !Controls(Hours))
-            {
-                Hooks.LocalWind = null;
-                // (.sea's "wind here": vanilla's strength then, not the last of Sea's)
-                LocalWind = ep == null ? default : WindAt(ep.Pos.X, ep.Pos.Z);
-                return;
-            }
-            double h = Hours;
-            var w = Model.At(ep.Pos.X, ep.Pos.Z, h);
-            LocalWind = w;
-            double s = w.Strength;
-            float dx = s < 1e-6 ? 1 : (float)(w.X / s), dz = s < 1e-6 ? 0 : (float)(w.Z / s);
-            Hooks.LocalWind = new[] { dx, dz, (float)s, (float)Hooks.AltitudeScale(s, ep.Pos.Y, capi.World.SeaLevel) };
+            LocalWind = ep == null ? default : WindAt(ep.Pos.X, ep.Pos.Z);
         }
     }
 }

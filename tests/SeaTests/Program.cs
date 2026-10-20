@@ -8,10 +8,10 @@ using Sea;
 namespace SeaTests
 {
     /// <summary>
-    /// Offline checks: the wind model is deterministic and seamless around the ring, the belts blow the right way in
-    /// both hemispheres, storms turn the right way and the cache finds all of them, the sea builds up and calms down,
-    /// it's fast, the waves are the same wherever they're worked out and never jump, and the water shader code goes in
-    /// where it should.
+    /// Offline checks: without a wind provider the sea follows the config's steady wind, with one the wind is the
+    /// provider's unchanged (its bad answers checked, an admin's fixed wind first), the sea builds up and calms down,
+    /// it's fast, the waves are the same wherever they're worked out and never jump, the water shader code goes in
+    /// where it should, and bad or old config numbers are handled.
     ///   dotnet run --project tests/SeaTests
     /// </summary>
     static class Program
@@ -40,258 +40,119 @@ namespace SeaTests
 
         static int Main()
         {
-            var cfg = new SeaConfig();
-            var m = new WindModel(Planet(), cfg, 12345);
-            var m2 = new WindModel(Planet(), cfg, 12345);
-            var other = new WindModel(Planet(), cfg, 999);
-            var rng = new Random(7);
-
-            Console.WriteLine("determinism and the ring");
+            Console.WriteLine("no wind provider (0.4.0)");
             {
-                bool same = true, differs = false, ring = true;
-                double worstSeam = 0;
-                for (int i = 0; i < 2000; i++)
-                {
-                    double x = rng.NextDouble() * 256000, z = rng.NextDouble() * 128000, h = rng.NextDouble() * 24 * 400;
-                    var a = m.At(x, z, h);
-                    var b = m2.At(x, z, h);
-                    same &= a.X == b.X && a.Z == b.Z;
-                    var o = other.At(x, z, h);
-                    differs |= Math.Abs(o.X - a.X) > 0.02;
-                    var c = m.At(x + Circumference, z, h);
-                    ring &= Math.Abs(c.X - a.X) < 1e-9 && Math.Abs(c.Z - a.Z) < 1e-9;
-                    var s0 = m.At(RingStart + Circumference - 0.25, z, h);
-                    var s1 = m.At(RingStart + 0.25, z, h);
-                    worstSeam = Math.Max(worstSeam, Math.Abs(s0.X - s1.X) + Math.Abs(s0.Z - s1.Z));
-                }
-                Check(same, "same key, same place and time: same wind");
-                Check(differs, "another key gives other weather");
-                Check(ring, "the wind repeats exactly around the ring");
-                Check(worstSeam < 0.05, $"no jump across the seam (worst {worstSeam:0.0000})");
+                var cfg = new SeaConfig();
+                var m = new WindModel(Planet(), cfg);
+                double x = 50000, z = ZAt(15), h = 3000;
+                var sw = m.SeaWind(x, z, h);
+                var st = m.SeaAt(x, z, h);
+                Check(m.Mode == WindMode.Off && !m.Decides(h) && m.At(x, z, h).Strength == 0 && m.Prevailing(x, z, h).Strength == 0 && m.BeltName(z, h) == null,
+                    "without a provider Sea has no wind of its own (vanilla's then): calm, no prevailing wind, no belt");
+                Check(Math.Abs(sw.X - 0.3) < 1e-6 && Math.Abs(sw.Z) < 1e-6 && Math.Abs(st.Height - m.DevelopedHeight(sw.Strength)) < 1e-9 && st.DirX > 0.999,
+                    $"the sea follows the config's steady wind, a medium breeze from the west ({sw}, {st.Height:0.00} blocks running east)");
+                var north = new WindModel(Planet(), new SeaConfig { SeaWindFrom = 0, SeaWindStrength = 0.6f });
+                var calm = new WindModel(Planet(), new SeaConfig { SeaWindStrength = 0 });
+                var sn = north.SeaAt(x, z, h);
+                var sc = calm.SeaAt(x, z, h);
+                Check(sn.DirZ > 0.999 && Math.Abs(sn.Height - north.DevelopedHeight(0.6)) < 1e-6 && Math.Abs(sc.Height - 0.1) < 1e-9,
+                    $"the steady wind is the config's: from the north the sea runs south ({sn.Height:0.00} blocks); strength 0 is a calm sea ({sc.Height:0.00})");
             }
 
-            Console.WriteLine("prevailing winds (no season shift)");
+            Console.WriteLine("wind provider (0.4.0)");
             {
-                var flat = new WindModel(Planet(), new SeaConfig { SeasonShift = 0 }, 1);
-                void Belt(double lat, double lo, double hi, double minS, string name)
-                {
-                    var w = flat.Belt(ZAt(lat), 0);
-                    double f = w.FromDegrees;
-                    bool inRange = lo <= hi ? f >= lo && f <= hi : f >= lo || f <= hi;
-                    Check(inRange && w.Strength >= minS, $"{name} at {Math.Abs(lat)}°{(lat >= 0 ? "N" : "S")}: from {Compass.Name(f)} ({f:0}°), {w.Strength:0.00}");
-                }
-                Belt(15, 30, 80, 0.3, "NE trades");
-                Belt(-15, 100, 150, 0.3, "SE trades");
-                Belt(47, 230, 280, 0.3, "westerlies");
-                Belt(-47, 260, 310, 0.35, "roaring forties");
-                Belt(78, 30, 90, 0.15, "polar easterlies");
-                Check(flat.Belt(ZAt(32), 0).Strength < 0.03 && flat.Belt(ZAt(-32), 0).Strength < 0.03, "horse latitudes are calm");
-                Check(flat.Belt(ZAt(0), 0).Strength < 0.15, $"doldrums are weak ({flat.Belt(ZAt(0), 0).Strength:0.00})");
-                Check(flat.Belt(ZAt(-47), 0).Strength > flat.Belt(ZAt(47), 0).Strength, "southern westerlies are stronger");
-            }
-
-            Console.WriteLine("seasons");
-            {
-                double july = 0.55 * 108 * 24, january = 0.05 * 108 * 24;
-                Check(m.BeltShift(july) > 7 && m.BeltShift(january) < -7, $"belts move north in July ({m.BeltShift(july):0.0}°) and south in January ({m.BeltShift(january):0.0}°)");
-                // at 5°N the NE trades blow in January, but in July the SE trades cross the equator to reach it
-                var jan = m.Belt(ZAt(5), january);
-                var jul = m.Belt(ZAt(5), july);
-                Check(jan.Z > 0 && jul.Z < 0, $"at 5°N: January wind heads south ({Compass.Name(jan.ToDegrees)}), July wind heads north ({Compass.Name(jul.ToDegrees)})");
-            }
-
-            Console.WriteLine("storms");
-            {
-                var shape = Planet();
-                var field = new StormField(shape, cfg, 5);
-                foreach (double lat in new[] { 45.0, -45.0 })
-                {
-                    var s = new Storm(1, 100000, ZAt(lat), 0, 48, 350, 0, 1, 2000, false);
-                    s.Centre(shape, 24, out double cx, out double cz);
-                    var east = field.WindOf(s, cx + 800, cz, 24);
-                    bool ok = lat > 0 ? east.Z < 0 && -east.Z > Math.Abs(east.X) : east.Z > 0 && east.Z > Math.Abs(east.X);
-                    Check(ok, $"{(lat > 0 ? "north" : "south")}: east of the centre the wind heads {(lat > 0 ? "north (anticlockwise)" : "south (clockwise)")}: {Compass.Name(east.ToDegrees)}, {east.Strength:0.00}");
-                    // back to the wind, the low is on your left in the north, on your right in the south
-                    int wrong = 0;
-                    for (int i = 0; i < 16; i++)
-                    {
-                        double ang = i * Math.PI / 8, r = 1500;
-                        double px = cx + Math.Cos(ang) * r, pz = cz + Math.Sin(ang) * r;
-                        var w = field.WindOf(s, px, pz, 24);
-                        var side = w.Rotated(lat > 0 ? -Math.PI / 2 : Math.PI / 2);
-                        double toCentre = Compass.Bearing(cx - px, cz - pz), sideB = side.ToDegrees;
-                        double diff = Math.Abs(((toCentre - sideB) % 360 + 540) % 360 - 180);
-                        if (diff > 45) wrong++;
-                    }
-                    Check(wrong == 0, $"{(lat > 0 ? "north" : "south")}: back to the wind, the centre is on your {(lat > 0 ? "left" : "right")} all round");
-                    var eye = field.WindOf(s, cx + 50, cz, 24).Strength;
-                    var wall = field.WindOf(s, cx + 600, cz, 24).Strength;
-                    Check(eye < 0.3 * wall && wall > 0.9, $"calm eye ({eye:0.00}), strong eyewall ({wall:0.00})");
-                    Check(field.WindOf(s, cx + 5000, cz, 24).Strength == 0, "no storm wind beyond its reach");
-                    Check(field.WindOf(s, cx + 600, cz, 1).Strength < 0.3 * wall, "young storms are weak");
-                }
-
-                // the per-area cache must find every storm that blows there
-                double worst = 0;
-                int stormy = 0;
-                for (int i = 0; i < 60; i++)
-                {
-                    double x = rng.NextDouble() * 256000, z = ZAt(rng.NextDouble() * 120 - 60), h = 24 * 30 + rng.NextDouble() * 24 * 60;
-                    var cached = m.Storms.At(x, z, h);
-                    Wind brute = default;
-                    foreach (var s in m.Storms.ActiveWithin(x, z, h, 30000)) brute += m.Storms.WindOf(s, x, z, h);
-                    worst = Math.Max(worst, Math.Abs(cached.X - brute.X) + Math.Abs(cached.Z - brute.Z));
-                    if (brute.Strength > 0.01) stormy++;
-                }
-                Check(worst < 1e-9, $"the storm cache misses nothing (worst {worst:0.000000}, {stormy}/60 samples near a storm)");
-
-                // (0.3.6) also on a small ring, where a storm's track can come near an area as another copy of it (a whole
-                // circumference over) later in the day than the copy nearest at the day's start
-                {
-                    var small = new WorldShape { RingStart = 1024, Circumference = 24576, Latitude = _ => 0.5 };
-                    var sf = new StormField(small, cfg, 5);
-                    var r2 = new Random(17);
-                    double worstSmall = 0;
-                    int near = 0;
-                    for (int i = 0; i < 4000; i++)
-                    {
-                        double x = 1024 + r2.NextDouble() * 24576, z = r2.NextDouble() * 40000, h = 24 + r2.NextDouble() * 24 * 20;
-                        var cached = sf.At(x, z, h);
-                        Wind brute = default;
-                        foreach (var s in sf.ActiveWithin(x, z, h, 30000)) brute += sf.WindOf(s, x, z, h);
-                        worstSmall = Math.Max(worstSmall, Math.Abs(cached.X - brute.X) + Math.Abs(cached.Z - brute.Z));
-                        if (brute.Strength > 0.01) near++;
-                    }
-                    // the case the review found: a storm another copy of whose track reaches here later that day
-                    {
-                        double x = 17461.014, z = 18755.051, h = 114.9;
-                        Wind brute = default;
-                        foreach (var s in sf.ActiveWithin(x, z, h, 30000)) brute += sf.WindOf(s, x, z, h);
-                        var cached = sf.At(x, z, h);
-                        worstSmall = Math.Max(worstSmall, Math.Abs(cached.X - brute.X) + Math.Abs(cached.Z - brute.Z));
-                        Console.WriteLine($"         small ring at ({x}, {z}), hour {h}: storm wind {brute.Strength:0.000}, cached {cached.Strength:0.000}");
-                    }
-                    Check(worstSmall < 1e-9 && near > 100, $"… also on a small ring, across catalog borders (worst {worstSmall:0.000000}, {near}/4000 near a storm)");
-                }
-
-                // (0.3.6) a client's latitudes arriving after its model was built: the same function, new data behind it
-                // (as vanilla does it). Forgetting the storms rolls them again with the new latitudes, and a lookup that
-                // was still working out the old ones when they were forgotten can't put them back
-                {
-                    var planet = Planet();
-                    bool arrived = false;
-                    var gate = new System.Threading.ManualResetEventSlim(true);
-                    var entered = new System.Threading.ManualResetEventSlim(false);
-                    var oldHere = new System.Threading.ThreadLocal<bool>();   // a lookup that started before they arrived
-                    var lateShape = new WorldShape
-                    {
-                        RingStart = planet.RingStart, Circumference = planet.Circumference, DaysPerYear = planet.DaysPerYear, HoursPerDay = planet.HoursPerDay,
-                        Latitude = z => { entered.Set(); gate.Wait(); return arrived && !oldHere.Value ? planet.Latitude(z) : 0.5; }   // 45°N until they arrive
-                    };
-                    var lateField = new StormField(lateShape, cfg, 5);
-                    var refField = new StormField(planet, cfg, 5);
-                    double x = 50000, z = ZAt(15), hh = 24 * 200 + 7;
-                    int[] Ids(StormField f, double hours) => f.Near(x, z, hours).Select(s => s.Id).ToArray();
-                    var stale = Ids(lateField, hh);   // rolled with the wrong latitudes
-                    var want = Ids(refField, hh);
-                    arrived = true;
-                    bool kept = Ids(lateField, hh).SequenceEqual(stale);
-                    lateField.Forget();
-                    Check(kept && Ids(lateField, hh).SequenceEqual(want) && !stale.SequenceEqual(want),
-                        $"latitudes that arrive late roll the storms again once forgotten ({want.Length} storms near 15°N, {stale.Length} before)");
-
-                    // a lookup of another day, held inside its work with the old latitudes while they're replaced
-                    arrived = false;
-                    lateField.Forget();
-                    double nextDay = hh + 24;
-                    entered.Reset();
-                    gate.Reset();
-                    var slow = System.Threading.Tasks.Task.Run(() => { oldHere.Value = true; return Ids(lateField, nextDay); });
-                    entered.Wait();
-                    arrived = true;
-                    lateField.Forget();
-                    gate.Set();
-                    var slowIds = slow.Result;
-                    Check(Ids(lateField, nextDay).SequenceEqual(Ids(refField, nextDay)),
-                        $"a lookup still working with the old latitudes when they're forgotten doesn't put its storms back ({slowIds.Length} it saw)");
-                }
-
-                // how stormy is it: fraction of time with gales (≥ 0.6) by belt, over a year
-                double Gales(double latLo, double latHi, out double mean)
-                {
-                    int gales = 0, n = 3000;
-                    mean = 0;
-                    var r = new Random(11);
-                    for (int i = 0; i < n; i++)
-                    {
-                        double lat = latLo + r.NextDouble() * (latHi - latLo);
-                        if (r.Next(2) == 0) lat = -lat;
-                        double s = m.At(r.NextDouble() * 256000, ZAt(lat), r.NextDouble() * 108 * 24 + 108 * 24).Strength;
-                        mean += s;
-                        if (s >= 0.6) gales++;
-                    }
-                    mean /= n;
-                    return (double)gales / n;
-                }
-                double gTrade = Gales(8, 22, out double mTrade), gHorse = Gales(30, 34, out double mHorse), gWest = Gales(40, 58, out double mWest);
-                Console.WriteLine($"         gales: trades {gTrade:P1} (mean {mTrade:0.00}), horse latitudes {gHorse:P1} (mean {mHorse:0.00}), westerlies {gWest:P1} (mean {mWest:0.00})");
-                Check(gWest > 0.02 && gWest < 0.25, "westerlies have gales a few percent of the time, not all the time");
-                Check(gTrade < gWest && mTrade > mHorse && mWest > mHorse, "trades steadier than westerlies; horse latitudes calmest");
-                Check(mTrade > 0.2 && mTrade < 0.55, "trade winds are a good sailing breeze");
-
-                // trade winds keep their direction
-                int fromEastish = 0;
+                var m = new WindModel(Planet(), new SeaConfig());
+                // a wind turning with x, gusts 10 % stronger, its own prevailing wind
+                Func<double, double, double, bool, ValueTuple<double, double>> windAt = (px, pz, ph, gusts) => (0.4 * Math.Cos(px / 1000) * (gusts ? 1.1 : 1), 0.4 * Math.Sin(px / 1000) * (gusts ? 1.1 : 1));
+                m.Provider = new WindProvider("test", windAt, (px, pz, ph) => (0.2, -0.1));
+                bool routed = true;
+                var rng = new Random(7);
                 for (int i = 0; i < 1000; i++)
                 {
-                    var w = m.At(rng.NextDouble() * 256000, ZAt(12 + rng.NextDouble() * 8), rng.NextDouble() * 108 * 24);
-                    double f = w.FromDegrees;
-                    if (f >= 0 && f <= 135 || f >= 345) fromEastish++;
+                    double x = rng.NextDouble() * 256000, z = rng.NextDouble() * 128000, h = rng.NextDouble() * 24 * 400;
+                    var g = windAt(x, z, h, true);
+                    var s = windAt(x, z, h, false);
+                    var a = m.At(x, z, h);
+                    var b = m.At(x, z, h, false);
+                    var c = m.SeaWind(x, z, h, false);
+                    var d = m.SeaWind(x, z, h);
+                    routed &= a.X == g.Item1 && a.Z == g.Item2 && b.X == s.Item1 && b.Z == s.Item2 && c.X == s.Item1 && c.Z == s.Item2 && d.X == g.Item1 && d.Z == g.Item2;
                 }
-                Check(fromEastish > 800, $"trade winds blow from N..E..SE {fromEastish / 10.0:0}% of the time");
-                var peak = Enumerable.Range(0, 20000).Select(i => m.At(rng.NextDouble() * 256000, rng.NextDouble() * 128000, rng.NextDouble() * 108 * 24 * 3).Strength).Max();
-                Check(peak <= WindModel.MaxStrength + 1e-9, $"never above {WindModel.MaxStrength} (max seen {peak:0.00})");
+                var p = m.Prevailing(1000, 2000, 3000);
+                Check(m.Mode == WindMode.Provider && m.Decides(0) && routed && p.X == 0.2 && p.Z == -0.1,
+                    "with a provider the wind, the sea's wind (with and without gusts) and the prevailing wind are the provider's, unchanged");
+                m.Provider = new WindProvider("test", windAt, null);
+                var q = m.Prevailing(1000, 2000, 3000);
+                var qw = windAt(1000, 2000, 3000, false);
+                Check(q.X == qw.Item1 && q.Z == qw.Item2, "a provider without a prevailing function: its steady wind is the prevailing one");
+
+                // its answers are checked: NaN, infinity and exceptions are calm and counted, too strong is capped
+                var bad = new WindProvider("bad", (px, pz, ph, g) => px < 0 ? (double.NaN, 0.0) : px < 1 ? (0.0, double.PositiveInfinity) : px < 2 ? (3.0, 4.0) : throw new InvalidOperationException("no"), (px, pz, ph) => throw new Exception("none"));
+                m.Provider = bad;
+                var nan = m.At(-1, 0, 0);
+                var inf = m.At(0.5, 0, 0);
+                var strong = m.At(1.5, 0, 0);
+                var thrown = m.SeaWind(5, 0, 0);
+                var prev = m.Prevailing(5, 0, 0);
+                Check(nan.Strength == 0 && inf.Strength == 0 && thrown.Strength == 0 && prev.Strength == 0 && bad.Failures == 4 && bad.LastError == "none"
+                    && Math.Abs(strong.Strength - WindModel.MaxStrength) < 1e-12 && Math.Abs(strong.X / strong.Z - 0.75) < 1e-12,
+                    $"a provider's NaN, infinity or exception is calm ({bad.Failures} counted, last: {bad.LastError}), a wind of 5 is capped at {WindModel.MaxStrength} keeping its direction");
+                bool threw = false;
+                try { new WindProvider("none", null, null); } catch (ArgumentNullException) { threw = true; }
+                Check(threw, "a provider needs a wind function");
+
+                // an admin's fixed wind wins over the provider (not over its prevailing wind: that's climate)
+                m.Provider = new WindProvider("test", windAt, (px, pz, ph) => (0.2, -0.1));
+                m.Override = new WindOverride { FromDegrees = 0, Strength = 1, StartHours = 100, UntilHours = 200 };
+                var ow = m.At(5000, 0, 150, false);
+                var osw = m.SeaWind(5000, 0, 150);
+                var after = m.At(5000, 0, 250, false);
+                Check(Math.Abs(ow.Z - 1) < 1e-12 && Math.Abs(osw.Z - 1) < 1e-12 && m.Prevailing(0, 0, 150).X == 0.2 && Math.Abs(after.X - windAt(5000, 0, 250, false).Item1) < 1e-12,
+                    "an admin's fixed wind wins over the provider while it lasts");
+                m.Override = null;
+                m.Provider = null;
+                Check(m.Mode == WindMode.Off && m.SeaWind(0, 0, 0).X > 0.29, "cleared: the config's steady wind again");
             }
 
             Console.WriteLine("sea state");
             {
-                // (0.3.6) WindModel "Off": vanilla's wind for everything else, but the sea follows Sea's steady winds (the
-                // same on every side), not nothing and not vanilla's
-                var off = new WindModel(Planet(), new SeaConfig { WindModel = "Off" }, 42);
-                var steady = new WindModel(Planet(), new SeaConfig { WindModel = "Steady" }, 42);
-                double x = 50000, z = ZAt(15), h = 3000;
-                var so = off.SeaAt(x, z, h);
-                var ss = steady.SeaAt(x, z, h);
-                Check(off.At(x, z, h).Strength == 0 && so.Height == ss.Height && so.DirX == ss.DirX && off.SeaWind(x, z, h).X == steady.At(x, z, h).X && so.Height > 0.3,
-                    $"with WindModel Off the sea follows Sea's steady winds ({so.Height:0.00} blocks in the trades), Sea leaves the wind itself to vanilla");
-            }
-            {
-                var sm = new WindModel(Planet(), cfg, 42);
-                double x = 50000, z = ZAt(45), t0 = 2000;
+                // the provider's steady wind: calm until hour t0, then a storm from the west for 16 hours
+                var sm = new WindModel(Planet(), new SeaConfig());
+                const double t0 = 2000;
+                sm.Provider = new WindProvider("storm", (px, pz, ph, g) => ph >= t0 && ph < t0 + 16 ? (1.0, 0.0) : (0.05, 0.0), null);
+                double x = 50000, z = ZAt(45);
                 double before = sm.SeaAt(x, z, t0 - 0.5).Height;
-                sm.Override = new WindOverride { FromDegrees = 270, Strength = 1.0, StartHours = t0, UntilHours = t0 + 16 };
                 var s1 = sm.SeaAt(x, z, t0 + 1);
                 var s4 = sm.SeaAt(x, z, t0 + 4);
                 var s15 = sm.SeaAt(x, z, t0 + 15.5);
                 var after2 = sm.SeaAt(x, z, t0 + 18);
                 var after12 = sm.SeaAt(x, z, t0 + 30);
                 Console.WriteLine($"         heights: before {before:0.00}, +1h {s1.Height:0.00}, +4h {s4.Height:0.00}, +15h {s15.Height:0.00}, 2h after {after2.Height:0.00}, 14h after {after12.Height:0.00}");
-                Check(s1.Height < s4.Height && s4.Height < s15.Height, "a storm's sea builds up over hours");
+                Check(before < 0.2 && s1.Height < s4.Height && s4.Height < s15.Height, "a storm's sea builds up over hours");
                 Check(Math.Abs(s15.Height - sm.DevelopedHeight(1.0)) < 0.05, $"and reaches the developed height ({sm.DevelopedHeight(1.0):0.0} blocks)");
                 Check(after2.Height > 0.4 * s15.Height && after12.Height < after2.Height, "swell lingers after the wind drops, then fades");
                 Check(s15.DirX > 0.99 && s15.Wavelength > 8, $"waves run downwind (east) and are long enough for the water mesh ({s15.Wavelength:0} blocks, {s15.Period:0.0} s)");
+
+                // an admin's fixed wind builds the sea the same way
+                sm.Provider = null;
+                sm.Override = new WindOverride { FromDegrees = 270, Strength = 1.0, StartHours = t0, UntilHours = t0 + 16 };
+                var o15 = sm.SeaAt(x, z, t0 + 15.5);
+                Check(Math.Abs(o15.Height - s15.Height) < 0.05 && o15.DirX > 0.99, $"a fixed storm builds the same sea ({o15.Height:0.00} blocks)");
             }
 
             Console.WriteLine("speed");
             {
+                // Sea's own share of a lookup: the cheapest provider there is
+                var m = new WindModel(Planet(), new SeaConfig()) { Provider = new WindProvider("fast", (px, pz, ph, g) => (0.3 + 1e-6 * pz, 0.1), null) };
                 var sw = Stopwatch.StartNew();
                 int n = 200000;
                 double sum = 0;
                 for (int i = 0; i < n; i++) sum += m.At(i * 13.7 % 256000, 20000 + i * 0.37 % 90000, 5000 + i * 0.0002).Strength;
                 double us = sw.Elapsed.TotalMilliseconds * 1000 / n;
-                Check(us < 10, $"wind lookup {us:0.00} µs (mean {sum / n:0.00})");
+                Check(us < 1, $"wind lookup {us:0.000} µs (mean {sum / n:0.00})");
                 sw.Restart();
                 for (int i = 0; i < 2000; i++) m.SeaAt(i * 97.0, 60000, 7000 + i * 0.01);
-                Check(sw.Elapsed.TotalMilliseconds / 2000 < 0.5, $"sea state {sw.Elapsed.TotalMilliseconds * 1000 / 2000:0} µs");
+                Check(sw.Elapsed.TotalMilliseconds / 2000 < 0.05, $"sea state {sw.Elapsed.TotalMilliseconds * 1000 / 2000:0.0} µs");
             }
 
             Console.WriteLine("compass");
@@ -454,27 +315,6 @@ namespace SeaTests
                 string fcode = File.Exists(Path.Combine(shaders, "chunkliquid.fsh")) ? WaterShader.InjectFragment(File.ReadAllText(Path.Combine(shaders, "chunkliquid.fsh"))) : null;
                 int dyAt = fcode?.IndexOf("float dy = p.y - b.z;") ?? -1, floodAt = fcode?.IndexOf("if (dy < b.y) continue;") ?? -1, hlAt = fcode?.IndexOf("float hl = ") ?? -1;
                 Check(fcode != null && dyAt > 0 && floodAt > dyAt && hlAt > floodAt, "the dry cut skips what's under a flooded hull's water (seaClipB.y) first");
-            }
-            {
-                // rain streaks: vanilla turns every streak about world Z (so they all lean east); Sea lays them along the drop's path
-                string file = Path.Combine(shaders, RainShader.Pass + ".vsh");
-                if (!File.Exists(file)) Console.WriteLine($"  skip  {RainShader.Pass}.vsh not found");
-                else
-                {
-                    string code = File.ReadAllText(file);
-                    string injected = RainShader.Inject(code);
-                    int rainBranch = injected?.IndexOf("if (rainParticle) {") ?? -1;
-                    int normalise = injected?.IndexOf("u = normalize(u);", rainBranch) ?? -1;
-                    int streak = injected?.IndexOf("mvmat[1] = modelViewMatrix * vec4(-u, 0.0);") ?? -1;
-                    int billboard = injected?.IndexOf("mvmat[0].xyz = vec3(1.0, 0.0, 0.0);") ?? -1;
-                    bool ok = injected != null && rainBranch >= 0 && normalise > rainBranch && streak > normalise && billboard > streak
-                        && injected.IndexOf("mvmat = mvmat * rotationZ(zangle);") < 0
-                        // vanilla's billboarding keeps a rain drop's y axis (it only resets it for other particles)
-                        && injected.IndexOf("mvmat[1].xyz", billboard) > injected.IndexOf("if (!rainParticle) {", billboard)
-                        && injected.IndexOf("if (!rainParticle) {", billboard) > billboard
-                        && RainShader.Inject(injected) == null;
-                    Check(ok, $"{RainShader.Pass}.vsh: rain streaks follow the drops' paths instead of all leaning east, once");
-                }
             }
 
             DryWaterParticles();
@@ -826,6 +666,22 @@ namespace SeaTests
             }
         }
 
+        /// <summary>SeaConfig as 0.3.x sent it, with Sea's weather in members 1-8.</summary>
+        [ProtoBuf.ProtoContract]
+        public class OldSeaConfig
+        {
+            [ProtoBuf.ProtoMember(1)] public string WindModel;
+            [ProtoBuf.ProtoMember(2, IsRequired = true)] public float PrevailingStrength;
+            [ProtoBuf.ProtoMember(3, IsRequired = true)] public float Variability;
+            [ProtoBuf.ProtoMember(4, IsRequired = true)] public float Gusts;
+            [ProtoBuf.ProtoMember(5, IsRequired = true)] public float StormFrequency;
+            [ProtoBuf.ProtoMember(6, IsRequired = true)] public float StormRadius;
+            [ProtoBuf.ProtoMember(7, IsRequired = true)] public float StormSpeed;
+            [ProtoBuf.ProtoMember(8, IsRequired = true)] public float SeasonShift;
+            [ProtoBuf.ProtoMember(9, IsRequired = true)] public float WaveScale;
+            [ProtoBuf.ProtoMember(10, IsRequired = true)] public float CelestialReflections;
+        }
+
         /// <summary>(0.3.7) Numbers Sea can't use (a hand-edited config, an admin's typo, a mod's degenerate hull) are refused or come back to defaults.</summary>
         static void BadInputs()
         {
@@ -840,11 +696,13 @@ namespace SeaTests
                 && strong != null && strong.Strength == WindModel.MaxStrength && strong.StartHours == 10,
                 "a fixed wind with NaN or infinite numbers is refused (the direction, the strength, the hours), a too strong one clamped");
 
-            var bad = new SeaConfig { StormSpeed = -350, StormRadius = float.NaN, WaveScale = float.PositiveInfinity, Gusts = -1, SeasonShift = 400, StormFrequency = 0, CelestialReflections = 8, SkyReflections = float.NaN, NightVisibility = -1 }.Checked();
+            var bad = new SeaConfig { WaveScale = float.PositiveInfinity, CelestialReflections = 8, SkyReflections = float.NaN, NightVisibility = -1, SeaWindFrom = float.NaN, SeaWindStrength = -1 }.Checked();
+            var bad2 = new SeaConfig { WaveScale = 0, SeaWindFrom = -90, SeaWindStrength = 9 }.Checked();
             var d = new SeaConfig();
-            Check(bad.StormSpeed == d.StormSpeed && bad.StormRadius == d.StormRadius && bad.WaveScale == d.WaveScale && bad.Gusts == d.Gusts
-                && bad.SeasonShift == 45 && bad.StormFrequency == 0 && bad.CelestialReflections == 2 && bad.SkyReflections == 1 && bad.NightVisibility == 1,
-                "a config's negative, NaN or infinite numbers go back to the defaults (0 stays 0: no storms)");
+            Check(bad.WaveScale == d.WaveScale && bad.CelestialReflections == 2 && bad.SkyReflections == 1 && bad.NightVisibility == 1
+                && bad.SeaWindFrom == d.SeaWindFrom && bad.SeaWindStrength == d.SeaWindStrength
+                && bad2.WaveScale == 0 && bad2.SeaWindFrom == 270 && bad2.SeaWindStrength == (float)WindModel.MaxStrength,
+                "a config's negative, NaN or infinite numbers go back to the defaults (0 stays 0), the steady wind's bearing wraps and its strength is capped");
 
             // the server's settings reach clients as they are, zeros included (protobuf leaves zeros out, and the
             // client's object starts from the defaults)
@@ -852,13 +710,18 @@ namespace SeaTests
                 var sent = new SeaParamsPacket
                 {
                     Key = 7, Circumference = 0, DaysPerYear = 108, HoursPerDay = 24,
-                    Config = new SeaConfig { WindModel = "Steady", PrevailingStrength = 0, Variability = 0, Gusts = 0, StormFrequency = 0, StormRadius = 0, StormSpeed = 0, SeasonShift = 0, WaveScale = 0, CelestialReflections = 0, SkyReflections = 0, NightVisibility = 0 }
+                    Config = new SeaConfig { WaveScale = 0, CelestialReflections = 0, SkyReflections = 0, NightVisibility = 0, SeaWindFrom = 0, SeaWindStrength = 0 }
                 };
                 // (the game's own serializer, as its network channels use it)
                 var got = Vintagestory.API.Util.SerializerUtil.Deserialize<SeaParamsPacket>(Vintagestory.API.Util.SerializerUtil.Serialize(sent)).Config;
-                Check(got.WindModel == "Steady" && got.PrevailingStrength == 0 && got.Variability == 0 && got.Gusts == 0 && got.StormFrequency == 0
-                    && got.StormRadius == 0 && got.StormSpeed == 0 && got.SeasonShift == 0 && got.WaveScale == 0 && got.CelestialReflections == 0 && got.SkyReflections == 0 && got.NightVisibility == 0,
-                    $"a config of zeros arrives as zeros (gusts {got.Gusts}, storms {got.StormFrequency}, wave scale {got.WaveScale})");
+                Check(got.WaveScale == 0 && got.CelestialReflections == 0 && got.SkyReflections == 0 && got.NightVisibility == 0 && got.SeaWindFrom == 0 && got.SeaWindStrength == 0,
+                    $"a config of zeros arrives as zeros (wave scale {got.WaveScale}, steady wind {got.SeaWindStrength} from {got.SeaWindFrom})");
+
+                // (0.4.0) a 0.3 server's config (members 1-8 were Sea's weather, now retired) still reads: those are skipped
+                var old = new OldSeaConfig { WindModel = "Steady", PrevailingStrength = 2, Variability = 3, Gusts = 4, StormFrequency = 5, StormRadius = 6, StormSpeed = 7, SeasonShift = 8, WaveScale = 0.5f, CelestialReflections = 0 };
+                var read = Vintagestory.API.Util.SerializerUtil.Deserialize<SeaConfig>(Vintagestory.API.Util.SerializerUtil.Serialize(old));
+                Check(read.WaveScale == 0.5f && read.CelestialReflections == 0 && read.SeaWindFrom == d.SeaWindFrom && read.SeaWindStrength == d.SeaWindStrength,
+                    "a 0.3 config's retired weather members (1-8) are skipped; the rest reads as before");
             }
 
             // WaveScale 0 flattens the whole sea, the chop too

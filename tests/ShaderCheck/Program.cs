@@ -89,10 +89,6 @@ namespace ShaderCheck
                         }
                     }
                 }
-                string pv = Load(shaders, RainShader.Pass + ".vsh"), pf = Load(shaders, RainShader.Pass + ".fsh");
-                Build(RainShader.Pass + ": vanilla (the check itself)", pv, pf, defs);
-                int rain = Build(RainShader.Pass + ": with Sea's rain streaks", RainShader.Inject(pv), pf, defs);
-                if (rain != 0) GL.DeleteProgram(rain);
                 string wm = Path.GetFullPath("../Wmap/assets/wmap");
                 if (Directory.Exists(wm))
                 {

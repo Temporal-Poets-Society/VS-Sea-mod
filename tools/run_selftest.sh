@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Runs Sea's server self-test on a local dedicated server (data in testserver/): a small fresh world, then checks the
-# wind model against vanilla's wind lookups and weather regions, a fixed wind, the ring (with Cylinder World) and speed.
+# Runs Sea's server self-test on a local dedicated server (data in testserver/): a small fresh world, then checks that
+# Sea leaves vanilla's weather alone, the wind without and with a provider, a fixed wind, the waves, the ring (with
+# Cylinder World) and speed.
 # Prints the SELFTEST lines and stops.
 #   dotnet build -c Release && tools/run_selftest.sh [--with-cworld]
 set -euo pipefail

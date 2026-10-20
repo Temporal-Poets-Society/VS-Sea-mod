@@ -6,6 +6,10 @@ are in Magelan's `docs/engine-notes.md`.
 
 ## Wind
 
+(0.4.0) Sea no longer patches any of this: its `OnGetWindSpeed` handler, the region-wind postfix, the rain transpiler,
+the rain-streak shader edit and the cloud prefix moved to Earth with the weather (SEA-D30). The engine facts stand; the
+notes on what Sea did are kept as the record for that port.
+
 - **All wind lookups** go through `IBlockAccessor.GetWindSpeedAt(pos)`. The client and server world maps create an
   empty `Vec3d` and fire `IEventAPI.OnGetWindSpeed(pos, ref windSpeed)`; handlers run in subscription order.
 - **Vanilla's handler** (`WeatherSystemBase.Start`) sets only `windSpeed.X`:

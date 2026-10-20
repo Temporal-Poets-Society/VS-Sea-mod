@@ -1,28 +1,31 @@
-# Sea — wind with a direction, travelling storms, seas that build up (Vintage Story 1.22)
+# Sea — waves that follow the wind, the same sea for everyone (Vintage Story 1.22)
 
-Vanilla wind has a strength but no direction, and its waves are the same random bumps everywhere. Sea gives the
-world a wind you can learn and plan around, and waves that follow it. It also owns the water shaders, so ship mods
-(Magelan) ask Sea to keep waves out of their hulls instead of each patching the shaders.
+Vanilla's waves are the same random bumps everywhere. Sea gives the world waves that travel downwind, build up and
+calm down with the wind of the past hours, and are the same on the server and every client, so ships can ride them.
+It also owns the water shaders, so ship mods (Magelan, Hansa) ask Sea to keep waves out of their hulls instead of each
+patching the shaders.
 
-Version **0.3.8-pre.3** (pre.1 crashed on load; pre.2 reflections were invisible: both fixed) adds sun glitter, phase-aware moon trails and faint source-sky star reflections using Sea's
-wave normals. A separate outdoor night-visibility floor aims for useful clear-night navigation, with reduced light
-under clouds, rain and fog. Vanilla works without astronomy, geography or ship mods; AstraTerra **0.15.0** has an
-optional source-data adapter. Wmap distant lighting has an optional adapter and near reflections fade before its edge.
-These are implemented pre-release features: GPU/automated checks pass; **appearance, navigation brightness and
-in-game compatibility are not verified**. See [inspection, controls and comparison procedure](docs/sky-water.md)
-and [build/verification record](docs/verification-celestial.md).
+Version **0.4.0**: **the wind comes from a provider; Sea has no weather of its own any more.** Sea's prevailing belts,
+drifting weather, travelling storms and gusts moved to the Earth mod, which now owns climate and weather (winds, storms,
+rain, clouds) and drives vanilla's weather with them. Sea only consumes the wind, through a generic call any mod can make
+(`SetWindProvider`, see "For other mods"). Without a provider (no Earth) the wind is vanilla's, and the sea follows a
+steady wind from the config, the same on every side. The patches that put Sea's wind into vanilla's weather (wind
+lookups, wind sound, rain direction and rain streaks, cloud drift) went to Earth with it ([SEA-D30](docs/DECISIONS.md)).
 
-Existing wind and water foundation (through 0.3.7):
+0.3.8 added sun glitter, phase-aware moon trails and faint source-sky star reflections using Sea's wave normals. A
+separate outdoor night-visibility floor aims for useful clear-night navigation, with reduced light under clouds, rain and
+fog. Vanilla works without astronomy, geography or ship mods; AstraTerra **0.15.0** has an optional source-data adapter.
+Wmap distant lighting has an optional adapter and near reflections fade before its edge. GPU/automated checks pass;
+**appearance, navigation brightness and in-game compatibility are not verified**. See
+[inspection, controls and comparison procedure](docs/sky-water.md) and
+[build/verification record](docs/verification-celestial.md).
+
+Wind and water foundation (through 0.3.7; stage 2 moved to Earth in 0.4.0):
 
 - **Stage 1: water shaders.** Sea adds its code to vanilla's water shaders. That code keeps waves out of ship hulls,
   which Magelan used to do itself.
-- **Stage 2: wind and sea state.** Every vanilla effect that reads the wind now gets Sea's wind:
-  - swaying trees and plants
-  - rain, snow and hail, which now blow in Sea's direction (the rain streaks lean with it; vanilla draws every
-    streak leaning east)
-  - clouds, which now drift with it
-  - wind chill
-  - wind sound
+- **Stage 2: wind and sea state.** Until 0.3.8 every vanilla effect that reads the wind got Sea's wind (trees, rain and
+  its streaks, clouds, wind chill, wind sound). Since 0.4.0 that's Earth's: Sea leaves vanilla's weather alone.
 - **Stage 3: moving waves.** Vanilla's random bumps are replaced by waves that travel downwind. They're flat in a
   calm and tall in a storm (see below).
 - **Stage 4: the same sea for everyone.** The waves are a fixed set of wave trains every side knows, running on a
@@ -41,40 +44,28 @@ Existing wind and water foundation (through 0.3.7):
   a hole) gives its flood level (`Flooded`, `FloodY`), and under it the sea isn't cut away. 0.3.6: the cut follows the
   hull's exact tilt, so a hull that's pitched and rolled together has no strips of water left inside.
 
-0.3.7 (review fixes, no new features): a server's config settings of 0 (no storms, no gusts, `WaveScale` 0) reach
-clients as 0 (they used to arrive as 1, so clients had storms and gusts the server didn't); a fixed wind with a NaN or infinite number in it is refused (it used to reach
-every client's waves); a config's negative or NaN numbers go back to the defaults; `WaveScale` scales the chop too (0
-now draws a flat sea); while the sea turns, the strongest 24 trains change without the surface jumping; dry places only
-apply in the world itself, not in other dimensions; less garbage per frame and per wind lookup; `/sea` shows the
-sheltered wave height where you are; `tools/run_selftest.sh` fails when the self-test does.
+0.3.7 (review fixes, no new features): a server's config settings of 0 reach clients as 0 (they used to arrive as 1);
+a fixed wind with a NaN or infinite number in it is refused (it used to reach every client's waves); a config's negative
+or NaN numbers go back to the defaults; `WaveScale` scales the chop too (0 now draws a flat sea); while the sea turns,
+the strongest 24 trains change without the surface jumping; dry places only apply in the world itself, not in other
+dimensions; less garbage per frame and per wind lookup; `/sea` shows the sheltered wave height where you are;
+`tools/run_selftest.sh` fails when the self-test does.
 
 ## The wind
 
-It's built in four layers, all pure math from a key, the position and the game time:
+Sea doesn't make weather (0.4.0). The wind the sea and ships follow is, in this order:
 
-1. **Prevailing winds by latitude.** These are Earth's belts:
+1. **An admin's fixed wind** (`/sea setwind`), while it lasts.
+2. **A wind provider's**: a mod that registered with `SetWindProvider` on every side, normally **Earth** (its
+   prevailing winds by month, travelling storms and gusts). Ships get its wind with gusts; the sea state follows it
+   without them.
+3. **Otherwise vanilla's** wind for ships and other mods (`WindAt`): its strength, blowing east, since vanilla's wind
+   has no direction. The sea can't follow that (it changes from tick to tick and reaches each client at another
+   moment), so it follows a **steady wind from the config** (`SeaWindFrom`, `SeaWindStrength`; by default a medium
+   breeze, 0.3, from the west), the same on every side.
 
-   | Latitude | Wind |
-   |---|---|
-   | 0–5° | doldrums, weak |
-   | 5–30° | trade winds from the NE (south: from the SE), steady |
-   | ~32° | horse latitudes, calm and variable |
-   | 35–62° | westerlies from the WSW, stronger in the south ("roaring forties") |
-   | 65–90° | polar easterlies |
-
-   The belts move about 8° north in northern summer and south in winter. In July the SE trades cross the equator.
-2. **Weather drifting over days.** A smooth random wind over about 5000 blocks and 30 game hours. It's gentle in the
-   trades and stronger in the westerlies.
-3. **Travelling storms.** Every game day, each 6000-block cell of the map rolls whether a storm forms there:
-   - **Where and when:** tropical storms form in late summer; westerly storms are more common in winter.
-   - **How they move:** a storm lives 1.5–3.5 game days. Tropical storms drift west and toward the pole; the others
-     are carried east.
-   - **Their wind** turns around the centre: anticlockwise in the north, clockwise in the south. It spirals slightly
-     inward, is calm in the eye and strongest at the eyewall. It's stronger on the side where the storm's own motion
-     adds to it.
-   - **Reading one:** stand with your back to the wind, and the centre is on your left in the north, on your right in
-     the south. A shifting wind means a storm is passing.
-4. **Gusts:** about ±20% strength and ±12° direction, changing over tens of seconds.
+`/sea` and `.sea` say which one it is. Vanilla's own weather effects (trees, rain, clouds, wind sound, wind chill) are
+the provider's to drive, or vanilla's without one: a fixed wind from `/sea setwind` only reaches Sea's sea and ships.
 
 **Strength** is in vanilla's units:
 
@@ -85,15 +76,16 @@ It's built in four layers, all pure math from a key, the position and the game t
 | 0.6 | strong breeze | 7 |
 | 1 | storm | 10 |
 
-The maximum is 1.5, and it grows with height above sea level like vanilla's. On the offline test planet the
-westerlies blow at 0.6 or more about 15% of the time, the trades about 1.5%.
+The maximum is 1.5: a provider's stronger wind is capped there, and a NaN, infinite or failing answer counts as calm
+(`.sea` counts them).
 
 **Sea state:** wave height follows the wind of the past hours at the same place. At the default day length (a game
 hour is 2 real minutes) the sea takes about 6 real minutes to get up.
-- In a storm (strength 1) the sea reaches about 1.6 blocks after an hour and 2.2 after four. Fully built it's 2.5
+- In a storm (strength 1) the sea reaches about 1.3 blocks after an hour and 2.1 after four. Fully built it's 2.5
   blocks.
 - After the wind drops, the swell lingers for hours.
 - The waves run the way the wind has been blowing.
+- Without a provider, the default steady wind keeps a sea of about 0.3 blocks running east.
 
 **What you see on the water:**
 
@@ -118,18 +110,18 @@ hour is 2 real minutes) the sea takes about 6 real minutes to get up.
   ship between the water mesh's 1-block vertices: over 4 blocks for a hull that stays level, over whatever the ship
   mod asks for one that rides the waves (Magelan: 1.5).
 
-**Where latitude comes from:** Sea reads the game calendar's latitude.
-- In a vanilla world that's the "realistic climate" latitude. Without realistic climate, it's 45°N everywhere.
-- Cylinder World and Earth Map set real latitudes.
-- With Cylinder World, the wind repeats exactly around the ring, so nothing jumps at the seam.
+**Latitude** (shown by `/sea`) is the game calendar's: vanilla's "realistic climate", Cylinder World's or Earth's.
+With Cylinder World the waves repeat exactly around the ring; the wind is the provider's to make seamless there.
 
 ## Multiplayer
 
 Nothing about the wind or the waves is sent while you play, except a clock:
-- **When you join,** the server sends one small packet: a wind key (random, made for the world and saved with it; it tells nothing about the seed), the
-  config, and the ring and calendar sizes.
-- **After that,** the server and every client compute the same wind from the game time, which vanilla already keeps
-  in sync.
+- **When you join,** the server sends one small packet: a wind key (random, made for the world and saved with it; it
+  tells nothing about the seed; since 0.4.0 it only picks the wave trains' phases), the config, and the ring and
+  calendar sizes.
+- **After that,** the server and every client compute the same sea from the game time, which vanilla already keeps
+  in sync. The wind provider must give the same wind on every side for that (Earth's is a pure function of the world
+  seed, the place and the game time); Sea never sends it.
 - **The sample hours (0.3.6):** the sea state and wind behind each second of waves are taken at that second's own game
   hour. The server sends that with the clock (from a few seconds ahead, at the calendar's speed then; at once when an
   admin sets the time or everyone starts sleeping), so every side agrees exactly, even though the calendar moves in
@@ -143,9 +135,10 @@ Nothing about the wind or the waves is sent while you play, except a clock:
 
 ## Commands
 
-- `/sea`: wind and waves where you stand, your latitude and wind belt.
-- `/sea storms [range]` (admins): storms nearby, with distance, direction, strength, heading and age.
-- `/sea setwind <from> <strength> [game hours] [built]` (admins): fix the wind everywhere.
+- `/sea`: wind and waves where you stand, your latitude, and where the wind comes from (the provider's name, or
+  vanilla with the sea's steady wind).
+- `/sea setwind <from> <strength> [game hours] [built]` (admins): fix the wind everywhere for the sea and ships (over
+  the provider's; vanilla's weather effects stay the provider's).
   - `from` is a compass point (`N`, `NE`, `SSW`…) or degrees.
   - Hours `0` means it stays fixed until `/sea clearwind`.
   - `built` makes the sea fully up at once, as if the wind had blown for a day. Without it, the sea builds over
@@ -153,39 +146,33 @@ Nothing about the wind or the waves is sent while you play, except a clock:
   - Example: `/sea setwind E 1.5 0 built`.
   - `NaN` and `Infinity` are refused for every number (0.3.7).
   - A fixed wind is saved with the world.
-- `/sea clearwind` (admins): back to the weather.
+- `/sea clearwind` (admins): back to the weather (the provider's wind, or vanilla's).
+- `/sea storms` is gone (0.4.0): storms are Earth's.
 
 - `.sea` (client, with a dot): what Sea is doing on your own client.
+  - where the wind comes from (the provider's name, and any of its answers Sea refused)
   - the wind it sees, and what vanilla sees
   - the sea state and the drawn waves (how many trains, the sheltered-water factor where you are)
   - the wave clock, and how far it still is from the server's
   - whether its water shader code and moving waves went in
   - how many hulls are kept dry
-  - where rain and clouds blow
   - which patches are active
-
-Vanilla's `/weather setw …` no longer changes the wind (Sea decides it). Use `/sea setwind`. To see the rain blow,
-force it with `/weather setprecip 1`, and go back to the weather with `/weather setprecipa`.
 
 ## Config — `VintagestoryData/ModConfig/sea.json` (server; clients get the server's)
 
 | Key | Default | Meaning |
 |---|---|---|
-| `WindModel` | `Earthlike` | `Earthlike` (all layers), `Steady` (prevailing winds and gusts only), `Off` (vanilla wind for trees, rain, sound and boats; the sea still follows Sea's steady winds, so it's the same for everyone) |
-| `PrevailingStrength` | 1 | multiplies the prevailing winds |
-| `Variability` | 1 | multiplies the day-to-day drift |
-| `Gusts` | 1 | multiplies gusts (0 = none) |
-| `StormFrequency` | 1 | multiplies how often storms form (0 = none) |
-| `StormRadius` | 2000 | typical storm size in blocks |
-| `StormSpeed` | 350 | blocks per game hour (≈ 3 blocks/s at the default day length; the carrack does 7) |
-| `SeasonShift` | 8 | degrees the belts move with the seasons |
 | `WaveScale` | 1 | multiplies wave heights, the chop too (0.3.7) |
+| `SeaWindFrom` | 270 | without a wind provider: the compass bearing (degrees) the steady wind the sea follows blows from (0.4.0) |
+| `SeaWindStrength` | 0.3 | without a wind provider: that steady wind's strength, 0–1.5 (0 = a calm sea) (0.4.0) |
 | `CelestialReflections` | 1 | sun/moon trails; 0 restores vanilla highlights; range 0–2 |
 | `SkyReflections` | 1 | faint filtered star/night-sky reflections; 0 disables; range 0–2 |
 | `NightVisibility` | 1 | outdoor ambient night floor/local-moon correction; 0 keeps existing ambient lighting; range 0–2 |
 
-A negative, NaN or infinite number goes back to its default when the server loads the file (0.3.7; `SeasonShift` may be
-negative, up to ±45).
+A negative, NaN or infinite number goes back to its default when the server loads the file (0.3.7); `SeaWindFrom` may
+be any finite number (it's taken round the compass). The weather settings of 0.3 (`WindModel`, `PrevailingStrength`,
+`Variability`, `Gusts`, `StormFrequency`, `StormRadius`, `StormSpeed`, `SeasonShift`) are gone with Sea's weather (Earth
+has its own); an old file keeps them until the server writes it back without them.
 
 ## Dry hulls (for ship mods)
 
@@ -241,9 +228,16 @@ blocks. A ship mod that wants rooms down there tells Sea two things.
 var sea = api.ModLoader.GetModSystem<Sea.SeaSystem>();
 Sea.Wind w = sea.WindAt(x, z);        // w.X, w.Z: where the air goes; w.Strength; w.FromDegrees (compass)
 Sea.SeaState s = sea.SeaAt(x, z);     // Height (blocks), DirX/DirZ (where waves run), Period (s), Wavelength
-sea.Model?.At(x, z, totalHours);      // any place and game time (pure, thread-safe)
+sea.Model?.At(x, z, totalHours);      // any place and game time (pure, thread-safe; calm without a provider)
 sea.AddWaterClipSource(src);          // client: an IWaterClipSource giving hull footprints each frame (width profile, tilt, calm ring)
-sea.SetPrevailingWinds(src);          // both sides: a map's own prevailing winds (IPrevailingWinds) instead of the belts
+
+// a wind provider (Earth): call on every side, any time, with the same pure, thread-safe functions (BCL types only,
+// so it can be bound by reflection without referencing Sea)
+bool ok = sea.SetWindProvider("earth",
+    (x, z, totalHours, gusts) => (toX, toZ),    // vanilla units: +X east, +Z south, length = strength 0..1.5; gusts = false: the steady wind the sea follows
+    (x, z, totalHours) => (toX, toZ));          // the month's prevailing wind (Wmap's layer), or null: windAt without gusts
+sea.ClearWindProvider("earth");       // back to vanilla's wind (only the provider of that name can clear it)
+sea.WindProviderName;                 // who decides the wind on this side, or null
 
 // the waves, the same on the server and every client
 var place = new Sea.WavePlace();      // one per thing that rides or looks at the waves (a ship)
@@ -271,15 +265,15 @@ keeps the old `Sea.dll` and refuses the new one ("Assembly with same name is alr
 
 ```bash
 dotnet build -c Release                  # release/sea-<version>.zip; refuses an existing ZIP, preserves older snapshots
-dotnet run --project tests/SeaTests      # offline: belts, seasons, storms, cache, sea state, speed, waves, shader injection, dry hulls, water particles
-dotnet run --project tests/ShaderCheck   # on this machine's GPU: the edited water and particle shaders compile and link; the dry cut is right
+dotnet run --project tests/SeaTests      # offline: steady sea wind, wind provider, sea state, speed, waves, shader injection, dry hulls, water particles, configs
+dotnet run --project tests/ShaderCheck   # on this machine's GPU: the edited water shaders compile and link; the dry cut is right
 dotnet run --project tests/SkyIntegrationCheck -- --vanilla # no-AstraTerra adapter path, without a game/save
 dotnet run --project tests/SkyIntegrationCheck # exact installed DLL extracted to obj/sky-inspection/AstraTerra.dll
-tools/run_selftest.sh [--with-cworld]    # headless server: vanilla sees Sea's wind, fixed wind, the ring, the waves, speed, breathing in dry places; exits 1 unless "SELFTEST ALL OK"
+tools/run_selftest.sh [--with-cworld]    # headless server: no vanilla weather patched, vanilla's wind without a provider, a provider's wind, fixed wind, the waves, the ring, speed, breathing in dry places; exits 1 unless "SELFTEST ALL OK"
 ```
 
 `tests/ShaderCheck` needs a desktop session. It opens a hidden window with the game's own OpenTK and GLFW. It builds
-the game's water and particle shaders the way the game does (includes expanded, its `#define` lines after
+the game's water shaders the way the game does (includes expanded, its `#define` lines after
 `#version`, low and high settings), with and without Sea's code, and compiles and links them on your graphics driver.
 It then runs Sea's dry-hull test on the GPU over a grid around a shaped hull (level, pitched and rolled, with a
 detailed outline, a raked transom, and flooded: the sea shown under the water in her) and compares every pixel with the
@@ -295,8 +289,6 @@ Earth, Terra Prety and other world generators: `docs/compatibility.md`.
 
 ## Not yet
 
-- **Rain amount doesn't follow the storms yet.** Vanilla's rain comes from its own per-region weather patterns and a
-  rainfall noise, so a storm's wind can arrive under a clear sky.
 - **Waves don't know about coasts.** Only the ocean map shelters them (lakes and inland water get a fifth); a bay or
   the lee of an island on the open sea gets the whole sea.
 

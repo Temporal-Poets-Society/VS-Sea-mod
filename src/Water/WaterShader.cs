@@ -225,31 +225,6 @@ bool seaDry(vec3 p) {
     }
 
     /// <summary>
-    /// Sea's edit to vanilla's particle shader (particlesquad), made as it loads like the water's. Vanilla tilts a
-    /// rain streak by its angle from straight down, but always about the world Z axis, so every streak leans toward
-    /// east whichever way the drops go (vanilla's wind has no direction). Sea lays each streak along its drop's own
-    /// path instead, so the rain leans with Sea's wind. Nothing else in that shader changes.
-    /// </summary>
-    public static class RainShader
-    {
-        public const string Pass = "particlesquad";
-        public const string Marker = "seaRainStreak";
-        const string Vanilla = "mvmat = mvmat * rotationZ(zangle);";
-        // the quad's own y axis becomes the drop's path (u: its direction of travel, normalised just above); vanilla
-        // then only overwrites the x and z axes to face the camera
-        const string Replacement = "mvmat[1] = modelViewMatrix * vec4(-u, 0.0); // " + Marker + ": along the drop's own path";
-
-        /// <summary>The shader code with Sea's rain streaks, or null if it's already in or vanilla's line wasn't found.</summary>
-        public static string Inject(string code)
-        {
-            if (code == null || code.Contains(Marker)) return null;
-            int i = code.IndexOf(Vanilla, StringComparison.Ordinal);
-            if (i < 0) return null;
-            return code.Remove(i, Vanilla.Length).Insert(i, Replacement);
-        }
-    }
-
-    /// <summary>
     /// A hull footprint where water must stay below the waterline, in world coordinates. The keel runs along
     /// (sin Yaw, cos Yaw) (an entity's yaw); the footprint is centred CentreOffset blocks along the keel from (X, Z).
     /// A hull riding the waves tilts its waterline (SlopeAlong, SlopeAcross), and the water next to it settles to
