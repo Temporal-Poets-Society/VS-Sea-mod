@@ -49,7 +49,7 @@ static class Program
             var value = RuntimeHelpers.GetUninitializedObject(typeof(CelestialRenderer));
             typeof(CelestialRenderer).GetField("api", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(value, api);
             typeof(CelestialRenderer).GetMethod("InitializeAstra", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(value, null);
-            Check(typeof(CelestialRenderer).GetField("astraSky", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(value) == null, "vanilla path initializes with no AstraTerra assembly loaded");
+            Check(!(bool)typeof(CelestialRenderer).GetField("astraPresent", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(value), "vanilla path initializes with no AstraTerra assembly loaded");
             return failures;
         }
         string assemblyPath = Path.GetFullPath(args.Length > 0 ? args[0] : "obj/sky-inspection/AstraTerra.dll");
@@ -63,40 +63,17 @@ static class Program
         Check(!failed, "Sea's actual optional adapter initializes against the extracted installed AstraTerra 0.15.0 DLL");
         if (!failed)
         {
-            var reader = (Delegate)typeof(CelestialRenderer).GetField("readStar", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(renderer);
-            object star = Activator.CreateInstance(at.GetType("AstraTerra.Astronomy.RenderedStar"));
-            var sample = (CelestialRenderer.Star)reader.DynamicInvoke(star);
-            Check(sample.X == 0 && sample.Brightness == 0, "compiled star reader accepts the real RenderedStar struct");
-            var modeMethod = at.GetType("AstraTerra.Config.StarfieldModeParser").GetMethod("ShowsAstraTerra");
-            Check(modeMethod != null, "custom star mode can be checked without enabling a dependency");
             var days = at.GetType("AstraTerra.Astronomy.LocalMoonTime").GetMethod("MoonTotalDays");
             Check(Math.Abs((double)days.Invoke(null, new object[] { 4.0, 90.0, true }) - 4.25) < 1e-12,
                 "local moon source follows AstraTerra's longitude correction");
             // (0.4.2) the adapter's own typed delegates, bound once, call the real methods (no config loaded: AstraTerra's stars off)
             object D(string name) => typeof(CelestialRenderer).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(renderer);
             var localDays = (System.Func<double, double, bool, double>)D("localMoonDays");
-            bool shows = ((System.Func<bool>)D("showsAstra"))(), vanilla = ((System.Func<bool>)D("vanillaStars"))();
-            bool path = ((System.Func<bool>)D("starPath"))(), near = ((System.Func<bool>)D("nearMoon"))(), disc = ((System.Func<bool>)D("customMoon"))();
-            Check(Math.Abs(localDays(4.0, 90.0, true) - 4.25) < 1e-12 && localDays(4.0, 90.0, false) == 4.0 && !shows && vanilla
+            bool near = ((System.Func<bool>)D("nearMoon"))(), disc = ((System.Func<bool>)D("customMoon"))();
+            Check(Math.Abs(localDays(4.0, 90.0, true) - 4.25) < 1e-12 && localDays(4.0, 90.0, false) == 4.0
                 && D("longitude") != null && D("moonPhase") != null,
-                $"the adapter's typed delegates call AstraTerra (moon days 4.25; no config: its stars {shows}, vanilla's {vanilla}; star path {path}, moons {near}/{disc})");
+                $"the adapter's typed delegates call AstraTerra (moon days 4.25; moons replaced: near body {near}, disc {disc})");
         }
-
-        var field = typeof(CelestialRenderer).GetField("pixels", BindingFlags.Instance | BindingFlags.NonPublic);
-        var pixels = new float[1024 * 512]; field.SetValue(renderer, pixels);
-        var splat = typeof(CelestialRenderer).GetMethod("Splat", BindingFlags.Instance | BindingFlags.NonPublic);
-        void Draw(float angle) => splat.Invoke(renderer, new object[] { new CelestialRenderer.Star(MathF.Cos(angle), 0, MathF.Sin(angle), 0.8f) });
-        Draw(MathF.PI);
-        Check(pixels[256 * 1024] > 0 && pixels[256 * 1024 + 1023] > 0, "star atlas wraps continuously across its longitude seam");
-        var first = (float[])pixels.Clone(); Array.Clear(pixels); Draw(MathF.PI);
-        Check(first.SequenceEqual(pixels), "star atlas is deterministic, with no frame-random flicker");
-        float energy = pixels.Sum(); Array.Clear(pixels); Draw(MathF.PI + MathF.PI / 3600f);
-        Check(Math.Abs(pixels.Sum() / energy - 1) < 0.01, "subpixel sky motion preserves star energy within 1 percent");
-        var paint = (Action<CelestialRenderer.Star>)splat.CreateDelegate(typeof(Action<CelestialRenderer.Star>), renderer);
-        var clock = System.Diagnostics.Stopwatch.StartNew();
-        for (int i = 0; i < 6000; i++) paint(new CelestialRenderer.Star(MathF.Cos(i * 0.01f), 0, MathF.Sin(i * 0.01f), 0.15f));
-        clock.Stop();
-        Console.WriteLine($"       synthetic 6000-star CPU splat: {clock.Elapsed.TotalMilliseconds:0.00} ms (one rebuild, excludes GPU upload; not a frame-rate measurement)");
 
         var p = typeof(CelestialRenderer).GetMethod("FarFragment");
         string farPath = Path.GetFullPath("../Wmap/assets/wmap/shaders/farterrain.fsh");
@@ -104,7 +81,8 @@ static class Program
         {
             string source = File.ReadAllText(farPath);
             string patched = (string)p.Invoke(null, new object[] { source });
-            Check(patched != null && patched.Contains("seaNightFloor") && CelestialRenderer.FarFragment(patched) == null, "installed workspace Wmap distant lighting adapter applies once");
+            Check(patched != null && patched.Contains("seaNightFloor") && patched.Contains(CelestialShader.FarSkyReflection) && CelestialRenderer.FarFragment(patched) == null,
+                "workspace Wmap: distant night floor and sea sky reflection apply once");
         }
         else Check(false, "Wmap source available for the optional continuity check");
         Console.WriteLine(failures == 0 ? "ALL OK" : failures + " FAILED");

@@ -44,6 +44,8 @@ namespace Sea
         WaterRenderer waterRenderer;
         CelestialRenderer celestialRenderer;
         public string CelestialStatus => celestialRenderer?.Status ?? "Celestial presentation unavailable.";
+        /// <summary>The client's sky and night presentation (null on the server, or before the world is ready).</summary>
+        public CelestialRenderer Celestial => celestialRenderer;
 
         public SeaConfig Config = new();
         /// <summary>The wind model; null until the world is ready (server) or the server's parameters arrived (client).</summary>

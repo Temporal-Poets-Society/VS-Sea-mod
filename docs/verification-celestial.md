@@ -1,3 +1,65 @@
+# Sea 0.4.6 — 22 October 2026 (no fog-coloured horizon at night)
+
+**Reported in game** (0.4.5 with Wmap 0.4.5, clear night at sea): a red-brown band where the sea meets the sky.
+
+Cause: `getSkyColorAt` (vanilla `skycolor.fsh`) ends with `mix(skyColor, vec4(rgbaFog.rgb, fogAmount), 1 - light)`:
+at night its rgb is the fog colour and its alpha the fog amount, and the sky dome shows rgb × alpha over dark space.
+0.4.4's reflection took the rgb alone (`seaSkyColor`; `FarSkyReflection` mixed toward `sky.rgb`), and at a grazing
+angle Fresnel is near 1, so the horizon of the sea turned the fog colour. The 0.4.4 GPU check asserted that.
+
+Fix: `seaSkyColor` returns its colour times `mix(1, fog, 1 - light)`; `FarSkyReflection` reflects `sky.rgb × sky.a`.
+By day (alpha 1) nothing changes.
+
+- Release build 0 warnings/errors → `release/sea-0.4.6.zip` (SHA-256
+  `48f0314946426fc3dbbcf8c71066a1d16a9e5e31781422bc56ab2d2b9713d7fe`), installed in place of 0.4.5. Older ZIPs kept.
+- SeaTests ALL OK. ShaderCheck (RX 6600) ALL OK; the sky-reflection check now requires the night dome over dark space:
+  grazing at night 0.00 clear, 0.09 with fog 0.5 (0.4.5 gave the fog colour, 0.16). Day values unchanged (looking
+  down 0.057, grazing 0.82, alpha 0.91).
+- In-game: **not run.**
+
+# Sea 0.4.4 — 21 October 2026 (Fresnel sky reflection instead of stars; night level chosen in game)
+
+**User play-test of 0.4.3** (same setup as below): with `.sea sky` raised, small waves showed blotches ("leopard skin")
+from the star reflections. The user judged `.sea night 2` right in a dark room and `3` with a light near the monitor,
+and chose: remove the star reflections, reflect the sky realistically (option B), no Milky Way on the water (SEA-D35,
+SEA-D36).
+
+Changes: the water reflects the game's sky colour by Fresnel through Sea's wave normals (`seaSkyReflect`/`seaSkyColor`
+in `CelestialShader`); Wmap's distant sea gets the same reflection through Sea's adapter (`FarSkyReflection`, uniform
+`seaSkyReflect`). Star cube, star atlas, AstraTerra star reads and `StarCubemap.cs` are removed; the AstraTerra adapter
+now reads only its moon. Night floor at 1: 0.15 / 0.45 (was 0.075 / 0.225). Fog no longer attenuates glints or the
+floor. `.sea` shows sky daylight and the three strengths in effect.
+
+- Release build 0 warnings/errors → `release/sea-0.4.4.zip` (SHA-256 `32688d06e45ebf04c6b587fd03e0deac4e92672cf1b922e7159e9bd698b6f2f0`).
+  Older ZIPs kept.
+- SeaTests ALL OK, including the night levels, sky daylight, shader text and the Wmap adapter (applied with its water
+  flag, floor only without).
+- ShaderCheck (RX 6600) ALL OK: water variants compile with `seaSky`, `seaSkyTex`, `seaGlowTex` live; Wmap working
+  tree (= installed 0.4.4) and installed 0.4.1 compile with the adapter, `seaSkyReflect` live. New GPU check: water
+  b 0.04 / alpha 0.4 → looking down 0.057, grazing 0.82 with alpha 0.91, at night the fog colour; off unchanged.
+- SkyIntegrationCheck (AstraTerra 0.15.0 DLL) and `--vanilla`: ALL OK.
+- In-game: **not run.** The look by day and night, rough water, the Wmap seam and the full-moon night level are unjudged.
+
+# Sea 0.4.3 — 21 October 2026 (live night/reflection tuning; first night play-test of 0.4.2)
+
+**Play-test of 0.4.2 by the user** (Earth 0.15.2, AstraTerra 0.15.0-dev.1-earthtest with `MoonArt: vanilla`,
+`LongitudeAwareSun: true`, Wmap 0.4.4, Hansa dev.3), open sea at x 116028, z 46982:
+
+- Overcast moonless night: `.sea` clear 0.26, moon −65.8° (fraction 0.13), floor 0.020; Earth `/earthweather`: clouds
+  100 %. Dark, no reflections: the designed overcast/moonless result.
+- Clear moonless night: clear 1.00, moon −46.6° (fraction 0.59), floor 0.075. Screenshot: AstraTerra's sky and Milky Way
+  bright, water and ground near black, no visible star or sky reflection. **Findings:** the moonless floor does not meet
+  the user's "some visibility" target; water does not reflect the sky's brightness (fixed faint tint, stars at ≈4.5 %,
+  fade-out from 0.50 of view distance, no Milky Way in Sea's data). With `MoonArt: vanilla` the moon keeps the global
+  clock while AstraTerra's sun follows Earth's longitude.
+
+0.4.3 adds client commands `.sea night|sky|glint <0–4>` (and `default`, `.sea reset`) that override the three strengths
+on that client only, at once, until the world is left, so defaults can be chosen from in-game comparisons. No default,
+shader or `sea.json` behaviour changed. Release build 0 warnings/errors → `release/sea-0.4.3.zip`
+(SHA-256 `f73e17dc44354af748b674bb80b9dd8a09fa67e0eba217f09026abea38e9ec4d`); 0.4.2 and older ZIPs kept. SeaTests, ShaderCheck (GPU), SkyIntegrationCheck: ALL OK. The command
+dispatch was checked against the game's `ChatCommandImpl.Execute` (bare `.sea` still reports). The commands have not
+been run in game.
+
 # Wmap 0.4.3 far-terrain anchors — 21 October 2026 (branch `wmap-043-far-anchors`)
 
 **ShaderCheck reported 2 failures** on `main` (db0ab6a): "Wmap distant terrain with Sea night floor: Sea's code

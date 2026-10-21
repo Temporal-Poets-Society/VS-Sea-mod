@@ -63,9 +63,54 @@ namespace Sea
         /// <summary>.sea on a client: what Sea is doing there (for checking that the client side works).</summary>
         public static void RegisterClient(ICoreClientAPI capi, SeaSystem sys)
         {
+            var parsers = capi.ChatCommands.Parsers;
             capi.ChatCommands.Create("sea")
                 .WithDescription("What Sea is doing on your client: wind, waves, water shader, patches")
-                .HandleWith(args => TextCommandResult.Success(ClientReport(capi, sys)));
+                .HandleWith(args => TextCommandResult.Success(ClientReport(capi, sys)))
+                // (0.4.3) tuning by eye: this client only, at once, until you leave the world (sea.json is unchanged)
+                .BeginSubCommand("night")
+                    .WithDescription("Night visibility on your client now, 0-4 (sea.json's NightVisibility otherwise; 1 = clear moonless 0.15, high full moon 0.45)")
+                    .WithArgs(parsers.OptionalWord("value"))
+                    .HandleWith(args => Tune(sys, args[0] as string, "night", c => c.NightOverride, (c, v) => c.NightOverride = v, c => c.NightStrength))
+                .EndSubCommand()
+                .BeginSubCommand("sky")
+                    .WithDescription("Sky reflection on the water (Fresnel) on your client now, 0-4 (sea.json's SkyReflections otherwise; 1 = physical)")
+                    .WithArgs(parsers.OptionalWord("value"))
+                    .HandleWith(args => Tune(sys, args[0] as string, "sky", c => c.SkyOverride, (c, v) => c.SkyOverride = v, c => c.SkyStrength))
+                .EndSubCommand()
+                .BeginSubCommand("glint")
+                    .WithDescription("Sun glitter and moon trail on your client now, 0-4 (sea.json's CelestialReflections otherwise; 0 = vanilla's sun highlight)")
+                    .WithArgs(parsers.OptionalWord("value"))
+                    .HandleWith(args => Tune(sys, args[0] as string, "glint", c => c.GlintOverride, (c, v) => c.GlintOverride = v, c => c.GlintStrength))
+                .EndSubCommand()
+                .BeginSubCommand("reset")
+                    .WithDescription("Back to sea.json's night, sky and glint strengths")
+                    .HandleWith(args =>
+                    {
+                        var c = sys.Celestial;
+                        if (c == null) return TextCommandResult.Error("Sea's sky presentation isn't running on this client.");
+                        c.NightOverride = c.SkyOverride = c.GlintOverride = null;
+                        return TextCommandResult.Success($"Back to sea.json: night {c.NightStrength:0.##}, sky {c.SkyStrength:0.##}, glint {c.GlintStrength:0.##}.");
+                    })
+                .EndSubCommand();
+        }
+
+        /// <summary>Show or set one of the client's live strengths. No value: what it is now. "default": sea.json's again.</summary>
+        static TextCommandResult Tune(SeaSystem sys, string value, string name, System.Func<CelestialRenderer, float?> get, System.Action<CelestialRenderer, float?> set, System.Func<CelestialRenderer, float> now)
+        {
+            var c = sys.Celestial;
+            if (c == null) return TextCommandResult.Error("Sea's sky presentation isn't running on this client.");
+            if (string.IsNullOrEmpty(value))
+                return TextCommandResult.Success($"{name}: {now(c):0.##}{(get(c).HasValue ? " (set here; .sea " + name + " default for sea.json's)" : " (sea.json)")}.");
+            if (value == "default")
+            {
+                set(c, null);
+                return TextCommandResult.Success($"{name}: {now(c):0.##} (sea.json).");
+            }
+            if (!float.TryParse(value.Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float v) || !float.IsFinite(v))
+                return TextCommandResult.Error($"Give a number from 0 to 4, or 'default': .sea {name} 1.5");
+            set(c, Math.Clamp(v, 0, 4));
+            return TextCommandResult.Success($"{name}: {now(c):0.##} on this client until you leave the world (sea.json unchanged). .sea shows the result.");
         }
 
         static string ClientReport(ICoreClientAPI capi, SeaSystem sys)

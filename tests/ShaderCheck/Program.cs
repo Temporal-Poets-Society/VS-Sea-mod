@@ -82,7 +82,7 @@ namespace ShaderCheck
                             int cp = Build("celestial water, dry cut " + dry, cv, cf, defs);
                             if (cp != 0)
                             {
-                                foreach (string u in new[] { "seaSun", "seaMoon", "seaEffects", "seaCustomStars", "seaVanillaStars", "seaStarMatrix", "seaWeather", "seaEye" })
+                                foreach (string u in new[] { "seaSun", "seaMoon", "seaEffects", "seaSky", "seaSkyTex", "seaGlowTex", "seaWeather", "seaEye" })
                                     Check(GL.GetUniformLocation(cp, u) >= 0, "celestial uniform live: " + u);
                                 GL.DeleteProgram(cp);
                             }
@@ -93,8 +93,14 @@ namespace ShaderCheck
                 if (Directory.Exists(wm))
                 {
                     foreach (string f in Directory.GetFiles(Path.Combine(wm, "shaderincludes"))) includes[Path.GetFileName(f)] = File.ReadAllText(f);
-                    int wp = Build("Wmap distant terrain with Sea night floor", Load(Path.Combine(wm, "shaders"), "farterrain.vsh"), CelestialShader.FarFragment(Load(Path.Combine(wm, "shaders"), "farterrain.fsh")), defs);
-                    if (wp != 0) GL.DeleteProgram(wp);
+                    string farf = CelestialShader.FarFragment(Load(Path.Combine(wm, "shaders"), "farterrain.fsh"));
+                    Check(farf != null && farf.Contains(CelestialShader.FarSkyReflection), "Wmap working tree: Sea's distant-sea sky reflection goes in");
+                    int wp = Build("Wmap distant terrain with Sea night floor and sky reflection", Load(Path.Combine(wm, "shaders"), "farterrain.vsh"), farf, defs);
+                    if (wp != 0)
+                    {
+                        Check(GL.GetUniformLocation(wp, "seaSkyReflect") >= 0 && GL.GetUniformLocation(wp, "seaNightFloor") >= 0, "Wmap: seaSkyReflect and seaNightFloor are live");
+                        GL.DeleteProgram(wp);
+                    }
                     const string installed = "obj/sky-inspection/installed-farterrain.fsh";
                     if (File.Exists(installed))
                     {
@@ -111,29 +117,69 @@ namespace ShaderCheck
             DryCutMatches();
             CelestialLobes();
             CelestialVisible();
-            StarCubeCopy();
+            SkyReflection();
 
             Console.WriteLine(failures == 0 ? "ALL OK" : $"{failures} FAILED");
             return failures == 0 ? 0 : 1;
         }
 
-        static void StarCubeCopy()
+        // (0.4.4) The sky reflection: little looking down, the sky's own colour at a grazing angle; and alpha rises with it
+        // (what reaches the screen is rgb * alpha). (0.4.6) At night the dome as shown: its fog colour times its fog amount
+        // over dark space. 0.4.4 and 0.4.5 reflected the bare fog colour, a red-brown horizon (reported in game).
+        static void SkyReflection()
         {
-            int original = GL.GenTexture(); GL.BindTexture(TextureTarget.TextureCubeMap, original);
-            var data = new byte[16 * 16 * 4]; Array.Fill(data, (byte)128);
-            for (int i = 0; i < 6; i++) GL.TexImage2D((TextureTarget)((int)TextureTarget.TextureCubeMapPositiveX + i), 0, PixelInternalFormat.Rgba8, 16, 16, 0, PixelFormat.Rgba, PixelType.UnsignedByte, data);
-            GL.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-            GL.GetInteger(GetPName.ReadFramebufferBinding, out int beforeRead); GL.GetInteger(GetPName.DrawFramebufferBinding, out int beforeDraw);
-            int copy = StarCubemap.Create(original);
-            GL.GetInteger(GetPName.ReadFramebufferBinding, out int afterRead); GL.GetInteger(GetPName.DrawFramebufferBinding, out int afterDraw);
-            GL.GetInteger(GetPName.TextureBindingCubeMap, out int afterCube);
-            GL.GetTexParameter(TextureTarget.TextureCubeMap, GetTextureParameter.TextureMinFilter, out int filter);
-            GL.BindTexture(TextureTarget.TextureCubeMap, copy);
-            GL.GetTexLevelParameter(TextureTarget.TextureCubeMapPositiveX, 2, GetTextureParameter.TextureWidth, out int width);
-            float[] pixels = new float[4 * 4 * 4]; GL.GetTexImage(TextureTarget.TextureCubeMapPositiveX, 2, PixelFormat.Rgba, PixelType.Float, pixels);
-            Check(width == 4 && Math.Abs(pixels[0] - 128f / 255) < 0.01 && afterCube == original && beforeRead == afterRead && beforeDraw == afterDraw && filter == (int)TextureMinFilter.Linear,
-                "GPU: star cube copy preserves pixels, builds mipmaps, restores framebuffer/binding and leaves sky filtering unchanged");
-            GL.BindTexture(TextureTarget.TextureCubeMap, 0); GL.DeleteTexture(copy); GL.DeleteTexture(original);
+            const string v = "#version 330 core\nvoid main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0,1); }";
+            string f = "#version 330 core\n" + CelestialShader.Declarations + @"
+uniform vec3 testEye;
+out vec4 outColor;
+void main(){ vec3 e=normalize(testEye); vec3 n=vec3(0,1,0); vec3 r=reflect(e,n);
+  float fres = 0.02 + 0.98 * pow(1.0 - max(0.0, dot(-e, n)), 5.0);
+  vec4 c=seaSkyReflect(vec4(0.02,0.03,0.04,0.4), r, fres, vec3(0.10,0.12,0.16)); outColor=c; }";
+            int vs = Compile(ShaderType.VertexShader, v, out string vl), fs = Compile(ShaderType.FragmentShader, f, out string fl);
+            if (vs == 0 || fs == 0) { Check(false, "sky reflection program compiles", vl + fl); return; }
+            int p = GL.CreateProgram(); GL.AttachShader(p, vs); GL.AttachShader(p, fs); GL.LinkProgram(p);
+            GL.GetProgram(p, GetProgramParameterName.LinkStatus, out int linked);
+            if (linked != 1) { Check(false, "sky reflection program links", GL.GetProgramInfoLog(p)); return; }
+            int Tex(float r, float g, float b, float a)
+            {
+                int t = GL.GenTexture(); GL.BindTexture(TextureTarget.Texture2D, t);
+                GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba32f, 1, 1, 0, PixelFormat.Rgba, PixelType.Float, new[] { r, g, b, a });
+                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+                return t;
+            }
+            int sky = Tex(0.30f, 0.50f, 0.90f, 1), glow = Tex(0, 0, 0, 0);
+            int tex = GL.GenTexture(), fb = GL.GenFramebuffer(), vao = GL.GenVertexArray();
+            GL.BindTexture(TextureTarget.Texture2D, tex);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba32f, 1, 1, 0, PixelFormat.Rgba, PixelType.Float, IntPtr.Zero);
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, fb);
+            GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, tex, 0);
+            GL.BindVertexArray(vao); GL.Viewport(0, 0, 1, 1); GL.UseProgram(p);
+            GL.ActiveTexture(TextureUnit.Texture10); GL.BindTexture(TextureTarget.Texture2D, sky);
+            GL.ActiveTexture(TextureUnit.Texture11); GL.BindTexture(TextureTarget.Texture2D, glow);
+            GL.ActiveTexture(TextureUnit.Texture0);
+            GL.Uniform1(GL.GetUniformLocation(p, "seaSkyTex"), 10); GL.Uniform1(GL.GetUniformLocation(p, "seaGlowTex"), 11);
+            GL.Uniform4(GL.GetUniformLocation(p, "seaSun"), 0f, 0.7f, 0.7f, 1.6f);
+            GL.Uniform4(GL.GetUniformLocation(p, "seaWeather"), 1f, 0f, 0f, 0f);
+            float[] Read(float strength, float skyLight, float ex, float ey, float ez, float fogMin = 0f)
+            {
+                GL.Uniform2(GL.GetUniformLocation(p, "seaEffects"), 0f, strength);
+                GL.Uniform4(GL.GetUniformLocation(p, "seaSky"), skyLight, 0f, fogMin, 0f);
+                GL.Uniform3(GL.GetUniformLocation(p, "testEye"), ex, ey, ez);
+                GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
+                float[] result = new float[4]; GL.ReadPixels(0, 0, 1, 1, PixelFormat.Rgba, PixelType.Float, result); return result;
+            }
+            var down = Read(1, 1, 0.05f, -1, 0);
+            var grazing = Read(1, 1, 1, -0.02f, 0);
+            var night = Read(1, 0, 1, -0.02f, 0);
+            var nightFog = Read(1, 0, 1, -0.02f, 0, 0.5f);
+            var off = Read(0, 1, 1, -0.02f, 0);
+            Check(Math.Abs(down[2] - 0.04f) < 0.02f && down[3] < 0.45f && grazing[2] > 0.75f && grazing[3] > 0.9f
+                && night[2] < 0.02f && Math.Abs(nightFog[2] - 0.08f) < 0.02f && Math.Abs(off[2] - 0.04f) < 1e-4f && Math.Abs(off[3] - 0.4f) < 1e-4f,
+                $"GPU: sky reflection by Fresnel (looking down b {down[2]:0.000}, grazing {grazing[2]:0.00} alpha {grazing[3]:0.00}; at night the dome over dark space: clear {night[2]:0.00}, fog 0.5 {nightFog[2]:0.00}, not the fog colour 0.16); off leaves the water unchanged");
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0); GL.UseProgram(0);
+            GL.DeleteVertexArray(vao); GL.DeleteFramebuffer(fb); GL.DeleteTexture(tex); GL.DeleteTexture(sky); GL.DeleteTexture(glow);
+            GL.DeleteProgram(p); GL.DeleteShader(vs); GL.DeleteShader(fs);
         }
 
         // What reaches the screen: the OIT pass shows rgb * alpha over the scene, so a glint must survive that.

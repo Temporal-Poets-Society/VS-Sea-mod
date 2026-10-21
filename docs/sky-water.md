@@ -1,4 +1,18 @@
-# Celestial water and night visibility — 0.3.8-pre.3
+# Celestial water and night visibility — 0.4.4
+
+**0.4.4 (21 October 2026), after the first night play-tests (SEA-D35, SEA-D36).** Star reflections are removed: on
+small waves they showed as blotches ("leopard skin"), and at the default strength they were invisible. In their place
+the water reflects **the sky the game draws**, by Fresnel through Sea's wave normals: barely anything looking down, the
+sky's own colour toward the horizon, so the sea meets the sky there instead of lying black under it. The colour is the
+game's own sky function (`skycolor.fsh`: `sky.png` by sun and view height, `sunlight.png` glow, its fog). At night that
+function returns the fog colour with alpha = its fog amount (`mix` to `vec4(rgbaFog.rgb, fogAmount)` by `1 - dayLight`),
+and the dome shows rgb × alpha over dark space; since 0.4.6 the reflection takes that, not the bare fog colour, which
+0.4.4 and 0.4.5 reflected as a red-brown band on the horizon (reported in game). AstraTerra's
+Milky Way and stars are not reflected (the user's choice). Wmap's distant sea gets the same reflection through Sea's
+optional adapter, so it does not stop at half the view distance. Fog no longer dims the glints or the night floor (the
+game fogs the scene itself). Night visibility at strength 1 is now 0.15 clear-moonless and 0.45 under a high full moon
+(the user found 0.4.3's strength 2–3 right in game; existing `sea.json` files at 1 get the new level). Sections below
+that mention star reflections describe 0.3.8–0.4.3.
 
 pre.3: sun/moon glints were invisible in pre.1/pre.2 (added RGB without alpha in a premultiplied OIT pass); they now
 mix toward the light and raise alpha like vanilla's highlight. 0.3.8-pre.1 crashed on its first in-game frame (null camera matrix); pre.2 fixes it. See [verification](verification-celestial.md).
@@ -18,13 +32,13 @@ is a new build or manifest dependency. Inspection outputs and test logs are in `
 | Vanilla water (`chunkliquid.fsh`, `ChunkRenderer.RenderOIT`) | One procedural sun highlight; `sunPosRel` is the sun, not the moon. `SunSpecularIntensity` comes from a screen occlusion query in `SystemRenderSunMoon.OnRenderFrame3DPost` | Retain the original highlight behind `CelestialReflections = 0`; otherwise replace it, with no second sun highlight. Use source directions and local sunlight/shadow exposure, without the screen query |
 | Water normals (`chunkliquid.vsh`, Sea `WaterShader`) | Sea previously displaced vertices but left flat packed normals; vanilla's highlight invented unrelated noise normals | Analytic gradients of the same uploaded Sea trains, divided by the same oceanity/weak-wave factor, interpolated between vertices |
 | Vanilla stars (`SystemRenderNightSky`, `nightsky.vsh/fsh`) | A complete six-face star cubemap rotated by a model matrix. It exists independently of the view frustum. `ClientPlatformWindows.Load3DTextureCube` uploads only level 0 with linear filters | Copy all faces to a private, at-most-512px cube and generate mipmaps; sample with the inverse source rotation. No modification to the sky renderer's texture |
-| Engine `sky`/`glow` textures (`SystemRenderSkyColor`, `skycolor.fsh`) | Colour lookup images, **not captures of rendered sky objects**. They contain neither the rendered moon nor AstraTerra stars | No claim that sampling these captures custom objects. Reflections use source sky data instead of screen pixels |
+| Engine `sky`/`glow` textures (`SystemRenderSkyColor`, `skycolor.fsh`) | Colour lookup images, **not captures of rendered sky objects**. They contain neither the rendered moon nor AstraTerra stars. At night the sky dome is drawn as the fog colour | (0.4.4) Sampled for the Fresnel sky reflection, like `getSkyColorAt` without its dither; bound to units 10 and 11 when the water program is used |
 | Vanilla moon (`ClientGameCalendar.Update`, `SystemRenderSunMoon`, `celestialobject.fsh`) | Position from the calendar; displayed phase shading uses sun/moon directions. Calendar moon ambient brightness has its own phase table | Vanilla trail uses the source moon direction and illuminated fraction from the displayed sun/moon separation |
 | AstraTerra stars (`SkyStarSunMoonRenderer`) | `DrawableStars` contains the projected sky, filtered by horizon/brightness, not camera frustum. Meshes add a residual sidereal rotation below the 0.05-degree projection threshold | A smooth 1024×512 atlas of these stars, refreshed only when source cache inputs change and at most four times a second. Grayscale brightness, not an exact rendering of each sprite; cache/residual/throttle error is below the reflection blur during ordinary time progression |
 | AstraTerra moon (`MoonDiscRenderer.Draw`, `LocalMoonTime`, `VanillaMoonPhase`, `MoonDiscMeshBuilder`) | With `MoonArt` pixel/photo, position uses `TotalDays + ObserverLongitude / 360`; terminator uses local `ExactAt`. With vanilla art the vanilla moon remains | Reflect the same local moon and phase when replaced. Check actual renderer replacement flags each frame; no forced change to AstraTerra settings |
 | AstraTerra solar/extra light (`LongitudeAwareSunController`, `NearBodyLightPatchHost`) | Solar delegate can change longitude/tilt. Near-body lighting adjusts calendar light for planetshine/eclipses | Read the resulting calendar sun; never add a separate AstraTerra light source |
 | Night ambient (`AmbientManager.UpdateDaylight/UpdateAmbient`, `fogandlight.vsh`) | Vanilla already combines sun/moon light, dims scene brightness at night, and multiplies ambient by each surface's propagated sunlight. Block and point lights are separate | A client presentation floor on **ambient sunlight**, not gamma, exposure, `MINBRIGHT`, block lighting or server light levels |
-| Weather | Blended cloud/fog modifiers and actual `WeatherSystemClient.GetPrecipitation`, including the rain-cloud overlay | Attenuate added effects using these inputs. Sea wind storms alone do not imply overcast: precipitation is still vanilla weather |
+| Weather | Blended cloud/fog modifiers and actual `WeatherSystemClient.GetPrecipitation`, including the rain-cloud overlay. Overcast and haze patterns set cloud thickness 1 | Cloud and rain attenuate the glints and the night floor (overcast keeps 8 %); (0.4.4) fog does not. The sky reflection needs no attenuation: the game's sky colour already darkens under cloud. With Earth's weather, overcast is common at sea |
 | Wmap (`FarTerrain.LoadShader`, `farterrain.fsh`) | Separate opaque distant surface; no celestial specular sampler; starts at 0.75× view distance | New near-water effects fade from 0.50–0.74× view distance. Optional shader adapter applies the same ambient floor to Wmap land/water; no Wmap source edit or hard dependency |
 
 The installed `wmap_0.4.1.zip` shader was also inspected: unlike the current Wmap working tree, it lacks the
@@ -42,21 +56,24 @@ The inspected installed config uses `StarfieldMode: astraterra`, `MoonArt: vanil
 
 Sun glitter and moon trails follow the reflected source direction, with continuous wave slope movement, a wider
 lobe as seas grow, horizon fade, weather attenuation and angle-dependent Fresnel weighting. Sheltered water scales
-both slope and roughness. Stars are faint, spatially filtered and contain no frame-random seeds. The night sky
-also contributes a very faint blue background. This is a low-frequency approximation, not a textured moon-disc
+both slope and roughness. (0.4.4) The sky reflection is described at the top; it replaced 0.3.8's faint stars and
+blue background. This is a low-frequency approximation, not a textured moon-disc
 reflection or a capture of clouds, planets, Milky Way, meteors or constellation overlays.
 
-The added shader writes RGB only, before the existing fog application. Water alpha, underwater effects, depth pass,
+The added shader writes before the existing fog application; glints and the sky reflection raise alpha by their
+weight (the OIT pass shows rgb × alpha), as vanilla's highlight does. Water alpha, underwater effects, depth pass,
 foam and dry-hull discard remain owned by their existing paths. Added reflections require upward, sky-exposed
 water and a camera above water. The eye ray comes from the inverse camera matrix, including third-person offsets.
 Directional sun shadows are retained; moon and star occlusion use the water's existing skylight exposure flag,
 not a new terrain ray trace. Weather attenuation is a local average, not exact occlusion by each visible cloud.
 
 Night visibility extends Sea's water-only responsibility by one small client environment hook. At default strength,
-the clear, fully dark ambient target is 0.075 for a moonless sky and up to 0.225 with a high full moon (blue channel;
+the clear, fully dark ambient target is 0.15 for a moonless sky and up to 0.45 with a high full moon (0.4.4; it was
+0.075 and 0.225) (blue channel;
 red ×0.78, green ×0.88). Twilight fades it out smoothly. These are **deliberate gameplay values**, brighter than
 physical starlight. They aim to make shores and decks readable while leaving lanterns useful for colour, detail and
-enclosed spaces. Their gameplay adequacy has not been assessed in game.
+enclosed spaces. On 21 October the user judged the moonless level in game: 0.15 right in a dark room, 0.225 with a light near
+the monitor (`.sea night 1.5`). The full-moon level is not yet judged.
 
 The floor takes a maximum with existing lighting. For AstraTerra's pixel/photo moon only, a known vanilla calendar
 moon contribution can be scaled down when that moon disagrees with the displayed local moon. This scaling is
@@ -80,23 +97,25 @@ Server `ModConfig/sea.json`, sent to clients (matching Sea version required). Ex
 | Key | Default | Meaning |
 |---|---|---|
 | `CelestialReflections` | 1 | Sun/moon highlight strength. 0 restores vanilla's highlight |
-| `SkyReflections` | 1 | Faint stars and night-sky background. 0 disables them |
-| `NightVisibility` | 1 | Outdoor ambient floor/local-moon correction. 0 keeps existing ambient lighting |
+| `SkyReflections` | 1 | (0.4.4) The sky reflected by Fresnel, near and on Wmap's distant sea. 1 is physical; 0 disables |
+| `NightVisibility` | 1 | Outdoor ambient floor/local-moon correction (0.4.4: 1 = moonless 0.15, full moon 0.45). 0 keeps existing ambient lighting |
+
+Tuning by eye (0.4.3): on a client, `.sea night <0–4>`, `.sea sky <0–4>` and `.sea glint <0–4>` change these three
+strengths on that client at once, until you leave the world; `.sea night` alone shows the value, `.sea night default`
+and `.sea reset` go back to `sea.json`, which they never change.
 
 Values are limited to 0–2; invalid/negative values return to defaults. All three at 0 disable the added appearance.
-Zero values are explicitly serialized. Restart the server/client after config edits; no new live config command.
-`.sea` reports shader activation, sky source/cube readiness, custom star count, clear-sky factor, sun/moon altitudes,
-illuminated fraction, ambient target and total days. A target is not proof of visible brightness or an active shader.
+Zero values are explicitly serialized. Restart the server/client after config edits, or use the `.sea` tuning commands above.
+`.sea` reports shader activation, the moon's source, clear-sky factor, sun/moon altitudes, illuminated fraction, sky
+daylight, the three strengths in effect, ambient target and total days. A target is not proof of visible brightness or an active shader.
 
 ## Performance
 
 No new sky render passes or per-pixel wave loop. Wave gradients add at most 24 cosines per water vertex. Water
-pixels add two smooth lobes and up to two filtered sky samples. Sky sampling uses texture units 10 and 11.
-The private vanilla cube uses at most 8 MiB with mipmaps; the custom atlas about 1.33 MiB on the GPU plus a 2 MiB
-CPU buffer. Initial cube filtering copies six faces once; source texture replacement rebuilds the copy.
-The AstraTerra atlas rebuilds at most 4 Hz, ordinarily on its projection-cache cadence. A synthetic 6000-star CPU
-splat measured 4.58 ms in a Debug probe here; it excludes texture upload, mip generation, source enumeration and
-game frame cost. No in-game FPS/frame-time impact has been measured. Weather sampling is limited to 4 Hz.
+pixels add two smooth lobes and two reads of the game's own small sky textures (units 10 and 11); Wmap's distant sea
+adds a few arithmetic operations to the sky colour it already computes. (0.4.4) No textures, copies or CPU work of
+Sea's own remain: the star cube (≤ 8 MiB), the star atlas (≈ 1.33 MiB GPU + 2 MiB CPU) and its rebuilds (≈ 4.5 ms of
+CPU at up to 4 Hz) are gone. No in-game FPS/frame-time impact has been measured. Weather sampling is limited to 4 Hz.
 
 ## Verification performed
 

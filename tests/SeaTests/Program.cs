@@ -171,9 +171,13 @@ namespace SeaTests
                 float full = NightSkyMath.Visibility(-0.7f, 0.7f, 1, 1, 1);
                 float dark = NightSkyMath.Visibility(-0.7f, 0.7f, 0, 1, 1);
                 float low = NightSkyMath.Visibility(-0.7f, -0.1f, 1, 1, 1);
-                float storm = NightSkyMath.ClearSky(1, 0.01f, 1);
+                float storm = NightSkyMath.ClearSky(1, 1);
                 Check(full > dark * 2 && dark > 0 && low == dark, "moonlit > moonless > black; moon below horizon contributes nothing");
-                Check(storm < 0.02f && NightSkyMath.ClearSky(0, 0.001f, 0) == 1, "overcast, rain and fog attenuate clear sky");
+                Check(storm < 0.02f && NightSkyMath.ClearSky(0, 0) == 1 && NightSkyMath.ClearSky(1, 0) < 0.1f, "overcast and rain attenuate clear sky (fog doesn't: the game fogs the scene itself)");
+                Check(Math.Abs(dark - 0.15f) < 1e-6f && Math.Abs(NightSkyMath.Visibility(-0.7f, 1, 1, 1, 1) - 0.45f) < 1e-6f,
+                    "night floor at strength 1: clear moonless 0.15 (the user's choice, 21 October), high full moon 0.45");
+                Check(NightSkyMath.SkyDaylight(0, 0, 0) < 0.07f && NightSkyMath.SkyDaylight(1, 0, 0) == 1.25f && NightSkyMath.SkyDaylight(0.33f, 0.33f, 0) < 0.25f,
+                    "sky daylight as the game's sky dome works it out (night: its fog colour)");
                 Check(NightSkyMath.Visibility(0.2f, 1, 1, 1, 1) == 0 && NightSkyMath.Visibility(-1, 1, 1, 1, 0) == 0, "daytime and disable add no outdoor floor");
                 Check(NightSkyMath.MoonAmbientScale(0.02f, 0.33f, 0.33f, -0.2f, 1) < 0.1f
                     && NightSkyMath.MoonAmbientScale(0.02f, 0.33f, 0.7f, -0.2f, 1) == 1
@@ -183,8 +187,9 @@ namespace SeaTests
                 string ff = File.ReadAllText(Path.Combine(Environment.GetEnvironmentVariable("APPDATA"), "Vintagestory/assets/game/shaders/chunkliquid.fsh"));
                 string cv = CelestialShader.Vertex(WaterShader.Inject(vf)), cf = CelestialShader.Fragment(ff);
                 Check(cv != null && cf != null && CelestialShader.Vertex(cv) == null && CelestialShader.Fragment(cf) == null, "celestial anchors apply once to installed water shader");
-                Check(cf.Contains("if (seaEffects.x <= 0.0)") && cf.Contains("cameraUnderwater < 0.01") && cf.Contains("skyExposed > 0") && cf.Contains("c.a = max(c.a, max(sun, moon))") && cf.Contains("texColor = seaGlints(") && !cf.Contains("texColor.a += added"),
-                    "vanilla highlight retained behind disable; water-only sky gates; sun/moon glints raise alpha (premultiplied OIT), faint sky light doesn't");
+                Check(cf.Contains("if (seaEffects.x <= 0.0)") && cf.Contains("cameraUnderwater < 0.01") && cf.Contains("skyExposed > 0") && cf.Contains("c.a = max(c.a, max(sun, moon))") && cf.Contains("texColor = seaGlints(")
+                    && cf.Contains("texColor = seaSkyReflect(texColor, ray, fres, rgbaFog.rgb);") && !cf.Contains("Star") && !cf.Contains("texColor.a += added"),
+                    "vanilla highlight retained behind disable; water-only sky gates; glints and the Fresnel sky reflection raise alpha (premultiplied OIT); no star reflections");
                 const string haze = "    haze = min(haze, clamp(dayLight, 0.0, 1.0));\n    color.rgb = mix(color.rgb, sky.rgb, haze);\n}";
                 string sunLit = "void main()\n{\n    vec4 color = vec4(albedo * max(vec3(0.05), sun) * (0.55 + 0.45 * light), 1.0);\n" + haze;
                 string ambientLit = "void main()\n{\n    vec4 color = vec4(albedo * clamp(wmapAmbient, 0.0, 1.0) * nb, 1.0);\n" + haze;
@@ -192,6 +197,11 @@ namespace SeaTests
                 Check(fs != null && fs.Contains("albedo * max(max(vec3(0.05), sun), seaNightFloor)") && CelestialShader.FarFragment(fs) == null
                     && fa != null && fa.Contains("albedo * max(clamp(wmapAmbient, 0.0, 1.0), seaNightFloor) * nb") && CelestialShader.FarFragment(fa) == null,
                     "Wmap night floor applies once to sun-lit (0.4.1/0.4.2) and ambient-lit (0.4.3) far terrain");
+                string waterLit = "in vec3 wmapPos;\nvoid main()\n{\n    bool water = true;\n    vec4 color = vec4(albedo * clamp(wmapAmbient, 0.0, 1.0) * nb, 1.0);\n" + haze;
+                string fw = CelestialShader.FarFragment(waterLit);
+                Check(fw != null && fw.Contains(CelestialShader.FarSkyReflection) && fw.Contains("uniform float seaSkyReflect")
+                    && !fa.Contains(CelestialShader.FarSkyReflection) && CelestialShader.FarFragment(fw) == null,
+                    "Wmap's distant sea gets the same Fresnel sky reflection after its sky blend; a shader without its water flag gets the floor only");
                 Check(CelestialShader.FarFragment(ambientLit.Replace("albedo * clamp", "albedo2 * clamp")) == null && CelestialShader.FarFragment(sunLit.Replace("void main()", "void main(void)")) == null
                     && CelestialShader.FarFragment(sunLit.Replace(haze, "}")) == null && CelestialShader.FarFragment(null) == null,
                     "Wmap night floor: missing anchors leave the shader alone");

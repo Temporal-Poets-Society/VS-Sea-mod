@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using OpenTK.Graphics.OpenGL4;
 using Vintagestory.API.Client;
 
 namespace Sea
@@ -245,6 +246,8 @@ namespace Sea
         /// <summary>
         /// (0.4.2) Leaving the world: Sea's code stays compiled in the game's water (and Wmap's far-terrain) programs, which
         /// the game keeps for the next world, so its numbers are set to nothing: vanilla waves, no hulls, no glints, no floor.
+        /// (0.4.4) Straight through GL, not the program's Use: the game is tearing the world down, and Use also uploads
+        /// vanilla's per-frame uniforms (the colour map rects), which ended the game with an access violation on leaving.
         /// </summary>
         public static void SwitchOff(ICoreClientAPI capi)
         {
@@ -256,20 +259,22 @@ namespace Sea
             {
                 try
                 {
-                    if (prog == null || prog.Disposed) continue;
+                    if (prog == null || prog.Disposed || prog.ProgramId == 0) continue;
                     bool water = prog.HasUniform("seaClipCount"), waves = prog.HasUniform("seaWaveCount"),
                         sky = prog.HasUniform("seaEffects"), floor = prog.HasUniform("seaNightFloor");
                     if (!water && !waves && !sky && !floor) continue;
-                    prog.Use();
+                    int id = prog.ProgramId;
+                    GL.GetInteger(GetPName.CurrentProgram, out int previous);
+                    GL.UseProgram(id);
                     try
                     {
-                        if (water) prog.Uniform("seaClipCount", 0);
-                        if (waves) prog.Uniform("seaWaveCount", 0);
-                        if (sky) prog.Uniform("seaEffects", 0f, 0f);
-                        if (floor) prog.Uniform("seaNightFloor", 0f, 0f, 0f);
-                        if (prog.HasUniform("seaNightEnabled")) prog.Uniform("seaNightEnabled", 0f);
+                        if (water) GL.Uniform1(GL.GetUniformLocation(id, "seaClipCount"), 0);
+                        if (waves) GL.Uniform1(GL.GetUniformLocation(id, "seaWaveCount"), 0);
+                        if (sky) GL.Uniform2(GL.GetUniformLocation(id, "seaEffects"), 0f, 0f);
+                        if (floor) GL.Uniform3(GL.GetUniformLocation(id, "seaNightFloor"), 0f, 0f, 0f);
+                        if (prog.HasUniform("seaNightEnabled")) GL.Uniform1(GL.GetUniformLocation(id, "seaNightEnabled"), 0f);
                     }
-                    finally { prog.Stop(); }
+                    finally { GL.UseProgram(previous); }
                 }
                 catch (Exception e) { capi.Logger.Warning("[sea] Could not switch Sea's shader code off in {0}: {1}", prog?.PassName, e.Message); }
             }

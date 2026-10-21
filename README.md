@@ -5,7 +5,17 @@ calm down with the wind of the past hours, and are the same on the server and ev
 It also owns the water shaders, so ship mods (Magelan, Hansa) ask Sea to keep waves out of their hulls instead of each
 patching the shaders.
 
-Version **0.4.2** (21 October 2026, `release/sea-0.4.2.zip`, installed, not yet play-tested): fixes from a Claude +
+Version **0.4.6** (22 October 2026, `release/sea-0.4.6.zip`, installed): no red-brown horizon at night. The sea's sky
+reflection (near water and Wmap's distant sea) took the colour the game's sky function returns, which at night is the
+fog colour; the sky dome shows it only at its fog amount over dark space, and the reflection now does the same
+(reported in game). Not yet confirmed in game. Version **0.4.5** (21 October 2026, `release/sea-0.4.5.zip`): leaving a world no longer closes the game.
+Sea switched its shader code off through the game's `Use`, which mid-teardown also uploads vanilla's per-frame uniforms
+and crashed the process (access violation in `ShaderProgramBase.Uniforms4`, seen twice on 21 October); it now sets its
+uniforms straight through GL. Confirmed in game on 22 October: leaving the world returns to the main menu. Version **0.4.4** (21 October 2026, `release/sea-0.4.4.zip`): the water reflects the sky the game
+draws, by Fresnel, near and on Wmap's distant sea, instead of star reflections (which showed as blotches on small waves);
+night visibility at 1 is twice 0.4.3's, as chosen in game; fog no longer dims glints or the night floor. See
+[the sky and water notes](docs/sky-water.md). Version **0.4.3** (21 October 2026, `release/sea-0.4.3.zip`): adds live client tuning of the night and
+reflection strengths (`.sea night`, `.sea sky`, `.sea glint`; see Configuration). Version **0.4.2** (21 October 2026, `release/sea-0.4.2.zip`, installed, play-tested at night with Earth and AstraTerra): fixes from a Claude +
 Codex review. Leaving a Sea world no longer leaves its waves, hull cut-outs and glints in the next world's water, and a
 world joined after another always gets Sea's shader code; the wave clock can't be stuck at NaN by a player without a
 ping; `/sea clearwind` lets the storm's sea die down, and setwind/clearwind take effect at the same wave sample on every
@@ -178,13 +188,17 @@ Nothing about the wind or the waves is sent while you play, except a clock:
 | `SeaWindFrom` | 270 | without a wind provider: the compass bearing (degrees) the steady wind the sea follows blows from (0.4.0) |
 | `SeaWindStrength` | 0.3 | without a wind provider: that steady wind's strength, 0–1.5 (0 = a calm sea) (0.4.0) |
 | `CelestialReflections` | 1 | sun/moon trails; 0 restores vanilla highlights; range 0–2 |
-| `SkyReflections` | 1 | faint filtered star/night-sky reflections; 0 disables; range 0–2 |
-| `NightVisibility` | 1 | outdoor ambient night floor/local-moon correction; 0 keeps existing ambient lighting; range 0–2 |
+| `SkyReflections` | 1 | the sky reflected by Fresnel, near and on Wmap's distant sea (0.4.4; no star reflections); 1 physical; 0 disables; range 0–2 |
+| `NightVisibility` | 1 | outdoor ambient night floor/local-moon correction; 1 = clear moonless 0.15, high full moon 0.45 (0.4.4, twice 0.4.3's); 0 keeps existing ambient lighting; range 0–2 |
 
 A negative, NaN or infinite number goes back to its default when the server loads the file (0.3.7); `SeaWindFrom` may
 be any finite number (it's taken round the compass). The weather settings of 0.3 (`WindModel`, `PrevailingStrength`,
 `Variability`, `Gusts`, `StormFrequency`, `StormRadius`, `StormSpeed`, `SeasonShift`) are gone with Sea's weather (Earth
 has its own); an old file keeps them until the server writes it back without them.
+
+Tuning by eye (0.4.3): on a client, `.sea night <0–4>`, `.sea sky <0–4>` and `.sea glint <0–4>` change these three
+strengths on that client at once, until you leave the world; `.sea night` alone shows the value, `.sea night default`
+and `.sea reset` go back to `sea.json`, which they never change.
 
 ## Dry hulls (for ship mods)
 
