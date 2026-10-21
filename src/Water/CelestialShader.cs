@@ -5,17 +5,21 @@ namespace Sea
     public static class CelestialShader
     {
         public const string Marker = "seaCelestial";
+        // Wmap's far-terrain light term: up to 0.4.2 the sun colour, from 0.4.3 the game's ambient colour.
+        static readonly string[] FarLight = { "max(vec3(0.05), sun)", "clamp(wmapAmbient, 0.0, 1.0)" };
+
         public static string FarFragment(string code)
         {
-            const string anchor = "albedo * max(vec3(0.05), sun)";
-            if (code == null || !code.Contains(anchor) || code.Contains("seaNightFloor") || !code.Contains("void main()")) return null;
+            if (code == null || code.Contains("seaNightFloor") || !code.Contains("void main()")) return null;
+            string light = Array.Find(FarLight, l => code.Contains("albedo * " + l));
+            if (light == null) return null;
             if (!code.Contains("haze = min(haze, clamp(dayLight"))
             {
                 const string mix = "color.rgb = mix(color.rgb, sky.rgb, haze);";
                 if (!code.Contains(mix)) return null;
                 code = code.Replace(mix, "haze = mix(haze, min(haze, clamp(dayLight, 0.0, 1.0)), seaNightEnabled);\n    " + mix);
             }
-            return code.Replace(anchor, "albedo * max(max(vec3(0.05), sun), seaNightFloor)")
+            return code.Replace("albedo * " + light, "albedo * max(" + light + ", seaNightFloor)")
                 .Replace("void main()", "uniform vec3 seaNightFloor = vec3(0.0);\nuniform float seaNightEnabled = 0.0;\nvoid main()");
         }
         // The wave gradient is evaluated at vertices, then interpolated. No 24-wave loop per water pixel.

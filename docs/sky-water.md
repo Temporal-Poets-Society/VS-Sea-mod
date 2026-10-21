@@ -30,7 +30,8 @@ is a new build or manifest dependency. Inspection outputs and test logs are in `
 The installed `wmap_0.4.1.zip` shader was also inspected: unlike the current Wmap working tree, it lacks the
 nighttime haze limit. Sea's optional adapter supplies that limit when `NightVisibility > 0`, without changing
 Wmap source or its package. Setting that control to 0 restores the installed shader's original haze behavior. Wmap 0.4.2 has its own night
-haze limit; with it Sea adds only the ambient floor.
+haze limit; with it Sea adds only the ambient floor. Wmap 0.4.3 lights far terrain by the game's ambient colour (`wmapAmbient`)
+instead of the sun colour; the adapter floors whichever of the two light terms it finds and otherwise leaves the shader alone.
 
 Installed AstraTerra package SHA-256:
 `2757eb941f602f69fa192c6dcbfe4ac3a6e978c31a227237bffa66e1ebcc03ec`.

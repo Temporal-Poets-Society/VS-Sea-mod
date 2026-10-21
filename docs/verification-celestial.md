@@ -1,3 +1,27 @@
+# Wmap 0.4.3 far-terrain anchors — 21 October 2026 (branch `wmap-043-far-anchors`)
+
+**ShaderCheck reported 2 failures** on `main` (db0ab6a): "Wmap distant terrain with Sea night floor: Sea's code
+couldn't be put in (anchors not found)". Wmap 0.4.3 (Wmap commit a09af28) lights far terrain by the game's ambient
+colour, `albedo * clamp(wmapAmbient, 0.0, 1.0) * nb`, instead of the sun colour, `albedo * max(vec3(0.05), sun) *
+(...)`, the only anchor Sea's adapter knew. In game Wmap 0.4.3's distant terrain loaded unpatched (no warning; the
+safe fallback), so it went without Sea's explicit night floor.
+
+Fix: `CelestialShader.FarFragment` accepts either light term and wraps it as `max(<term>, seaNightFloor)`. The other
+checks are unchanged: `void main()` must be present, the haze limit is added only to 0.4.1-style shaders that lack it
+(0.4.2 and 0.4.3 have their own), a shader already holding `seaNightFloor` is left alone, and any missing anchor
+returns null (Wmap keeps its own shader). Wmap reads `wmapAmbient` from `api.Render.AmbientColor`, which probably
+already carries Sea's floor (Sea raises `BlendedAmbientColor` in its ambient postfix); the explicit `max` holds the
+floor either way and changes nothing when it is already there. Not checked in game.
+
+- `tests/SeaTests`: ALL OK, with two new checks on inline 0.4.1-style and 0.4.3-style snippets: the floor applies
+  once to each, and missing anchors (light term, `void main()`, 0.4.1's haze mix) or null return null.
+- `tests/ShaderCheck` run from `C:\VS mods\Sea` (RX 6600, OpenGL 3.3.0 Core, driver 26.8.1.260806): ALL OK. Wmap
+  working tree (0.4.3, a09af28) and installed `wmap_0.4.1.zip` both compile and link with the adapter, at low and
+  high settings.
+- `tests/SkyIntegrationCheck` run from `C:\VS mods\Sea`: ALL OK, including "installed workspace Wmap distant lighting
+  adapter applies once" against 0.4.3.
+- No Wmap file was edited. No package was built. In-game: not run.
+
 # Sea 0.3.8-pre.3 — 17 October 2026 (reflections invisible in game)
 
 **User report on pre.2: no reflections visible in game.** pre.2 loaded without Sea warnings (the water patch applied).

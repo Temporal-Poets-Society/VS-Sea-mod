@@ -185,6 +185,16 @@ namespace SeaTests
                 Check(cv != null && cf != null && CelestialShader.Vertex(cv) == null && CelestialShader.Fragment(cf) == null, "celestial anchors apply once to installed water shader");
                 Check(cf.Contains("if (seaEffects.x <= 0.0)") && cf.Contains("cameraUnderwater < 0.01") && cf.Contains("skyExposed > 0") && cf.Contains("c.a = max(c.a, max(sun, moon))") && cf.Contains("texColor = seaGlints(") && !cf.Contains("texColor.a += added"),
                     "vanilla highlight retained behind disable; water-only sky gates; sun/moon glints raise alpha (premultiplied OIT), faint sky light doesn't");
+                const string haze = "    haze = min(haze, clamp(dayLight, 0.0, 1.0));\n    color.rgb = mix(color.rgb, sky.rgb, haze);\n}";
+                string sunLit = "void main()\n{\n    vec4 color = vec4(albedo * max(vec3(0.05), sun) * (0.55 + 0.45 * light), 1.0);\n" + haze;
+                string ambientLit = "void main()\n{\n    vec4 color = vec4(albedo * clamp(wmapAmbient, 0.0, 1.0) * nb, 1.0);\n" + haze;
+                string fs = CelestialShader.FarFragment(sunLit), fa = CelestialShader.FarFragment(ambientLit);
+                Check(fs != null && fs.Contains("albedo * max(max(vec3(0.05), sun), seaNightFloor)") && CelestialShader.FarFragment(fs) == null
+                    && fa != null && fa.Contains("albedo * max(clamp(wmapAmbient, 0.0, 1.0), seaNightFloor) * nb") && CelestialShader.FarFragment(fa) == null,
+                    "Wmap night floor applies once to sun-lit (0.4.1/0.4.2) and ambient-lit (0.4.3) far terrain");
+                Check(CelestialShader.FarFragment(ambientLit.Replace("albedo * clamp", "albedo2 * clamp")) == null && CelestialShader.FarFragment(sunLit.Replace("void main()", "void main(void)")) == null
+                    && CelestialShader.FarFragment(sunLit.Replace(haze, "}")) == null && CelestialShader.FarFragment(null) == null,
+                    "Wmap night floor: missing anchors leave the shader alone");
             }
 
             Console.WriteLine("water shader");
