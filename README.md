@@ -5,7 +5,15 @@ calm down with the wind of the past hours, and are the same on the server and ev
 It also owns the water shaders, so ship mods (Magelan, Hansa) ask Sea to keep waves out of their hulls instead of each
 patching the shaders.
 
-Version **0.4.1** (0.4.1: the night floor on Wmap 0.4.3's far terrain). 0.4.0: **the wind comes from a provider; Sea has no weather of its own any more.** Sea's prevailing belts,
+Version **0.4.2** (21 October 2026, `release/sea-0.4.2.zip`, installed, not yet play-tested): fixes from a Claude +
+Codex review. Leaving a Sea world no longer leaves its waves, hull cut-outs and glints in the next world's water, and a
+world joined after another always gets Sea's shader code; the wave clock can't be stuck at NaN by a player without a
+ping; `/sea clearwind` lets the storm's sea die down, and setwind/clearwind take effect at the same wave sample on every
+side; the surface at a place no longer depends on where a ship came from (a 64-block sampling grid), and the server's
+wave probe is safe from several threads; bad hull clips can't reach the shader; less work per frame (water uniforms on
+the game's own shader use, the AstraTerra adapter and the star atlas). See [decisions SEA-D31–D34](docs/DECISIONS.md);
+what the review left open is in [open issues](docs/open-issues.md).
+0.4.1: the night floor on Wmap 0.4.3's far terrain. 0.4.0: **the wind comes from a provider; Sea has no weather of its own any more.** Sea's prevailing belts,
 drifting weather, travelling storms and gusts moved to the Earth mod, which now owns climate and weather (winds, storms,
 rain, clouds) and drives vanilla's weather with them. Sea only consumes the wind, through a generic call any mod can make
 (`SetWindProvider`, see "For other mods"). Without a provider (no Earth) the wind is vanilla's, and the sea follows a
@@ -146,7 +154,11 @@ Nothing about the wind or the waves is sent while you play, except a clock:
   - Example: `/sea setwind E 1.5 0 built`.
   - `NaN` and `Infinity` are refused for every number (0.3.7).
   - A fixed wind is saved with the world.
-- `/sea clearwind` (admins): back to the weather (the provider's wind, or vanilla's).
+  - (0.4.2) It takes over a few seconds after the command, on the server and every client at the same wave sample
+    (clients hear of it a moment after the server makes it).
+- `/sea clearwind` (admins): back to the weather (the provider's wind, or vanilla's). (0.4.2) The sea the fixed wind
+  raised dies down over the next game hours, as after any wind, instead of vanishing at once; a setwind over another
+  does the same for the old one.
 - `/sea storms` is gone (0.4.0): storms are Earth's.
 
 - `.sea` (client, with a dot): what Sea is doing on your own client.
@@ -242,10 +254,17 @@ sea.WindProviderName;                 // who decides the wind on this side, or n
 // the waves, the same on the server and every client
 var place = new Sea.WavePlace();      // one per thing that rides or looks at the waves (a ship)
 sea.SampleWaves(place, x, z);         // each tick or frame: the trains running there now, at sea.WaveTime
+                                      // (0.4.2: from the sea state on a 64-block grid around it, so the same for
+                                      // everyone there, wherever they came from)
 place.HeightAt(x, z);                 // the open-sea surface (Count, Kx, Kz, Omega, Phase, Amp: the trains themselves)
 sea.WaveFactorAt(x, z);               // 1 on the open sea .. 0.2 sheltered (multiply heights by it, as the shader does)
 sea.WaveHeightAt(x, z);               // both sides: the surface there now, sheltered water included
 sea.WaveTime;                         // seconds on the shared wave clock
+
+// a fixed wind (server)
+sea.SetOverride(ov);                  // at once, the sea's past rewritten (tests; null clears)
+sea.ChangeOverride(ov);               // (0.4.2) as an admin's setwind/clearwind: from sea.NextActivation on every side, the old one's sea dying down
+sea.FixedWindNow;                     // the fixed wind in force now, or null
 
 // dry hulls (rooms below the waterline)
 sea.AddDrySpaces(src);                // both sides: an IDrySpaces answering IsDry(x, y, z) quickly (every tick, maybe off-thread)
@@ -289,6 +308,7 @@ Earth, Terra Prety and other world generators: `docs/compatibility.md`.
 
 ## Not yet
 
+- **What the 0.4.2 review left open** (by design, deferred, or not yet play-tested): [docs/open-issues.md](docs/open-issues.md).
 - **Waves don't know about coasts.** Only the ocean map shelters them (lakes and inland water get a fifth); a bay or
   the lee of an island on the open sea gets the whole sea.
 

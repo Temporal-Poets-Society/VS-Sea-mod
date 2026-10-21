@@ -137,7 +137,8 @@ namespace Sea
     /// The waves at one place (the camera, a ship): over each second of <see cref="WaveClock"/> time the trains'
     /// amplitudes blend from the sea state and wind a second before its start to those at its start. Every
     /// side that looks at the same place at the same wave time gets the same surface, however long it has been
-    /// looking there (<see cref="SeaSystem.SampleWaves"/> works out both ends each second).
+    /// looking there and wherever it was before (<see cref="SeaSystem.SampleWaves"/> uses <see cref="Sample"/>: both
+    /// ends each second, on a grid around the place).
     /// </summary>
     public sealed class WavePlace
     {
@@ -164,6 +165,7 @@ namespace Sea
         public void Reset()
         {
             sample = long.MinValue;
+            gridSample = long.MinValue;
             Count = 0;
         }
 
@@ -189,20 +191,29 @@ namespace Sea
         public void Update(WaveSpectrum spec, double t, in SeaState prevSea, in Wind prevWind, in SeaState sea, in Wind wind) =>
             Advance(spec, t, sea, wind, true, prevSea, prevWind);
 
+        /// <summary>Use this library of trains (new buffers; nothing sampled yet).</summary>
+        void Attach(WaveSpectrum spec)
+        {
+            spectrum = spec;
+            int n = spec.TrainCount;
+            prev = new double[n];
+            next = new double[n];
+            blended = new double[n];
+            order = new int[n];
+            gridPrev = new double[4][];
+            gridNext = new double[4][];
+            for (int c = 0; c < 4; c++) { gridPrev[c] = new double[n]; gridNext[c] = new double[n]; }
+            sample = long.MinValue;
+            gridSample = long.MinValue;
+        }
+
         void Advance(WaveSpectrum spec, double t, in SeaState sea, in Wind wind, bool bothEnds, in SeaState prevSea, in Wind prevWind)
         {
             Time = t;
             if (spec == null) { Count = 0; return; }
             long n = SampleIndex(t);
-            if (spec != spectrum)
-            {
-                spectrum = spec;
-                prev = new double[spec.TrainCount];
-                next = new double[spec.TrainCount];
-                blended = new double[spec.TrainCount];
-                order = new int[spec.TrainCount];
-                sample = long.MinValue;
-            }
+            if (spec != spectrum) Attach(spec);
+            gridSample = long.MinValue;   // (the grid's buffers are left as they are; Sample starts them over)
             if (n != sample)
             {
                 if (bothEnds)
@@ -231,6 +242,94 @@ namespace Sea
                 blended[i] = a;
                 order[c++] = i;
             }
+            Keep(spec, c);
+        }
+
+        // ---------------------------------------------------------------- (0.4.2) sampled on a grid
+
+        /// <summary>
+        /// (0.4.2) Blocks between the points the sea state is sampled at by <see cref="Sample"/> (on a Cylinder World ring,
+        /// the nearest spacing that fits it a whole number of times).
+        /// </summary>
+        public const double GridCell = 64;
+
+        // the trains' amplitudes at the four corners of the cell, at both ends of the sample: 0 (x0, z0), 1 (x1, z0), 2 (x0, z1), 3 (x1, z1)
+        double[][] gridPrev, gridNext;
+        long gridSample = long.MinValue, gridCx, gridCz, gridRevision;
+        double gridHours = double.NaN;
+
+        /// <summary>
+        /// (0.4.2) Bring the place at (x, z) to wave time t: the sea state and wind are sampled at the corners of the
+        /// <see cref="GridCell"/> cell it's in (for both ends of the second, at the game hours <paramref name="source"/>
+        /// gives every side), and the trains' amplitudes are blended between the corners by where it is. So the surface
+        /// at a place and time is the same for everyone, however (and from wherever) they got there; a moving ship's waves
+        /// change smoothly. Only when the second or the cell changes is <paramref name="source"/> asked, and a second's
+        /// start is the last one's end when nothing changed in between (<see cref="IWaveSource.Revision"/>).
+        /// </summary>
+        public void Sample(WaveSpectrum spec, double t, double x, double z, double ringStart, IWaveSource source)
+        {
+            Time = t;
+            if (spec == null || source == null || !double.IsFinite(t) || !double.IsFinite(x) || !double.IsFinite(z)) { Count = 0; return; }
+            if (spec != spectrum) Attach(spec);
+            sample = long.MinValue;   // (the one-place Update starts over after this)
+            double cell = GridCell, gx = x;
+            if (spec.Circumference > 0)
+            {
+                cell = spec.Circumference / Math.Max(1, Math.Round(spec.Circumference / GridCell));
+                gx = WorldShape.Mod(x - ringStart, spec.Circumference);
+            }
+            else gx = x;
+            double fx = Math.Floor(gx / cell), fz = Math.Floor(z / cell);
+            long cx = (long)fx, cz = (long)fz, n = SampleIndex(t);
+            double u = Math.Clamp(gx / cell - fx, 0, 1), v = Math.Clamp(z / cell - fz, 0, 1);
+            // (a new second or cell, or the sea's past or the samples' hours may read differently now: even mid-second,
+            // so a place sampled before the change and one new to it agree)
+            long revision = source.Revision;
+            if (n != gridSample || cx != gridCx || cz != gridCz || revision != gridRevision)
+            {
+                double h0 = source.HoursOf(n - 1, t), h1 = source.HoursOf(n, t);
+                // the second's start is the last second's end: the same cell, nothing changed since, at the same hour
+                bool kept = gridSample == n - 1 && gridCx == cx && gridCz == cz && gridRevision == revision && gridHours == h0;
+                gridSample = long.MinValue;
+                if (kept) (gridPrev, gridNext) = (gridNext, gridPrev);
+                int nearest = (u >= 0.5 ? 1 : 0) | (v >= 0.5 ? 2 : 0);
+                double x0 = spec.Circumference > 0 ? ringStart : 0;
+                for (int c = 0; c < 4; c++)
+                {
+                    double px = x0 + (fx + (c & 1)) * cell, pz = (fz + (c >> 1)) * cell;
+                    if (!kept) spec.Amplitudes(source.SeaAt(px, pz, h0, n - 1), source.WindAt(px, pz, h0, n - 1), gridPrev[c]);
+                    var sea = source.SeaAt(px, pz, h1, n);
+                    var wind = source.WindAt(px, pz, h1, n);
+                    spec.Amplitudes(sea, wind, gridNext[c]);
+                    if (c == nearest) { Sea = sea; Wind = wind; }
+                }
+                gridCx = cx;
+                gridCz = cz;
+                gridRevision = revision;
+                gridHours = h1;
+                // (something changed while this was worked out, from another thread: work it out again next time)
+                gridSample = source.Revision == revision ? n : long.MinValue;
+            }
+            double f = Math.Clamp(t / SampleSeconds - n, 0, 1);
+            double w0 = (1 - u) * (1 - v), w1 = u * (1 - v), w2 = (1 - u) * v, w3 = u * v;
+            double[] p0 = gridPrev[0], p1 = gridPrev[1], p2 = gridPrev[2], p3 = gridPrev[3];
+            double[] n0 = gridNext[0], n1 = gridNext[1], n2 = gridNext[2], n3 = gridNext[3];
+            int count = 0;
+            for (int i = 0; i < n0.Length; i++)
+            {
+                double a0 = w0 * p0[i] + w1 * p1[i] + w2 * p2[i] + w3 * p3[i];
+                double a1 = w0 * n0[i] + w1 * n1[i] + w2 * n2[i] + w3 * n3[i];
+                double a = a0 + (a1 - a0) * f;
+                if (a <= 1e-5) continue;
+                blended[i] = a;
+                order[count++] = i;
+            }
+            Keep(spec, count);
+        }
+
+        /// <summary>The trains blended[order[0..c]] go to the shader's list (the strongest, when there are too many).</summary>
+        void Keep(WaveSpectrum spec, int c)
+        {
             // more trains than the shader takes (only while the sea turns): keep the strongest, each less the strongest
             // one left out, so a train joins or leaves them at nothing as their order changes (0.3.7; cutting it off
             // made the surface jump by a few centimetres)
@@ -330,6 +429,22 @@ namespace Sea
         }
     }
 
+    /// <summary>(0.4.2) What <see cref="WavePlace.Sample"/> asks for: the same answers on every side (<see cref="SeaSystem"/>'s).</summary>
+    public interface IWaveSource
+    {
+        /// <summary>The game hour of wave sample n (wave time t is now: for a guess until the server's anchors arrive).</summary>
+        double HoursOf(long n, double t);
+        /// <summary>The sea state at game hour `hours`, as worked out for wave sample n (an admin's change of the fixed wind counts from its sample).</summary>
+        SeaState SeaAt(double x, double z, double hours, long n);
+        /// <summary>The wind the chop follows, likewise.</summary>
+        Wind WindAt(double x, double z, double hours, long n);
+        /// <summary>
+        /// Changes whenever the answers may have changed (a new wind provider, a fixed wind, a new model, the samples'
+        /// hours): places sampled before then sample again.
+        /// </summary>
+        long Revision { get; }
+    }
+
     /// <summary>
     /// (0.3.6) The game hour of each wave sample (whole seconds of <see cref="WaveClock"/> time), the same for every
     /// caller and on every side. The sea state and wind are functions of game hours, but the calendar only moves in steps
@@ -349,6 +464,10 @@ namespace Sea
         HoursAnchor[] anchors = Array.Empty<HoursAnchor>();
         bool local;
         long droppedBelow = long.MinValue;
+        long version;
+
+        /// <summary>(0.4.2) Counts up whenever the anchors change (a sample's hour may read differently from then on).</summary>
+        public long Version { get { lock (sync) return version; } }
 
         /// <summary>Has an anchor from the server (or, on the server, its own).</summary>
         public bool Anchored { get { lock (sync) return anchors.Length > 0 && !local; } }
@@ -363,7 +482,7 @@ namespace Sea
             if (a == null || !(a.HoursPerSample >= 0) || !double.IsFinite(a.HoursPerSample) || !double.IsFinite(a.Hours)) return;
             lock (sync)
             {
-                if (local) { anchors = Array.Empty<HoursAnchor>(); local = false; }
+                if (local) { anchors = Array.Empty<HoursAnchor>(); local = false; version++; }
                 if (a.Seq < droppedBelow) return;
                 foreach (var b in anchors) if (b.Seq == a.Seq) return;
                 var list = new List<HoursAnchor>(anchors) { a };
@@ -378,6 +497,7 @@ namespace Sea
                     list.RemoveRange(0, keepFrom);
                 }
                 anchors = list.ToArray();
+                version++;
             }
         }
 
@@ -415,7 +535,7 @@ namespace Sea
         /// <summary>Forget every anchor (a new world, a new clock).</summary>
         public void Clear()
         {
-            lock (sync) { anchors = Array.Empty<HoursAnchor>(); local = false; droppedBelow = long.MinValue; }
+            lock (sync) { anchors = Array.Empty<HoursAnchor>(); local = false; droppedBelow = long.MinValue; version++; }
         }
 
         /// <summary>
@@ -430,6 +550,7 @@ namespace Sea
                 {
                     anchors = new[] { new HoursAnchor { Seq = long.MinValue, FromSample = sample, Hours = estimate, HoursPerSample = Math.Max(0, hoursPerSample) } };
                     local = true;
+                    version++;
                 }
                 return Pick(sample).At(sample);
             }
@@ -482,8 +603,10 @@ namespace Sea
         /// <summary>The server said its clock reads serverSeconds when ours reads local.</summary>
         public void OnServerTime(double serverSeconds, double local)
         {
+            // (0.4.2) a NaN or infinite time is refused: once in the offset, no later packet could snap it back
+            if (!double.IsFinite(serverSeconds) || !double.IsFinite(local)) return;
             target = serverSeconds - local;
-            if (!Synced || Math.Abs(target - offset) > SnapSeconds)
+            if (!Synced || !double.IsFinite(offset) || Math.Abs(target - offset) > SnapSeconds)
             {
                 offset = target;
                 Synced = true;
@@ -493,6 +616,7 @@ namespace Sea
         /// <summary>Ease toward the server's clock; call every frame with the local time that passed.</summary>
         public void Advance(double dt)
         {
+            if (!double.IsFinite(dt)) return;
             double max = MaxSlew * Math.Max(0, dt);
             offset += Math.Clamp(target - offset, -max, max);
         }

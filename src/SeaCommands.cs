@@ -37,10 +37,11 @@ namespace Sea
                         if (!double.IsFinite((double)args[1]) || !double.IsFinite((double)args[2])) return TextCommandResult.Error("Strength and hours must be numbers.");
                         double strength = Math.Clamp((double)args[1], 0, WindModel.MaxStrength);
                         double hours = Math.Max(0, (double)args[2]);
-                        double now = sys.Hours;
+                        // (0.4.2) from a moment ahead, so the server and every client change at the same wave sample
+                        double now = sys.NextActivation;
                         // "built": as if it had been blowing for a day already, so the sea is fully up at once
                         bool built = (args[3] as string) == "built";
-                        sys.SetOverride(new WindOverride { FromDegrees = from.Value, Strength = strength, StartHours = built ? now - 24 : now, UntilHours = hours > 0 ? now + hours : 0 });
+                        sys.ChangeOverride(new WindOverride { FromDegrees = from.Value, Strength = strength, StartHours = built ? now - 24 : now, UntilHours = hours > 0 ? now + hours : 0 });
                         return TextCommandResult.Success($"Wind fixed: {strength:0.00} from the {Compass.Name(from.Value)} ({from.Value:0}°), Beaufort {Beaufort.Force(strength)}"
                             + (hours > 0 ? $", for {hours:0.#} game hours" : ", until /sea clearwind")
                             + (built ? ". The sea is already up." : ". The sea builds up over ~3 game hours (add 'built' to skip that)."));
@@ -52,8 +53,9 @@ namespace Sea
                     .HandleWith(args =>
                     {
                         if (sys.Model?.Override == null) return TextCommandResult.Success("The wind isn't fixed.");
-                        sys.SetOverride(null);
-                        return TextCommandResult.Success($"The weather decides the wind again ({WindSource(sys)}).");
+                        // (0.4.2) the sea the fixed wind raised dies down over the next hours instead of vanishing
+                        sys.ChangeOverride(null);
+                        return TextCommandResult.Success($"The weather decides the wind again ({WindSource(sys)}); the sea it raised dies down over the next game hours.");
                     })
                 .EndSubCommand();
         }
@@ -71,8 +73,8 @@ namespace Sea
             var sb = new StringBuilder();
             var m = sys.Model;
             if (m == null) return $"Sea: not ready on this client (the server's parameters haven't arrived); wind from {WindSource(sys)}.";
-            var ov = m.Override;
-            sb.Append($"Sea on this client: wind from {WindSource(sys)}{(ov != null && ov.Covers(sys.Hours) ? $", fixed by an admin: {ov.Strength:0.00} from {Compass.Name(ov.FromDegrees)}" : "")}.");
+            var ov = sys.FixedWindNow;
+            sb.Append($"Sea on this client: wind from {WindSource(sys)}{(ov != null ? $", fixed by an admin: {ov.Strength:0.00} from {Compass.Name(ov.FromDegrees)}" : "")}.");
             var p = sys.WindProvider;
             if (p != null && p.Failures > 0) sb.Append($" {p.Failures} of its answers were refused (calm instead); the last: {p.LastError}.");
             var w = sys.LocalWind;
@@ -118,8 +120,8 @@ namespace Sea
             if (m != null)
             {
                 sb.Append($"\nYou're at {LatText(m.Shape.LatitudeDeg(pos.Z))}. Wind from {WindSource(sys)}.");
-                var ov = m.Override;
-                if (ov != null && ov.Covers(h)) sb.Append(ov.UntilHours > 0 ? $"\n(An admin fixed the wind for another {ov.UntilHours - h:0.#} game hours.)" : "\n(An admin fixed the wind.)");
+                var ov = m.FixedAt(h);
+                if (ov != null) sb.Append(ov.UntilHours > 0 ? $"\n(An admin fixed the wind for another {ov.UntilHours - h:0.#} game hours.)" : "\n(An admin fixed the wind.)");
             }
             else sb.Append($"\n(Sea isn't ready yet; wind from {WindSource(sys)}.)");
             return sb.ToString();

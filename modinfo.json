@@ -2,7 +2,7 @@
   "type": "code",
   "modid": "sea",
   "name": "Sea",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Waves that travel downwind, build up and calm down with the wind of the past hours, the same on the server and every client so ships can ride them. Takes its wind from a provider mod (Earth) or vanilla. Owns the water shaders for ship mods: dry hulls below the waterline, sun and moon reflections.",
   "authors": [ "Your Name" ],
   "side": "Universal",

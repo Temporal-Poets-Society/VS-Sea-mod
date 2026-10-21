@@ -48,6 +48,13 @@ namespace Sea
                 var program = AccessTools.TypeByName("Vintagestory.Client.NoObf.ShaderProgram") ?? throw new Exception("shader program class not found");
                 harmony.Patch(AccessTools.Method(program, "Compile"), postfix: new HarmonyMethod(typeof(Hooks), nameof(CompilePostfix)));
             });
+            // (0.4.2) Sea's water uniforms go in when the game itself uses a water program, not by using it once more
+            Try("water uniforms", () =>
+            {
+                var program = AccessTools.TypeByName("Vintagestory.Client.NoObf.ShaderProgramBase") ?? throw new Exception("shader program base class not found");
+                harmony.Patch(AccessTools.Method(program, "Use") ?? throw new Exception("Use not found"), postfix: new HarmonyMethod(typeof(Hooks), nameof(UsePostfix)));
+                UniformsOnUse = true;
+            });
             Try("eyes not under water in dry places", () =>
             {
                 var client = AccessTools.TypeByName("Vintagestory.Client.NoObf.ClientMain") ?? throw new Exception("client class not found");
@@ -77,13 +84,25 @@ namespace Sea
             });
             Try("no rain splashes or spray in dry places", () =>
             {
+                // (0.4.2) both checked before either is patched: a feature reported off is off in both
+                var methods = new List<MethodInfo>();
                 foreach (var name in new[] { "SpawnRainParticles", "SpawnDustParticles" })
                 {
-                    harmony.Patch(AccessTools.Method(typeof(WeatherSimulationParticles), name) ?? throw new Exception(name + " not found"),
-                        transpiler: new HarmonyMethod(typeof(DryParticles), nameof(DryParticles.OnWaterTranspiler)));
-                    if (DryParticles.LastReplaced == 0) throw new Exception("no particle spawn found in " + name);
+                    var m = AccessTools.Method(typeof(WeatherSimulationParticles), name) ?? throw new Exception(name + " not found");
+                    if (DryParticles.SpawnCalls(m) == 0) throw new Exception("no particle spawn found in " + name);
+                    methods.Add(m);
                 }
+                foreach (var m in methods)
+                    harmony.Patch(m, transpiler: new HarmonyMethod(typeof(DryParticles), nameof(DryParticles.OnWaterTranspiler)));
             });
+        }
+
+        /// <summary>(0.4.2) Sea's water uniforms are uploaded as the game uses a water program (<see cref="UsePostfix"/>).</summary>
+        public static bool UniformsOnUse;
+
+        static void UsePostfix(object __instance)
+        {
+            if (__instance is IShaderProgram p) WaterRenderer.OnUse(p);
         }
 
         static FieldInfo Need(Type t, string name) => AccessTools.Field(t, name) ?? throw new Exception("field " + name + " not found");
@@ -94,7 +113,12 @@ namespace Sea
             harmony.UnpatchAll(HarmonyId);
             harmony = null;
             ShaderPatched = false;
+            UniformsOnUse = false;
             Active.Clear();
+            // (0.4.2) what the shaders hold is found out again next time: the game may reload them without Sea's patch in
+            // between (a graphics setting changed in the main menu), and the next world must then reload them with it
+            WaterRenderer.Injected = WaterRenderer.WavesInjected = DryHullsInjected = false;
+            injectedLevel = -1;
         }
 
         static void Try(string what, Action patch)

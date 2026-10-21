@@ -70,6 +70,7 @@ vec4 seaWater(vec4 wp, vec3 rest) {
 		vec4 a = seaClipA[h];
 		vec4 b = seaClipB[h];
 		vec4 c = seaClipC[h];
+		if (b.x <= 0.0) continue;
 		vec2 d = rest.xz - a.xy;
 		float fwd = d.x * a.w + d.y * a.z;
 		float side = d.y * a.w - d.x * a.z;
@@ -167,9 +168,12 @@ bool seaDry(vec3 p) {
 		float along = fwd * cp + dy * sp - b.w;
 		float across = abs(side * cr - up * sr);
 		if (hl < -d.y || hl > d.z) continue;
+		// (no outline left: nothing is dry, as InDryHull has it; dividing by it would give NaN indices)
+		if (b.x <= 0.0 || b.x - d.x <= 0.0) continue;
 		if (d.w > 1.5) {
 			int k = int(d.w - 1.5);
 			float len = seaDryE[k].z;
+			if (len <= 0.0 || seaDryE[k].y <= 0.0) continue;
 			if (along > len || along < seaDryE[k].w * hl - len || across > seaDryHalfWidth(k, along / len, hl)) continue;
 			return true;
 		}
@@ -378,7 +382,10 @@ bool seaDry(vec3 p) {
         bool IsDryWithin(double x, double y, double z, double seconds) => IsDry(x, y, z);
     }
 
-    /// <summary>Something that has hulls in the water (a ship mod). Sea asks every frame, just before drawing water.</summary>
+    /// <summary>
+    /// Something that has hulls in the water (a ship mod). Sea asks every frame, just before drawing water. (0.4.2) A
+    /// hull with no length, a dry one inset by all of it, or one with numbers that aren't finite is left out.
+    /// </summary>
     public interface IWaterClipSource
     {
         void AddWaterClips(System.Collections.Generic.List<WaterClipBox> clips);

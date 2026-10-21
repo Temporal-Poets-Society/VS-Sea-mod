@@ -330,6 +330,8 @@ namespace SeaTests
             DryWaterParticles();
             BadInputs();
             WaveBudget();
+            GridSampling();
+            AdminChanges();
 
             Console.WriteLine(failures == 0 ? "ALL OK" : $"{failures} FAILED");
             return failures == 0 ? 0 : 1;
@@ -760,6 +762,211 @@ namespace SeaTests
             }
             catch (Exception) { threw = true; }
             Check(!threw && !dry, "a dry hull with no length, or inset by all of it, has nothing dry and doesn't throw");
+        }
+
+        /// <summary>A sea that changes from place to place and hour to hour (a storm to the east), counting what it's asked.</summary>
+        sealed class TestSource : IWaveSource
+        {
+            public int Asked;
+            public long Revision { get; set; }
+            public double Shift;
+            public double HoursOf(long n, double t) => 1000 + n * 0.01;
+            public SeaState SeaAt(double x, double z, double hours, long n)
+            {
+                Asked++;
+                double s = Math.Clamp(0.2 + x / 4000 + 0.05 * Math.Sin(hours * 3) + Shift, 0, 1.4);
+                double hgt = 0.1 + 2.4 * s * s, dir = 0.3 + z / 9000;
+                return new SeaState(hgt, Math.Cos(dir), Math.Sin(dir), 2.5 + 3.2 * Math.Sqrt(hgt));
+            }
+            public Wind WindAt(double x, double z, double hours, long n) => Wind.FromCompass(250 + x / 100, Math.Clamp(0.3 + x / 5000 + Shift, 0, 1.5));
+        }
+
+        /// <summary>
+        /// (0.4.2) The waves at a place come from the sea state at fixed grid points around it, blended by where it is: the
+        /// same surface whoever asks, wherever they were before, smooth as a ship sails across the grid, and a second's
+        /// start is the last second's end (asked once).
+        /// </summary>
+        static void GridSampling()
+        {
+            Console.WriteLine("waves sampled on a grid (0.4.2)");
+            var spec = new WaveSpectrum(4242, 0);
+            var src = new TestSource();
+            // two ships at the same place and time: one came from 3 km away a second and a half ago, one has been here
+            var here = new WavePlace();
+            var came = new WavePlace();
+            double x = 1830.5, z = -412.25;
+            for (double t = 90; t <= 100.3; t += 1 / 30.0) here.Sample(spec, t, x, z, 0, src);
+            came.Sample(spec, 98.8, x + 3000, z - 2000, 0, src);
+            came.Sample(spec, 99.9, x - 700, z + 40, 0, src);
+            came.Sample(spec, here.Time, x, z, 0, src);
+            double worst = 0;
+            for (int i = 0; i < 50; i++) worst = Math.Max(worst, Math.Abs(here.HeightAt(x + i * 3.3, z - i * 1.7) - came.HeightAt(x + i * 3.3, z - i * 1.7)));
+            Check(here.Count > 0 && worst < 1e-12, $"a ship that sailed in from far away gets the same surface as one that was there all along (worst {worst:e1})");
+
+            // a ship sailing at 12 blocks a second across several cells: its waves change smoothly (no step at a cell's edge)
+            var sailing = new WavePlace();
+            double prevA = double.NaN, worstStep = 0, ownMotion = 0;
+            for (int f = 0; f <= 60 * 30; f++)
+            {
+                double t = 200 + f / 60.0, sx = 500 + 12 * (t - 200);
+                sailing.Sample(spec, t, sx, 300, 0, src);
+                double a = 0;
+                for (int j = 0; j < sailing.Count; j++) a += sailing.Amp[j];
+                if (!double.IsNaN(prevA)) worstStep = Math.Max(worstStep, Math.Abs(a - prevA));
+                prevA = a;
+            }
+            // (one frame of the sea's own change over a second: the amplitudes' sum moves up to about this much)
+            ownMotion = 0.02;
+            Check(worstStep < ownMotion, $"a ship sailing across the grid sees its waves change smoothly (largest change in a frame {worstStep:0.0000} in the summed amplitudes)");
+
+            // a second's start is the last second's end: a place that keeps up asks for one end a second, not two
+            var kept = new WavePlace();
+            kept.Sample(spec, 300.5, 100, 100, 0, src);
+            src.Asked = 0;
+            for (double t = 300.5; t < 310.4; t += 1 / 60.0) kept.Sample(spec, t, 100, 100, 0, src);
+            kept.Sample(spec, 310.4, 100, 100, 0, src);
+            int keptAsks = src.Asked;
+            var fresh = new WavePlace();
+            src.Asked = 0;
+            fresh.Sample(spec, 310.4, 100, 100, 0, src);
+            int freshAsks = src.Asked;
+            Check(keptAsks == 10 * 4 && freshAsks == 2 * 4 && Math.Abs(kept.HeightAt(120, 80) - fresh.HeightAt(120, 80)) < 1e-12,
+                $"a place keeping up asks for the sea state at one end of each second ({keptAsks} asks over 10 s), and gets what a new one gets (which asks both ends: {freshAsks})");
+            // …unless the sea's past changed (a fixed wind, a provider): then both ends again, from the changed sea
+            src.Shift = 0.3;
+            src.Revision++;
+            src.Asked = 0;
+            kept.Sample(spec, 311.2, 100, 100, 0, src);
+            var after = new WavePlace();
+            after.Sample(spec, 311.2, 100, 100, 0, src);
+            Check(src.Asked == 2 * 4 * 2 && Math.Abs(kept.HeightAt(120, 80) - after.HeightAt(120, 80)) < 1e-12, "a change to the sea's past makes a place start over");
+            src.Shift = 0;
+            src.Revision++;
+            // …even within a second (Codex): a place sampled before the change and one new to it agree at once
+            var early = new WavePlace();
+            early.Sample(spec, 320.2, 100, 100, 0, src);
+            src.Shift = 0.2;
+            src.Revision++;
+            early.Sample(spec, 320.4, 100, 100, 0, src);
+            var late = new WavePlace();
+            late.Sample(spec, 320.4, 100, 100, 0, src);
+            Check(Math.Abs(early.HeightAt(130, 70) - late.HeightAt(130, 70)) < 1e-12, "a change mid-second reaches a place sampled earlier in that second at once");
+            src.Shift = 0;
+            src.Revision++;
+
+            // on a Cylinder World ring: the grid fits the ring, so the sea is the same at x and x + C
+            const double C = 254000;
+            var ring = new WaveSpectrum(7, C);
+            var a1 = new WavePlace();
+            var a2 = new WavePlace();
+            a1.Sample(ring, 400.3, RingStart + 77.7, 500, RingStart, src);
+            a2.Sample(ring, 400.3, RingStart + 77.7 + C, 500, RingStart, src);
+            // (the test sea grows with x, unlike a ring's: compare where the two are asked about the same corners)
+            Check(Math.Abs(a1.HeightAt(RingStart + 80, 510) - a2.HeightAt(RingStart + 80 + C, 510)) < 1e-9,
+                "on a ring the grid repeats with it: the same corners, the same surface, a lap apart");
+
+            // the wave clock refuses a time that isn't a number: it would stay NaN for good (a player's ping is NaN without a connection)
+            var clock = new WaveClock();
+            clock.OnServerTime(double.NaN, 10);
+            bool waiting = !clock.Synced;
+            clock.OnServerTime(500, 10);
+            clock.OnServerTime(double.PositiveInfinity, 11);
+            clock.Advance(double.NaN);
+            Check(waiting && clock.Synced && Math.Abs(clock.Now(11) - 501) < 1e-9, "the wave clock ignores a NaN or infinite server time (and a NaN frame time)");
+        }
+
+        /// <summary>
+        /// (0.4.2) An admin's setwind and clearwind: in force from a wave sample a moment ahead on every side (whatever the
+        /// calendar does), and the sea they leave dies down. Here sample s is at game hour s / 100.
+        /// </summary>
+        static void AdminChanges()
+        {
+            Console.WriteLine("an admin changing the fixed wind (0.4.2)");
+            var m = new WindModel(Planet(), new SeaConfig { SeaWindStrength = 0.1f });
+            double x = 4000, z = ZAt(30);
+            WindOverride current = null;
+            var history = Array.Empty<WindOverride>();
+            void Change(WindOverride next, long sample, double hoursNow)
+            {
+                WindOverride.Change(ref current, ref history, next, sample, sample / 100.0, hoursNow);
+                m.History = history;
+                m.Override = current;
+            }
+            SeaState Sea(long sample) => m.SeaAt(x, z, sample / 100.0, sample);
+
+            // a storm since hour 1000, cleared at hour 1100 (taking effect at sample 110001, a few seconds ahead)
+            Change(new WindOverride { FromDegrees = 270, Strength = 1.2, StartHours = 1000 }, 100000, 1000);
+            double storm = Sea(109900).Height;
+            Change(null, 110001, 1100);
+            double justBefore = Sea(110000).Height, oneHour = Sea(110101).Height, sixHours = Sea(110601).Height, day = Sea(113000).Height;
+            Check(current == null && history.Length == 1 && history[0].Ended && history[0].EndSample == 110001 && m.FixedAt(1100.0, 110000) != null && m.FixedAt(1100.02, 110002) == null,
+                "a clearwind ends the fixed wind at a sample a moment ahead (in force until then)");
+            Check(Math.Abs(justBefore - storm) < 1e-9 && oneHour > 0.5 * storm && sixHours < oneHour && day < 0.2 * storm,
+                $"the storm's sea dies down over hours instead of vanishing ({storm:0.00} → {oneHour:0.00} an hour later → {sixHours:0.00} → {day:0.00} a day later)");
+
+            // a 'built' setwind takes over at its sample: before it the old sea stands, for every hour asked about
+            Change(new WindOverride { FromDegrees = 0, Strength = 0.6, StartHours = 1200 - 24 }, 120000, 1199.97);
+            var before = m.SeaWind(x, z, 1199.99, true, 119999);   // (no provider: the config's steady wind, 0.1 from the west)
+            var after = m.SeaWind(x, z, 1200, true, 120000);
+            double seaBefore = Sea(119999).Height, built = Sea(120000).Height;
+            Check(current.ActiveSample == 120000 && Math.Abs(before.X - 0.1) < 1e-6 && Math.Abs(after.Z - 0.6) < 1e-9 && seaBefore < 0.5 && Math.Abs(built - m.DevelopedHeight(0.6)) < 1e-9,
+                $"a 'built' setwind counts only from its sample, then its sea is up at once ({seaBefore:0.00} → {built:0.00})");
+
+            // two setwinds before the first takes over (Codex): until the first one's sample the one before both stands
+            var m2 = new WindModel(Planet(), new SeaConfig { SeaWindStrength = 0.1f });
+            WindOverride c2 = null;
+            var h2 = Array.Empty<WindOverride>();
+            WindOverride.Change(ref c2, ref h2, new WindOverride { FromDegrees = 270, Strength = 1.0, StartHours = 1000 }, 100000, 1000, 1000);   // A
+            WindOverride.Change(ref c2, ref h2, new WindOverride { FromDegrees = 0, Strength = 0.6, StartHours = 1200.03 }, 120003, 1200.03, 1200);   // B
+            WindOverride.Change(ref c2, ref h2, new WindOverride { FromDegrees = 90, Strength = 0.3, StartHours = 1200.04 }, 120004, 1200.04, 1200.01);   // C
+            m2.History = h2; m2.Override = c2;
+            var a = m2.FixedAt(1200.02, 120002);
+            var b = m2.FixedAt(1200.03, 120003);
+            var c = m2.FixedAt(1200.05, 120005);
+            Check(a?.FromDegrees == 270 && b?.FromDegrees == 0 && c?.FromDegrees == 90 && h2.Length == 2,
+                "two setwinds before the first takes over: the old wind until the first's sample, the first until the second's, then the second");
+
+            // the calendar standing still: every sample at the same hour, the change still comes at its sample (Codex)
+            var m3 = new WindModel(Planet(), new SeaConfig { SeaWindStrength = 0.1f });
+            WindOverride c3 = null;
+            var h3 = Array.Empty<WindOverride>();
+            WindOverride.Change(ref c3, ref h3, new WindOverride { FromDegrees = 270, Strength = 1.2, StartHours = 1150 - 24 }, 120000, 1150, 1150);
+            WindOverride.Change(ref c3, ref h3, null, 120005, 1150, 1150);
+            m3.History = h3; m3.Override = c3;
+            double still4 = m3.SeaAt(x, z, 1150, 120004).Height, still5 = m3.SeaAt(x, z, 1150, 120005).Height, still0 = m3.SeaAt(x, z, 1150, 119999).Height;
+            // (a fixed wind set, then cleared: from its sample the hour the calendar stands at is no longer stormy; the hours
+            // before it still were, as no time passes for the sea to calm)
+            Check(still0 < 0.5 && still4 > 3 && still5 < still4 - 1e-6 && m3.FixedAt(1150, 120004) != null && m3.FixedAt(1150, 120005) == null,
+                $"with the calendar stopped a change still comes at its sample, not at once ({still0:0.00} → {still4:0.00} → {still5:0.00})");
+
+            // changes within 16 hours keep every fixed wind that still shapes the sea (Codex): a storm, an hour of calm, cleared
+            var m4 = new WindModel(Planet(), new SeaConfig { SeaWindStrength = 0.1f });
+            WindOverride c4 = null;
+            var h4 = Array.Empty<WindOverride>();
+            WindOverride.Change(ref c4, ref h4, new WindOverride { FromDegrees = 270, Strength = 1.2, StartHours = 1000 }, 100000, 1000, 1000);
+            WindOverride.Change(ref c4, ref h4, new WindOverride { FromDegrees = 0, Strength = 0.05, StartHours = 1300 }, 130000, 1300, 1300);
+            WindOverride.Change(ref c4, ref h4, null, 130200, 1302, 1302);
+            m4.History = h4; m4.Override = c4;
+            double stormSea = m4.SeaAt(x, z, 1299, 129900).Height, swell = m4.SeaAt(x, z, 1303, 130300).Height;
+            Check(h4.Length == 2 && swell > 0.4 * stormSea, $"a storm replaced and then cleared within the hour still leaves its swell ({stormSea:0.00} → {swell:0.00})");
+            // and ended ones no sample can need are dropped
+            WindOverride.Change(ref c4, ref h4, null, 140000, 1400, 1400);
+            Check(h4.Length == 0, "fixed winds ended more than 16 game hours ago are dropped");
+
+            // a huge but finite bearing is wrapped, not turned into NaN; bad end hours refused; a save's samples restart
+            var huge = WindOverride.Checked(new WindOverride { FromDegrees = 1e308, Strength = 1 });
+            var neg = WindOverride.Checked(new WindOverride { FromDegrees = -90, Strength = 1 });
+            var hw = Wind.FromCompass(huge.FromDegrees, huge.Strength);
+            Check(huge.FromDegrees >= 0 && huge.FromDegrees < 360 && double.IsFinite(hw.X) && double.IsFinite(hw.Z) && neg.FromDegrees == 270,
+                $"a fixed wind from 1e308° is wrapped to {huge.FromDegrees:0.0}° (finite), from -90° to {neg.FromDegrees:0}°");
+            var restarted = new WindOverride { FromDegrees = 0, Strength = 1, ActiveSample = 5000, Ended = true, EndSample = 6000, EndHours = 10 }.Restarted();
+            Check(WindOverride.Checked(new WindOverride { FromDegrees = 0, Strength = 1, Ended = true, EndHours = double.NaN }) == null
+                && restarted.ActiveSample == 0 && restarted.EndSample == long.MinValue && restarted.AppliesAt(9, 3) && !restarted.AppliesAt(11, 3),
+                "a NaN end hour is refused; from a save a fixed wind is in force from the first sample and an ended one has ended");
+            var packet = new SeaParamsPacket { Key = 1, Override = c3, History = h3 };
+            var got = Vintagestory.API.Util.SerializerUtil.Deserialize<SeaParamsPacket>(Vintagestory.API.Util.SerializerUtil.Serialize(packet));
+            Check(got.History?.Length == h3.Length && got.History[0].Ended && got.History[0].EndSample == 120005 && got.History[0].ActiveSample == 120000,
+                "the ended fixed winds reach clients with their samples");
         }
 
         /// <summary>

@@ -225,19 +225,32 @@ namespace Sea
             sys.SetOverride(null);
             Check(m.Override == null && !(earlier == null && sys.Controls(sys.Hours)), "cleared fixed wind");
 
+            // (0.4.2) an admin's clearwind: still in force until a moment ahead (when every client has heard), then its sea dies down
+            sys.SetOverride(new WindOverride { FromDegrees = 90, Strength = 1.2, StartHours = sys.Hours - 24 });
+            double storm = m.SeaAt(x, z, sys.Hours).Height;
+            long nowSample = WavePlace.SampleIndex(sys.WaveTime);
+            sys.ChangeOverride(null);
+            var ended = m.History.Length > 0 ? m.History[^1] : null;
+            // (still in force for the samples until its end sample, a few ahead; after it only for the hours before its end)
+            bool stillNow = ended != null && ended.EndSample > nowSample && m.FixedAt(sys.Hours, nowSample) != null;
+            double later = ended == null ? 0 : m.SeaAt(x, z, ended.EndHours + 1, ended.EndSample + 3600).Height;
+            Check(m.Override == null && ended != null && stillNow && later > 0.5 * storm,
+                $"an admin's clearwind takes effect a few wave samples ahead, and the sea it raised dies down ({storm:0.00} → {later:0.00} blocks an hour later)");
+            sys.SetOverride(null);
+            Check(m.History.Length == 0, "a mod's SetOverride(null) leaves no fixed wind behind");
+
             // the waves: the same trains here as on every client, running on the server's wave clock
             Check(sys.Spectrum != null && sys.Spectrum.Circumference == m.Shape.Circumference, $"wave trains built ({sys.Spectrum?.TrainCount} of them)");
             Check(sys.WaveTime > 0.5, $"the wave clock runs ({sys.WaveTime:0.0} s)");
             var p1 = new WavePlace();
             var p2 = new WavePlace();
             sys.SampleWaves(p1, x, z);
-            sys.SampleWaves(p2, x, z);   // someone else, new to the place (0.3.6: whatever either saw before)
-            // (it read the running clock a moment later: blend it at the first one's time; within a sample that only re-blends)
-            bool sameSample = WavePlace.SampleIndex(p2.Time) == WavePlace.SampleIndex(p1.Time);
-            p2.Update(sys.Spectrum, p1.Time, default, default);
+            // someone else, who sailed in from far away a moment ago (0.4.2: wherever, and whenever, it was before)
+            sys.SampleWaves(p2, x + 5000, z - 3000, p1.Time - 1.5);
+            sys.SampleWaves(p2, x, z, p1.Time);
             double h1 = p1.HeightAt(x + 3.5, z - 7.25), h2 = p2.HeightAt(x + 3.5, z - 7.25);
-            Check(p1.Count > 0 && (!sameSample || Math.Abs(h1 - h2) < 1e-12),
-                $"everyone asking about the same place and time gets the same waves ({p1.Count} trains, {h1:0.000}, off by {Math.Abs(h1 - h2):e1}{(sameSample ? "" : "; straddled a sample, not compared")})");
+            Check(p1.Count > 0 && Math.Abs(h1 - h2) < 1e-12,
+                $"everyone asking about the same place and time gets the same waves, wherever they came from ({p1.Count} trains, {h1:0.000}, off by {Math.Abs(h1 - h2):e1})");
             double f = sys.WaveFactorAt(x, z);
             Check(f >= 0.2 - 1e-9 && f <= 1 + 1e-9, $"sheltered water scales the waves like the shader does ({f:0.00} at spawn)");
             double wh = sys.WaveHeightAt(x, z);

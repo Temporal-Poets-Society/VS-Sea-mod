@@ -75,6 +75,33 @@ namespace Sea
         /// <summary>An admin's fixed wind, or null. Replaced as a whole (read from other threads).</summary>
         public volatile WindOverride Override;
 
+        /// <summary>
+        /// (0.4.2) The fixed winds before <see cref="Override"/>, ended when an admin changed or cleared them, oldest
+        /// first (replaced as a whole): for the hours they covered they still decide the sea's history, so the sea they
+        /// raised dies down instead of vanishing (<see cref="WindOverride.Change"/>).
+        /// </summary>
+        public volatile WindOverride[] History = Array.Empty<WindOverride>();
+
+        /// <summary>How many game hours back the sea state looks (<see cref="SeaAt(double, double, double)"/>).</summary>
+        public const int HistoryHours = 16;
+
+        /// <summary>
+        /// The fixed wind at game hour `hours` as worked out for wave sample `sample` (<see cref="long.MaxValue"/>: as
+        /// known now; <see cref="WindOverride.AppliesAt"/>): the current one, else the newest ended one, else null.
+        /// </summary>
+        public WindOverride FixedAt(double hours, long sample) => FixedIn(Override, History, hours, sample);
+
+        static WindOverride FixedIn(WindOverride ov, WindOverride[] history, double hours, long sample)
+        {
+            if (ov != null && ov.AppliesAt(hours, sample)) return ov;
+            for (int i = history.Length - 1; i >= 0; i--)
+                if (history[i].AppliesAt(hours, sample)) return history[i];
+            return null;
+        }
+
+        /// <summary>The fixed wind in force at game hour `hours`, as known now, or null.</summary>
+        public WindOverride FixedAt(double hours) => FixedAt(hours, long.MaxValue);
+
         /// <summary>The mod deciding the wind (<see cref="SeaSystem.SetWindProvider"/>), or null: vanilla's wind.</summary>
         public volatile WindProvider Provider;
 
@@ -92,9 +119,7 @@ namespace Sea
         /// <summary>Does Sea's wind (a provider's, or an admin's fixed one) decide the wind at this time?</summary>
         public bool Decides(double hours)
         {
-            if (Provider != null) return true;
-            var ov = Override;
-            return ov != null && ov.Covers(hours);
+            return Provider != null || FixedAt(hours) != null;
         }
 
         /// <summary>The fixed steady wind the sea follows without a provider (from the config).</summary>
@@ -109,8 +134,8 @@ namespace Sea
         /// <summary>The wind at a place and game time: an admin's fixed wind, else the provider's, else calm (vanilla's then; see <see cref="SeaSystem.WindAt"/>).</summary>
         public Wind At(double x, double z, double hours, bool gusts)
         {
-            var ov = Override;
-            if (ov != null && ov.Covers(hours)) return Wind.FromCompass(ov.FromDegrees, ov.Strength);
+            var ov = FixedAt(hours);
+            if (ov != null) return Wind.FromCompass(ov.FromDegrees, ov.Strength);
             return Provider?.At(x, z, hours, gusts) ?? default;
         }
 
@@ -119,11 +144,15 @@ namespace Sea
         /// config's steady wind. Vanilla's wind can't be the sea's: it changes from tick to tick and reaches each client
         /// at another moment, so ships and the drawn water would part.
         /// </summary>
-        public Wind SeaWind(double x, double z, double hours, bool gusts = true)
+        public Wind SeaWind(double x, double z, double hours, bool gusts = true) => SeaWind(x, z, hours, gusts, long.MaxValue);
+
+        /// <summary>(0.4.2) The sea's wind at game hour `hours`, as worked out for wave sample `sample` (see <see cref="FixedAt(double, long)"/>).</summary>
+        public Wind SeaWind(double x, double z, double hours, bool gusts, long sample) => SeaWindIn(Override, History, Provider, x, z, hours, gusts, sample);
+
+        Wind SeaWindIn(WindOverride current, WindOverride[] history, WindProvider p, double x, double z, double hours, bool gusts, long sample)
         {
-            var ov = Override;
-            if (ov != null && ov.Covers(hours)) return Wind.FromCompass(ov.FromDegrees, ov.Strength);
-            var p = Provider;
+            var ov = FixedIn(current, history, hours, sample);
+            if (ov != null) return Wind.FromCompass(ov.FromDegrees, ov.Strength);
             return p != null ? p.At(x, z, hours, gusts) : SteadySeaWind;
         }
 
@@ -134,12 +163,19 @@ namespace Sea
         /// Waves at a place: they build up over a few hours of wind and die away more slowly (swell), and run the way
         /// the wind has been blowing (<see cref="SeaWind"/> without gusts, the past 16 game hours).
         /// </summary>
-        public SeaState SeaAt(double x, double z, double hours)
+        public SeaState SeaAt(double x, double z, double hours) => SeaAt(x, z, hours, long.MaxValue);
+
+        /// <summary>(0.4.2) The same, as worked out for wave sample `sample` (an admin's change counts from its sample on).</summary>
+        public SeaState SeaAt(double x, double z, double hours, long sample)
         {
             double fast = 0, fastW = 0, slow = 0, slowW = 0, dx = 0, dz = 0;
-            for (int k = 0; k < 16; k++)
+            // (one look at what may change meanwhile, for all 16 hours: a change can't land half-way through them)
+            WindOverride current = Override;
+            WindOverride[] history = History;
+            WindProvider provider = Provider;
+            for (int k = 0; k < HistoryHours; k++)
             {
-                var w = SeaWind(x, z, hours - k, false);
+                var w = SeaWindIn(current, history, provider, x, z, hours - k, false, sample);
                 double s = w.Strength, h = DevelopedHeight(s);
                 double wf = Math.Exp(-k / 3.0), ws = Math.Exp(-k / 10.0);
                 fast += wf * h; fastW += wf;

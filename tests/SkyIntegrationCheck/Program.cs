@@ -72,6 +72,14 @@ static class Program
             var days = at.GetType("AstraTerra.Astronomy.LocalMoonTime").GetMethod("MoonTotalDays");
             Check(Math.Abs((double)days.Invoke(null, new object[] { 4.0, 90.0, true }) - 4.25) < 1e-12,
                 "local moon source follows AstraTerra's longitude correction");
+            // (0.4.2) the adapter's own typed delegates, bound once, call the real methods (no config loaded: AstraTerra's stars off)
+            object D(string name) => typeof(CelestialRenderer).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic).GetValue(renderer);
+            var localDays = (System.Func<double, double, bool, double>)D("localMoonDays");
+            bool shows = ((System.Func<bool>)D("showsAstra"))(), vanilla = ((System.Func<bool>)D("vanillaStars"))();
+            bool path = ((System.Func<bool>)D("starPath"))(), near = ((System.Func<bool>)D("nearMoon"))(), disc = ((System.Func<bool>)D("customMoon"))();
+            Check(Math.Abs(localDays(4.0, 90.0, true) - 4.25) < 1e-12 && localDays(4.0, 90.0, false) == 4.0 && !shows && vanilla
+                && D("longitude") != null && D("moonPhase") != null,
+                $"the adapter's typed delegates call AstraTerra (moon days 4.25; no config: its stars {shows}, vanilla's {vanilla}; star path {path}, moons {near}/{disc})");
         }
 
         var field = typeof(CelestialRenderer).GetField("pixels", BindingFlags.Instance | BindingFlags.NonPublic);

@@ -96,6 +96,14 @@ namespace Sea
         /// <summary>Calls replaced by the last transpiler run (a patch that found none is reported).</summary>
         public static int LastReplaced;
 
+        /// <summary>(0.4.2) How many manager.Spawn(...) calls a method has, before it's patched.</summary>
+        public static int SpawnCalls(MethodBase method)
+        {
+            int n = 0;
+            foreach (var ci in PatchProcessor.GetOriginalInstructions(method)) if (ci.Calls(spawn)) n++;
+            return n;
+        }
+
         /// <summary>The stack is the same before and after: (manager, provider) in, an int out.</summary>
         static IEnumerable<CodeInstruction> Replace(IEnumerable<CodeInstruction> instructions, MethodInfo with)
         {

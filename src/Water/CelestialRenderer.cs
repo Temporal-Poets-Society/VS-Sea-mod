@@ -29,11 +29,11 @@ namespace Sea
         FieldInfo cubeField, matrixField;
         Type astraSky;
         FieldInfo astraStars, astraSidereal, astraLatitude, astraBias;
-        PropertyInfo vanillaStars, customMoon, nearMoon;
-        MethodInfo longitude, localMoonDays, moonPhase, starPath;
-        FieldInfo astraConfig;
-        MethodInfo getStarMode, showsAstra;
-        object starPathValue;
+        // (0.4.2) AstraTerra's calls, bound once as typed delegates: no argument arrays or boxing every frame
+        System.Func<bool> vanillaStars, customMoon, nearMoon, starPath, showsAstra;
+        System.Func<double, IWorldAccessor, double> longitude;
+        System.Func<double, double, bool, double> localMoonDays;
+        System.Func<IGameCalendar, double, double> moonPhase;
         System.Func<object, Star> readStar;
         double lastSidereal = double.NaN, lastLatitude = double.NaN, lastBias = double.NaN;
         bool astraFailed, textureFailed;
@@ -88,18 +88,25 @@ namespace Sea
                 astraSidereal = NeedField(astraSky, "cachedStarSiderealDeg");
                 astraLatitude = NeedField(astraSky, "cachedStarLatitudeDeg");
                 astraBias = NeedField(astraSky, "cachedStarBrightnessBias");
-                vanillaStars = astraSky.GetProperty("ShouldRenderVanillaStarfield") ?? throw new Exception("starfield mode missing");
-                astraConfig = NeedField(astraSky, "config");
-                getStarMode = astraConfig.FieldType.GetMethod("GetStarfieldMode");
-                showsAstra = asm.GetType("AstraTerra.Config.StarfieldModeParser").GetMethod("ShowsAstraTerra");
-                customMoon = asm.GetType("AstraTerra.Client.Rendering.MoonDiscRenderer").GetProperty("HidesVanillaMoon");
-                nearMoon = asm.GetType("AstraTerra.Client.Rendering.NearBodyRenderer").GetProperty("HidesVanillaMoon");
-                longitude = asm.GetType("AstraTerra.Astronomy.ObserverLongitude").GetMethod("ForObserver");
-                localMoonDays = asm.GetType("AstraTerra.Astronomy.LocalMoonTime").GetMethod("MoonTotalDays");
-                moonPhase = asm.GetType("AstraTerra.Astronomy.VanillaMoonPhase").GetMethod("ExactAt");
-                starPath = asm.GetType("AstraTerra.Client.Rendering.SkyRenderPaths").GetMethod("IsEnabled");
-                starPathValue = Enum.Parse(starPath.GetParameters()[0].ParameterType, "Stars");
-                var type = asm.GetType("AstraTerra.Astronomy.RenderedStar");
+                Type Need(string name) => asm.GetType(name) ?? throw new Exception(name + " missing");
+                vanillaStars = Getter(astraSky, "ShouldRenderVanillaStarfield");
+                customMoon = Getter(Need("AstraTerra.Client.Rendering.MoonDiscRenderer"), "HidesVanillaMoon");
+                nearMoon = Getter(Need("AstraTerra.Client.Rendering.NearBodyRenderer"), "HidesVanillaMoon");
+                // config != null && StarfieldModeParser.ShowsAstraTerra(config.GetStarfieldMode())
+                var configField = NeedField(astraSky, "config");
+                var getStarMode = configField.FieldType.GetMethod("GetStarfieldMode") ?? throw new Exception("GetStarfieldMode missing");
+                var shows = Need("AstraTerra.Config.StarfieldModeParser").GetMethod("ShowsAstraTerra") ?? throw new Exception("ShowsAstraTerra missing");
+                var config = Expression.Field(null, configField);
+                showsAstra = Expression.Lambda<System.Func<bool>>(Expression.AndAlso(Expression.NotEqual(config, Expression.Constant(null, configField.FieldType)),
+                    Expression.Call(shows, Expression.Call(config, getStarMode)))).Compile();
+                // SkyRenderPaths.IsEnabled(SkyRenderPath.Stars)
+                var isEnabled = Need("AstraTerra.Client.Rendering.SkyRenderPaths").GetMethod("IsEnabled") ?? throw new Exception("IsEnabled missing");
+                var pathType = isEnabled.GetParameters()[0].ParameterType;
+                starPath = Expression.Lambda<System.Func<bool>>(Expression.Call(isEnabled, Expression.Constant(Enum.Parse(pathType, "Stars"), pathType))).Compile();
+                longitude = Bind<System.Func<double, IWorldAccessor, double>>(Need("AstraTerra.Astronomy.ObserverLongitude"), "ForObserver");
+                localMoonDays = Bind<System.Func<double, double, bool, double>>(Need("AstraTerra.Astronomy.LocalMoonTime"), "MoonTotalDays");
+                moonPhase = Bind<System.Func<IGameCalendar, double, double>>(Need("AstraTerra.Astronomy.VanillaMoonPhase"), "ExactAt");
+                var type = Need("AstraTerra.Astronomy.RenderedStar");
                 var item = Expression.Parameter(typeof(object), "star");
                 Expression Get(string n) => Expression.Convert(Expression.Property(Expression.Convert(item, type), n), typeof(float));
                 readStar = Expression.Lambda<System.Func<object, Star>>(Expression.New(typeof(Star).GetConstructor(new[] { typeof(float), typeof(float), typeof(float), typeof(float) }), Get("DirectionX"), Get("DirectionY"), Get("DirectionZ"), Get("Brightness")), item).Compile();
@@ -109,6 +116,25 @@ namespace Sea
         }
 
         static FieldInfo NeedField(Type t, string name) => AccessTools.Field(t, name) ?? throw new Exception(name + " missing");
+
+        /// <summary>A static bool property as a delegate.</summary>
+        static System.Func<bool> Getter(Type t, string name)
+        {
+            var p = t.GetProperty(name, BindingFlags.Public | BindingFlags.Static) ?? throw new Exception(name + " missing");
+            return Expression.Lambda<System.Func<bool>>(Expression.Convert(Expression.Property(null, p), typeof(bool))).Compile();
+        }
+
+        /// <summary>A static method as a typed delegate (its parameters converted from the delegate's), or an exception saying what's missing.</summary>
+        static D Bind<D>(Type t, string name) where D : Delegate
+        {
+            var m = t.GetMethod(name, BindingFlags.Public | BindingFlags.Static) ?? throw new Exception(name + " missing");
+            var invoke = typeof(D).GetMethod("Invoke");
+            var args = invoke.GetParameters().Select(p => Expression.Parameter(p.ParameterType, p.Name)).ToArray();
+            var ps = m.GetParameters();
+            if (ps.Length != args.Length) throw new Exception(name + " has other parameters");
+            var call = Expression.Call(m, ps.Select((p, i) => (Expression)Expression.Convert(args[i], p.ParameterType)));
+            return Expression.Lambda<D>(Expression.Convert(call, invoke.ReturnType), args).Compile();
+        }
         void FailAstra(Exception ex)
         {
             astraFailed = true;
@@ -117,10 +143,31 @@ namespace Sea
             api.Logger.Warning("[sea] Optional AstraTerra sky adapter disabled: {0}. Custom moon reflections suppressed to avoid a false trail.", ex.Message);
         }
 
+        /// <summary>
+        /// The sky's state for this frame, worked out once (the ambient update and this renderer both need it; 0.4.2),
+        /// and the eye each time it's asked (the ambient update runs before the camera moves).
+        /// </summary>
         void Frame()
         {
             var ep = api.World?.Player?.Entity;
             if (ep == null) return;
+            if (skyFrame != renderFrame)
+            {
+                skyFrame = renderFrame;
+                Sky(ep);
+            }
+            // Inverse view gives the actual eye relative to chunk origins, including third person and camera offsets.
+            // The camera matrix stays null until the camera's first update (the ambient update runs before it).
+            var view = api.Render.CameraMatrixOrigin;
+            if (view != null && Mat4d.Invert(inverseView, view) != null)
+                eye.Set((float)inverseView[12], (float)inverseView[13], (float)inverseView[14]);
+        }
+
+        long renderFrame, skyFrame = -1;
+        readonly Vec3d observer = new();
+
+        void Sky(Vintagestory.API.Common.Entities.Entity ep)
+        {
             var cal = api.World.Calendar;
             sun.Set(cal.SunPositionNormalized).Normalize();
             moon.Set(cal.MoonPosition).Normalize();
@@ -131,16 +178,15 @@ namespace Sea
                 if (astraFailed) moon.Set(0, -1, 0);
                 else try
                 {
-                    showVanilla = (bool)vanillaStars.GetValue(null);
-                    var config = astraConfig.GetValue(null);
-                    showCustom = config != null && (bool)showsAstra.Invoke(null, new[] { getStarMode.Invoke(config, null) }) && (bool)starPath.Invoke(null, new[] { starPathValue });
-                    if ((bool)nearMoon.GetValue(null)) moon.Set(0, -1, 0); // a replaced near-body moon is not vanilla's moon
-                    else if ((bool)customMoon.GetValue(null))
+                    showVanilla = vanillaStars();
+                    showCustom = showsAstra() && starPath();
+                    if (nearMoon()) moon.Set(0, -1, 0); // a replaced near-body moon is not vanilla's moon
+                    else if (customMoon())
                     {
-                        double lon = (double)longitude.Invoke(null, new object[] { ep.Pos.X, api.World });
-                        double days = (double)localMoonDays.Invoke(null, new object[] { cal.TotalDays, lon, true });
-                        moon.Set(cal.GetMoonPosition(ep.Pos.XYZ, days)).Normalize();
-                        exact = (double)moonPhase.Invoke(null, new object[] { cal, days });
+                        double days = localMoonDays(cal.TotalDays, longitude(ep.Pos.X, api.World), true);
+                        observer.Set(ep.Pos.X, ep.Pos.InternalY, ep.Pos.Z);
+                        moon.Set(cal.GetMoonPosition(observer, days)).Normalize();
+                        exact = moonPhase(cal, days);
                         phaseFromCalendar = true;
                     }
                 }
@@ -163,11 +209,6 @@ namespace Sea
             if (ep.Pos.Dimension != 0 || api.Render.ShaderUniforms.CameraUnderwater > 0.01f) { floor = 0; ambientScale = 1; }
             roughness = (float)Math.Clamp(sea.CameraWaves.SignificantHeight / 3, 0, 1);
             roughness *= (float)sea.WaveFactorAt(ep.Pos.X, ep.Pos.Z);
-            // Inverse view gives the actual eye relative to chunk origins, including third person and camera offsets.
-            // The camera matrix stays null until the camera's first update (the ambient update runs before it).
-            var view = api.Render.CameraMatrixOrigin;
-            if (view != null && Mat4d.Invert(inverseView, view) != null)
-                eye.Set((float)inverseView[12], (float)inverseView[13], (float)inverseView[14]);
         }
 
         // Harmony postfixes run inside vanilla's render loop: an exception there ends the game, so each one switches
@@ -209,6 +250,12 @@ namespace Sea
 
         public void OnRenderFrame(float dt, EnumRenderStage stage)
         {
+            try { Render(); }
+            finally { renderFrame++; }
+        }
+
+        void Render()
+        {
             if (ambientFailed) return;
             try { Frame(); }
             catch (Exception ex) { Fail(ref ambientFailed, "Celestial sky state", ex); usesFailed = true; return; }
@@ -218,14 +265,19 @@ namespace Sea
                 if (atlas == 0) CreateAtlas();
                 if (showVanilla && vanillaCube > 0 && copiedCube != vanillaCube)
                 {
-                    if (filteredCube != 0) GL.DeleteTexture(filteredCube);
-                    filteredCube = StarCubemap.Create(vanillaCube);
+                    // (0.4.2) the new copy first: if it fails, the old one is still whole (and deleted only once)
+                    int made = StarCubemap.Create(vanillaCube), old = filteredCube;
+                    filteredCube = made;
                     copiedCube = vanillaCube;
+                    if (old != 0) GL.DeleteTexture(old);
                 }
                 if (astraSky == null || astraFailed || !showCustom || night <= 0) return;
                 if (api.ElapsedMilliseconds - atlasAt < 250) return;
                 double sid = (double)astraSidereal.GetValue(null), lat = (double)astraLatitude.GetValue(null), bias = (double)astraBias.GetValue(null);
-                if (sid == lastSidereal && lat == lastLatitude && bias == lastBias) return;
+                // (0.4.2) redrawn once the sky has turned a quarter of an atlas pixel, not at every new sidereal angle:
+                // the stars' kernel is smooth, so steps that small don't show, and the redraw (thousands of stars) is costly
+                double turned = Math.Abs(WorldShape.Mod(sid - lastSidereal + 180, 360) - 180);
+                if (lat == lastLatitude && bias == lastBias && turned < MinSiderealStep) return;
                 if (!double.IsFinite(sid)) return;
                 Array.Clear(pixels);
                 StarCount = 0;
@@ -247,6 +299,9 @@ namespace Sea
                 api.Logger.Warning("[sea] Star atlas disabled after texture/source failure: {0}", ex.Message);
             }
         }
+
+        /// <summary>A quarter of an atlas pixel of sky rotation, in degrees.</summary>
+        const double MinSiderealStep = 360.0 / Width / 4;
 
         public readonly struct Star
         {
@@ -346,6 +401,7 @@ namespace Sea
             harmony.UnpatchAll(Id);
             if (atlas != 0) GL.DeleteTexture(atlas);
             if (filteredCube != 0) GL.DeleteTexture(filteredCube);
+            atlas = filteredCube = copiedCube = 0;
             if (current == this) current = null;
         }
     }

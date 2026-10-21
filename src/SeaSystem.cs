@@ -28,6 +28,7 @@ namespace Sea
         public const string ChannelName = "sea";
         const string ConfigFile = "sea.json";
         const string OverrideKey = "sea-override";
+        const string HistoryKey = "sea-override-history";
         const string WindKeyKey = "sea-windkey";
 
         static SeaSystem serverInstance, clientInstance;
@@ -57,9 +58,9 @@ namespace Sea
         double clientWaveTime;
         /// <summary>Client: the waves at the camera, what the water shader draws.</summary>
         public readonly WavePlace CameraWaves = new();
-        readonly WavePlace serverProbe = new();
-        double probeX = double.NaN, probeZ = double.NaN;
         const int ClockPacketMs = 5000;
+
+        public SeaSystem() { waveSource = new WaveSource(this); }
 
         public override double ExecuteOrder() => 0.15;
 
@@ -75,13 +76,24 @@ namespace Sea
             if (api == null) return;
             if (api.Side == EnumAppSide.Server && serverInstance == this) serverInstance = null;
             if (api.Side == EnumAppSide.Client && clientInstance == this) clientInstance = null;
-            if (waterRenderer != null) capi?.Event.UnregisterRenderer(waterRenderer, EnumRenderStage.Opaque);
-            if (celestialRenderer != null)
+            if (capi != null)
             {
-                capi.Event.UnregisterRenderer(celestialRenderer, EnumRenderStage.Opaque);
-                celestialRenderer.Dispose();
+                if (waterRenderer != null)
+                {
+                    capi.Event.UnregisterRenderer(waterRenderer, EnumRenderStage.Before);
+                    waterRenderer.Dispose();
+                }
+                if (celestialRenderer != null)
+                {
+                    capi.Event.UnregisterRenderer(celestialRenderer, EnumRenderStage.Opaque);
+                    celestialRenderer.Dispose();
+                }
+                if (frameStart != null) capi.Event.UnregisterRenderer(frameStart, EnumRenderStage.Before);
+                // (0.4.2) the game keeps its compiled shaders from world to world: leave Sea's code in them switched off,
+                // or a world without Sea joined next would draw this one's last waves, hull cut-outs and glints
+                WaterRenderer.SwitchOff(capi);
+                Hooks.RequestShaderReload = null;
             }
-            if (frameStart != null) capi?.Event.UnregisterRenderer(frameStart, EnumRenderStage.Before);
             Hooks.Remove();
         }
 
@@ -145,9 +157,11 @@ namespace Sea
                 if (provider != null && provider.Name != name) other = provider.Name;
                 else
                 {
+                    Changed();
                     provider = new WindProvider(name, windAt, prevailingAt);
                     var m = Model;
                     if (m != null) m.Provider = provider;
+                    Changed();
                 }
             }
             if (other != null)
@@ -165,9 +179,11 @@ namespace Sea
             lock (providerSync)
             {
                 if (provider == null || provider.Name != name) return;
+                Changed();
                 provider = null;
                 var m = Model;
                 if (m != null) m.Provider = null;
+                Changed();
             }
             Mod?.Logger.Notification("The wind no longer comes from {0}: vanilla's wind; the sea follows a steady wind", name);
         }
@@ -186,10 +202,20 @@ namespace Sea
         {
             lock (providerSync)
             {
+                Changed();
                 model.Provider = provider;
                 Model = model;
+                Changed();
             }
         }
+
+        /// <summary>
+        /// (0.4.2) The sea's past may read differently now (a provider, a fixed wind, a model): wave places resample.
+        /// Called before and after each change, so a sample worked out across one (from another thread) is seen to be
+        /// and worked out again at its place's next call (<see cref="WavePlace.Sample"/>).
+        /// </summary>
+        void Changed() => System.Threading.Interlocked.Increment(ref revision);
+        long revision;
 
         // ---------------------------------------------------------------- waves
 
@@ -207,27 +233,47 @@ namespace Sea
         /// Bring a place (a ship, the camera) to the current wave time, with the sea state and wind at (x, z). Keep
         /// one <see cref="WavePlace"/> per thing that rides or looks at the waves and call this once a tick or frame.
         /// </summary>
-        public void SampleWaves(WavePlace place, double x, double z)
+        public void SampleWaves(WavePlace place, double x, double z) => SampleWaves(place, x, z, WaveTime);
+
+        /// <summary>
+        /// The same at wave time t. Both ends of each second's blend are taken at their own sample's game hour (the
+        /// server's anchors), not whenever this caller got here, and (0.4.2) at fixed grid points around the place
+        /// (<see cref="WavePlace.Sample"/>), not wherever it was: a ship new to the place, one that missed a second or
+        /// sailed in from elsewhere, the server's tick and a client's frame all get the same surface there.
+        /// </summary>
+        internal void SampleWaves(WavePlace place, double x, double z, double t) =>
+            place.Sample(Spectrum, t, x, z, Model?.Shape.RingStart ?? 0, waveSource);
+
+        /// <summary>The wind the waves' chop follows (<see cref="WindModel.SeaWind(double, double, double, bool, long)"/>), as worked out for wave sample n.</summary>
+        Wind SeaWindAt(double x, double z, double hours, long n) => Model?.SeaWind(x, z, hours, true, n) ?? WindAt(x, z, hours);
+
+        /// <summary>The sea state as worked out for wave sample n (an admin's change of the fixed wind counts from its sample on).</summary>
+        SeaState SeaAt(double x, double z, double hours, long n)
         {
-            var spec = Spectrum;
-            double t = WaveTime;
-            if (spec == null || !place.Due(spec, t))
-            {
-                place.Update(spec, t, default, default);
-                return;
-            }
-            // both ends of this second's blend, each at its own sample's game hour (the server's anchors), not whenever
-            // this caller got here: a ship new to the place, one that missed a second, the server's tick and a client's
-            // frame all get the same surface there
-            long n = WavePlace.SampleIndex(t);
-            double s = WavePlace.SampleSeconds, perSample = GameHoursPerWaveSecond * s;
-            double estimate = Hours - (t - n * s) * GameHoursPerWaveSecond;   // only until the server's anchors arrive
-            double h1 = sampleHours.At(n, estimate, perSample), h0 = sampleHours.At(n - 1, estimate - perSample, perSample);
-            place.Update(spec, t, SeaAt(x, z, h0), SeaWindAt(x, z, h0), SeaAt(x, z, h1), SeaWindAt(x, z, h1));
+            var m = Model;
+            return m != null ? m.SeaAt(x, z, hours, n) : SeaAt(x, z, hours);
         }
 
-        /// <summary>The wind the waves' chop follows (<see cref="WindModel.SeaWind"/>).</summary>
-        Wind SeaWindAt(double x, double z, double hours) => Model?.SeaWind(x, z, hours) ?? WindAt(x, z, hours);
+        /// <summary>(0.4.2) What wave places sample: the sea state and wind, at the sample hours every side agrees on.</summary>
+        sealed class WaveSource : IWaveSource
+        {
+            readonly SeaSystem sys;
+            public WaveSource(SeaSystem sys) { this.sys = sys; }
+
+            public double HoursOf(long n, double t)
+            {
+                double rate = sys.GameHoursPerWaveSecond, s = WavePlace.SampleSeconds;
+                // the estimate (the calendar now, worked back to the sample) only counts until the server's anchors arrive
+                return sys.sampleHours.At(n, sys.Hours - (t - n * s) * rate, rate * s);
+            }
+
+            public SeaState SeaAt(double x, double z, double hours, long n) => sys.SeaAt(x, z, hours, n);
+            public Wind WindAt(double x, double z, double hours, long n) => sys.SeaWindAt(x, z, hours, n);
+            // (the model's changes and the anchors' together: either may change what a sample reads)
+            public long Revision => System.Threading.Interlocked.Read(ref sys.revision) + sys.sampleHours.Version;
+        }
+
+        readonly WaveSource waveSource;
 
         /// <summary>The game hour of each wave sample, the same on every side (the server's anchors).</summary>
         readonly SampleHours sampleHours = new();
@@ -285,22 +331,38 @@ namespace Sea
         /// </summary>
         public double WaveHeightAt(double x, double z)
         {
-            WavePlace place;
-            if (api.Side == EnumAppSide.Client) place = CameraWaves;
+            double h;
+            if (api.Side == EnumAppSide.Client) h = CameraWaves.HeightAt(x, z);
             else
             {
-                // one probe on the server, re-sampled where it's asked
-                place = serverProbe;
-                if (double.IsNaN(probeX) || (x - probeX) * (x - probeX) + (z - probeZ) * (z - probeZ) > 64 * 64)
+                // (0.4.2) a probe per grid cell asked about lately, so ships far apart don't make one probe start over at
+                // every call; and one caller at a time (ships may ask from other threads)
+                var key = ((long)Math.Floor(x / WavePlace.GridCell), (long)Math.Floor(z / WavePlace.GridCell));
+                lock (probes)
                 {
-                    probeX = x;
-                    probeZ = z;
-                    serverProbe.Reset();
+                    if (!probes.TryGetValue(key, out var probe))
+                    {
+                        if (probes.Count >= MaxProbes)
+                        {
+                            var oldest = key;
+                            long used = long.MaxValue;
+                            foreach (var kv in probes) if (kv.Value.Used < used) { used = kv.Value.Used; oldest = kv.Key; }
+                            probes.Remove(oldest);
+                        }
+                        probes[key] = probe = new Probe();
+                    }
+                    probe.Used = ++probeUses;
+                    SampleWaves(probe.Place, x, z);
+                    h = probe.Place.HeightAt(x, z);
                 }
-                SampleWaves(serverProbe, probeX, probeZ);
             }
-            return place.HeightAt(x, z) * WaveFactorAt(x, z);
+            return h * WaveFactorAt(x, z);
         }
+
+        sealed class Probe { public readonly WavePlace Place = new(); public long Used; }
+        readonly System.Collections.Generic.Dictionary<(long, long), Probe> probes = new();
+        long probeUses;
+        const int MaxProbes = 32;
 
         void BuildSpectrum(long key, double circumference, double waveScale)
         {
@@ -308,11 +370,21 @@ namespace Sea
                 Spectrum = new WaveSpectrum(key, circumference, waveScale);
         }
 
-        /// <summary>Client: register something with hulls in the water; Sea keeps the waves out of them. Any time, even before Sea started.</summary>
-        public void AddWaterClipSource(IWaterClipSource source) { if (!waterSources.Contains(source)) waterSources.Add(source); }
-        public void RemoveWaterClipSource(IWaterClipSource source) => waterSources.Remove(source);
+        /// <summary>Client: register something with hulls in the water; Sea keeps the waves out of them. Any time (from any thread), even before Sea started.</summary>
+        public void AddWaterClipSource(IWaterClipSource source)
+        {
+            if (source == null) return;
+            lock (drySync) { if (Array.IndexOf(waterSources, source) < 0) waterSources = waterSources.Append(source).ToArray(); }
+        }
 
-        readonly System.Collections.Generic.List<IWaterClipSource> waterSources = new();
+        public void RemoveWaterClipSource(IWaterClipSource source)
+        {
+            lock (drySync) { waterSources = waterSources.Where(s => s != source).ToArray(); }
+        }
+
+        /// <summary>(0.4.2) The registered hull sources, as of now (a copy is made on every change, so drawing never sees one change).</summary>
+        internal IWaterClipSource[] WaterSources => waterSources;
+        volatile IWaterClipSource[] waterSources = Array.Empty<IWaterClipSource>();
 
         /// <summary>
         /// Both sides: register something with dry places where the world has water (a ship mod's hulls, rooms below
@@ -419,12 +491,8 @@ namespace Sea
             var shape = MakeShape(ringStart, circumference, cal.DaysPerYear, cal.HoursPerDay);
             var model = new WindModel(shape, Config);
 
-            byte[] data = sapi.WorldManager.SaveGame.GetData(OverrideKey);
-            if (data != null && data.Length > 0)
-            {
-                try { model.Override = WindOverride.Checked(SerializerUtil.Deserialize<WindOverride>(data)); }
-                catch (Exception e) { Mod.Logger.Warning("Could not read the saved fixed wind: {0}", e.Message); }
-            }
+            model.Override = LoadOverride();
+            model.History = LoadHistory();
             UseModel(model);
             BuildSpectrum(key, circumference, Config.WaveScale);
             sampleHours.Clear();
@@ -432,7 +500,7 @@ namespace Sea
             sentParams = new SeaParamsPacket
             {
                 Key = key, Config = Config, RingStart = ringStart, Circumference = circumference,
-                DaysPerYear = cal.DaysPerYear, HoursPerDay = cal.HoursPerDay, Override = model.Override
+                DaysPerYear = cal.DaysPerYear, HoursPerDay = cal.HoursPerDay, Override = model.Override, History = model.History
             };
             serverChannel.BroadcastPacket(sentParams);
 
@@ -457,10 +525,10 @@ namespace Sea
         /// <summary>The wave clock as it will read when the packet arrives (half the ping later).</summary>
         void SendClock(IServerPlayer p)
         {
-            double t = WaveTime;
+            double t = WaveTime, ping = p.Ping;   // (NaN while the player has no connection)
             serverChannel.SendPacket(new SeaClockPacket
             {
-                Seconds = t + Math.Clamp(p.Ping, 0, 2) / 2,
+                Seconds = t + (double.IsFinite(ping) ? Math.Clamp(ping, 0, 2) / 2 : 0),
                 Anchors = sampleHours.All
             }, p);
         }
@@ -489,21 +557,100 @@ namespace Sea
         /// <summary>
         /// Fix the wind everywhere (null = back to the provider's or vanilla's), tell every client, remember it in the
         /// save. It decides Sea's wind and sea (ships, waves); vanilla's weather is the provider's (Earth's) to drive.
+        /// It takes over on this side at once, and the sea's past is rewritten: no trace of the fixed winds before it is
+        /// kept (for tests and mods that want a known sea now; an admin's change is <see cref="ChangeOverride"/>).
         /// </summary>
         public void SetOverride(WindOverride ov)
         {
-            if (Model == null || sentParams == null) return;
+            var m = Model;
+            if (m == null || sentParams == null) return;
             ov = WindOverride.Checked(ov);
-            Model.Override = ov;
-            sentParams.Override = ov;
+            if (ov != null) ov.ActiveSample = 0;
+            Changed();   // (before and after: a wave sample worked out across the change is worked out again)
+            m.History = Array.Empty<WindOverride>();
+            m.Override = ov;
+            Publish(m);
+        }
+
+        /// <summary>
+        /// (0.4.2) Change the fixed wind as an admin does (/sea setwind, /sea clearwind): it takes over at the wave
+        /// sample a few seconds ahead (<see cref="AnchorLead"/>), on the server and every client alike, whose game hour
+        /// is <see cref="NextActivation"/>; the fixed wind before it ends there, and the sea it raised dies down over the
+        /// next game hours rather than vanishing (<see cref="WindOverride.Change"/>). Give the new one's hours from
+        /// <see cref="NextActivation"/>.
+        /// </summary>
+        public void ChangeOverride(WindOverride ov)
+        {
+            var m = Model;
+            if (m == null || sentParams == null) return;
+            double t = WaveTime;
+            long now = WavePlace.SampleIndex(t), n = now + AnchorLead;
+            WindOverride current = m.Override;
+            WindOverride[] history = m.History;
+            // (ended ones are dropped by the hour of the oldest sample still blended, not the calendar: after a /time set
+            // the samples follow it a few seconds later)
+            double oldest = Math.Min(Hours, waveSource.HoursOf(now - SampleHours.Behind, t));
+            int dropped = WindOverride.Change(ref current, ref history, ov, n, waveSource.HoursOf(n, t), oldest);
+            if (dropped > 0) Mod.Logger.Warning("More than {0} fixed-wind changes within 17 game hours: the oldest {1} no longer shape the sea", WindOverride.MaxHistory, dropped);
+            Changed();
+            m.History = history;   // (first: until the new one's sample, the old one ended there reads as before)
+            m.Override = current;
+            Publish(m);
+        }
+
+        /// <summary>
+        /// (0.4.2) The game hour of the wave sample a fixed wind changed now takes over at (a few samples ahead, so
+        /// every client hears of it first).
+        /// </summary>
+        public double NextActivation
+        {
+            get
+            {
+                double t = WaveTime;
+                return waveSource.HoursOf(WavePlace.SampleIndex(t) + AnchorLead, t);
+            }
+        }
+
+        void Publish(WindModel m)
+        {
+            Changed();
+            sentParams.Override = m.Override;
+            sentParams.History = m.History;
             serverChannel.BroadcastPacket(sentParams);
+        }
+
+        WindOverride LoadOverride()
+        {
+            byte[] data = sapi.WorldManager.SaveGame.GetData(OverrideKey);
+            if (data == null || data.Length == 0) return null;
+            try { return SerializerUtil.Deserialize<WindOverride>(data)?.Restarted(); }
+            catch (Exception e) { Mod.Logger.Warning("Could not read the saved fixed wind: {0}", e.Message); return null; }
+        }
+
+        WindOverride[] LoadHistory()
+        {
+            byte[] data = sapi.WorldManager.SaveGame.GetData(HistoryKey);
+            if (data == null || data.Length == 0) return Array.Empty<WindOverride>();
+            try { return Checked(SerializerUtil.Deserialize<WindOverrideHistory>(data)?.Items, true); }
+            catch (Exception e) { Mod.Logger.Warning("Could not read the saved ended fixed winds: {0}", e.Message); return Array.Empty<WindOverride>(); }
+        }
+
+        /// <summary>The usable ones (restarted: from a save), at most <see cref="WindOverride.MaxHistory"/>, the newest.</summary>
+        static WindOverride[] Checked(WindOverride[] items, bool restarted)
+        {
+            if (items == null) return Array.Empty<WindOverride>();
+            var ok = items.Select(o => restarted ? o?.Restarted() : WindOverride.Checked(o)).Where(o => o != null).ToArray();
+            return ok.Length > WindOverride.MaxHistory ? ok[^WindOverride.MaxHistory..] : ok;
         }
 
         void SaveOverride()
         {
-            if (Model == null) return;
-            var ov = Model.Override;
-            sapi.WorldManager.SaveGame.StoreData(OverrideKey, ov == null ? Array.Empty<byte>() : SerializerUtil.Serialize(ov));
+            var m = Model;
+            if (m == null) return;
+            var save = sapi.WorldManager.SaveGame;
+            var ov = m.Override;
+            save.StoreData(OverrideKey, ov == null ? Array.Empty<byte>() : SerializerUtil.Serialize(ov));
+            save.StoreData(HistoryKey, SerializerUtil.Serialize(new WindOverrideHistory { Items = m.History }));
         }
 
         // ---------------------------------------------------------------- client
@@ -516,6 +663,7 @@ namespace Sea
                 .SetMessageHandler<SeaParamsPacket>(OnParams)
                 .SetMessageHandler<SeaClockPacket>(p =>
                 {
+                    if (!double.IsFinite(p.Seconds)) return;
                     clock.OnServerTime(p.Seconds, LocalSeconds);
                     long now = WavePlace.SampleIndex(clock.Now(LocalSeconds));
                     if (p.Anchors != null) foreach (var a in p.Anchors) sampleHours.Add(a, now);
@@ -525,8 +673,8 @@ namespace Sea
 
             frameStart = new FrameStart(this);
             api.Event.RegisterRenderer(frameStart, EnumRenderStage.Before, "sea-waves");
-            waterRenderer = new WaterRenderer(api, this, waterSources);
-            api.Event.RegisterRenderer(waterRenderer, EnumRenderStage.Opaque, "sea-water");
+            waterRenderer = new WaterRenderer(api, this);
+            api.Event.RegisterRenderer(waterRenderer, EnumRenderStage.Before, "sea-water");
             celestialRenderer = new CelestialRenderer(api, this);
             api.Event.RegisterRenderer(celestialRenderer, EnumRenderStage.Opaque, "sea-celestial");
             api.Event.RegisterGameTickListener(_ => UpdateLocalWind(), 250);
@@ -546,15 +694,19 @@ namespace Sea
             RegionSize = capi.World.BlockAccessor.RegionSize;
             Config = (p.Config ?? new SeaConfig()).Checked();
             var ov = WindOverride.Checked(p.Override);
+            var history = Checked(p.History, false);
             var m = Model;
             // the same inputs again (only the fixed wind changed): keep the model (mods bound to it keep it too)
             if (m != null && m.Shape.RingStart == p.RingStart && m.Shape.Circumference == p.Circumference && sentKey == p.Key && SameConfig(m.Config, Config))
             {
+                Changed();
+                m.History = history;
                 m.Override = ov;
+                Changed();
                 return;
             }
             sentKey = p.Key;
-            UseModel(new WindModel(MakeShape(p.RingStart, p.Circumference, p.DaysPerYear, p.HoursPerDay), Config) { Override = ov });
+            UseModel(new WindModel(MakeShape(p.RingStart, p.Circumference, p.DaysPerYear, p.HoursPerDay), Config) { Override = ov, History = history });
             BuildSpectrum(p.Key, p.Circumference, Config.WaveScale);
         }
 
@@ -591,6 +743,9 @@ namespace Sea
 
         static bool SameConfig(SeaConfig a, SeaConfig b) =>
             a.WaveScale == b.WaveScale && a.SeaWindFrom == b.SeaWindFrom && a.SeaWindStrength == b.SeaWindStrength;
+
+        /// <summary>(0.4.2) The fixed wind in force now, or null.</summary>
+        public WindOverride FixedWindNow => Model?.FixedAt(Hours);
 
         /// <summary>Client: the wind at the player right now (updated 4× a second).</summary>
         public Wind LocalWind { get; private set; }
