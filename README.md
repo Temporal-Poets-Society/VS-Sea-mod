@@ -5,7 +5,7 @@ calm down with the wind of the past hours, and are the same on the server and ev
 It also owns the water shaders, so ship mods (Magelan, Hansa) ask Sea to keep waves out of their hulls instead of each
 patching the shaders.
 
-Version **0.4.0**: **the wind comes from a provider; Sea has no weather of its own any more.** Sea's prevailing belts,
+Version **0.4.1** (0.4.1: the night floor on Wmap 0.4.3's far terrain). 0.4.0: **the wind comes from a provider; Sea has no weather of its own any more.** Sea's prevailing belts,
 drifting weather, travelling storms and gusts moved to the Earth mod, which now owns climate and weather (winds, storms,
 rain, clouds) and drives vanilla's weather with them. Sea only consumes the wind, through a generic call any mod can make
 (`SetWindProvider`, see "For other mods"). Without a provider (no Earth) the wind is vanilla's, and the sea follows a
