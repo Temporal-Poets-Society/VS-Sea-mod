@@ -76,13 +76,25 @@ static class Program
         }
 
         var p = typeof(CelestialRenderer).GetMethod("FarFragment");
-        string farPath = Path.GetFullPath("../Wmap/assets/wmap/shaders/farterrain.fsh");
+        // Wmap's working tree next door, or another checkout of it (WMAP_ROOT, its project folder).
+        string wmapRoot = Path.GetFullPath(Environment.GetEnvironmentVariable("WMAP_ROOT") ?? "../Wmap");
+        string farPath = Path.Combine(wmapRoot, "assets/wmap/shaders/farterrain.fsh");
         if (File.Exists(farPath))
         {
-            string source = File.ReadAllText(farPath);
+            // As the game hands it to Sea: Wmap's own includes expanded (from 0.5 the shading is in them).
+            var seen = new System.Collections.Generic.HashSet<string>();
+            string Expand(string code) => System.Text.RegularExpressions.Regex.Replace(code, "^#include\\s+(.*)", m =>
+            {
+                string name = m.Groups[1].Value.Trim().ToLowerInvariant(), file = Path.Combine(wmapRoot, "assets/wmap/shaderincludes", name);
+                return seen.Add(name) && File.Exists(file) ? Expand(File.ReadAllText(file)) : "";
+            }, System.Text.RegularExpressions.RegexOptions.Multiline);
+            string source = Expand(File.ReadAllText(farPath));
             string patched = (string)p.Invoke(null, new object[] { source });
-            Check(patched != null && patched.Contains("seaNightFloor") && patched.Contains(CelestialShader.FarSkyReflection) && CelestialRenderer.FarFragment(patched) == null,
-                "workspace Wmap: distant night floor and sea sky reflection apply once");
+            if (source.Contains("seaNightFloor"))
+                Check(patched == null, "workspace Wmap 0.5: its own far-water contract, left unpatched (Sea sets the uniforms)");
+            else
+                Check(patched != null && patched.Contains("seaNightFloor") && patched.Contains(CelestialShader.FarSkyReflection) && CelestialRenderer.FarFragment(patched) == null,
+                    "workspace Wmap: distant night floor and sea sky reflection apply once");
         }
         else Check(false, "Wmap source available for the optional continuity check");
         Console.WriteLine(failures == 0 ? "ALL OK" : failures + " FAILED");

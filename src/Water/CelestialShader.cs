@@ -8,6 +8,9 @@ namespace Sea
         // Wmap's far-terrain light term: up to 0.4.2 the sun colour, from 0.4.3 the game's ambient colour.
         static readonly string[] FarLight = { "max(vec3(0.05), sun)", "clamp(wmapAmbient, 0.0, 1.0)" };
 
+        /// <summary>Sea's night floor and sky reflection text-patched into Wmap's far terrain shader (Wmap 0.4.x). Wmap 0.5
+        /// declares seaNightFloor, seaSkyReflect and the wave uniforms itself and does that shading in all its far programs
+        /// (its far-water contract); Sea then only sets the uniforms, and a shader that declares seaNightFloor is left as it is.</summary>
         public static string FarFragment(string code)
         {
             if (code == null || code.Contains("seaNightFloor") || !code.Contains("void main()")) return null;

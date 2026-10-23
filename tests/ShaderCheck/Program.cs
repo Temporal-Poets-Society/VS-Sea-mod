@@ -89,8 +89,26 @@ namespace ShaderCheck
                         }
                     }
                 }
-                string wm = Path.GetFullPath("../Wmap/assets/wmap");
-                if (Directory.Exists(wm))
+                // Wmap's working tree next door, or another checkout of it (WMAP_ROOT, its project folder).
+                string wm = Path.GetFullPath(Path.Combine(Environment.GetEnvironmentVariable("WMAP_ROOT") ?? "../Wmap", "assets/wmap"));
+                // Wmap's includes first: from 0.5 its far shading is in them.
+                if (Directory.Exists(wm)) foreach (string f in Directory.GetFiles(Path.Combine(wm, "shaderincludes"))) includes[Path.GetFileName(f)] = File.ReadAllText(f);
+                if (Directory.Exists(wm) && Load(Path.Combine(wm, "shaders"), "farterrain.fsh").Contains("seaNightFloor"))
+                {
+                    // (0.4.7) Wmap 0.5 declares the far-water uniforms and shades its distant sea itself, in every far program:
+                    // Sea leaves its shaders unpatched and only sets the uniforms (and the waves).
+                    foreach (string f in Directory.GetFiles(Path.Combine(wm, "shaderincludes"))) includes[Path.GetFileName(f)] = File.ReadAllText(f);
+                    Check(CelestialShader.FarFragment(Load(Path.Combine(wm, "shaders"), "farterrain.fsh")) == null, "Wmap 0.5 working tree: Sea leaves its far-water shader unpatched");
+                    foreach (string far in new[] { "farterrain", "farcells" })
+                    {
+                        int fp = Build("Wmap 0.5 " + far + " with its far-water contract", Load(Path.Combine(wm, "shaders"), far + ".vsh"), Load(Path.Combine(wm, "shaders"), far + ".fsh"), defs);
+                        if (fp == 0) continue;
+                        foreach (string u in new[] { "seaNightFloor", "seaSkyReflect", "seaWaveCount", "seaWave" })
+                            Check(GL.GetUniformLocation(fp, u) >= 0 || GL.GetUniformLocation(fp, u + "[0]") >= 0, "Wmap 0.5 " + far + ": " + u + " is live");
+                        GL.DeleteProgram(fp);
+                    }
+                }
+                else if (Directory.Exists(wm))
                 {
                     foreach (string f in Directory.GetFiles(Path.Combine(wm, "shaderincludes"))) includes[Path.GetFileName(f)] = File.ReadAllText(f);
                     string farf = CelestialShader.FarFragment(Load(Path.Combine(wm, "shaders"), "farterrain.fsh"));

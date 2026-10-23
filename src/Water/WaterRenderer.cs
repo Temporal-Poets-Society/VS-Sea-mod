@@ -186,11 +186,20 @@ namespace Sea
             return true;
         }
 
-        /// <summary>(0.4.2) The game is using a program: a water program with Sea's code gets this frame's numbers, once.</summary>
+        /// <summary>(0.4.2) The game is using a program: a water program with Sea's code gets this frame's numbers, once.
+        /// (0.4.7) A Wmap far-terrain program that declares the wave uniforms (Wmap 0.5) gets the waves, so its distant sea
+        /// takes their normals, lined up with the near water's (both are evaluated relative to the same camera).</summary>
         public static void OnUse(IShaderProgram prog)
         {
             var r = current;
-            if (r == null || r.uploadFailed || !Injected || Array.IndexOf(WaterShader.Passes, prog.PassName) < 0) return;
+            if (r == null || r.uploadFailed) return;
+            if (prog.AssetDomain == "wmap")
+            {
+                try { r.UploadFarWaves(prog); }
+                catch (Exception e) { r.FailOnce(e); }
+                return;
+            }
+            if (!Injected || Array.IndexOf(WaterShader.Passes, prog.PassName) < 0) return;
             try
             {
                 if (!prog.HasUniform("seaClipCount")) return;
@@ -206,6 +215,16 @@ namespace Sea
                 r.Upload(prog);
             }
             catch (Exception e) { r.FailOnce(e); }
+        }
+
+        /// <summary>(0.4.7) The waves into a Wmap far-terrain program in use: none unless Sea's own waves are in the water
+        /// (with vanilla's waves the near water has no Sea waves to continue). A program without the uniforms is left alone.</summary>
+        void UploadFarWaves(IShaderProgram prog)
+        {
+            if (!prog.HasUniform("seaWaveCount")) return;
+            int wn = Injected && WavesInjected ? waveCount : 0;
+            prog.Uniform("seaWaveCount", wn);
+            if (wn > 0) prog.Uniforms4("seaWave", wn, WaveUniform);
         }
 
         /// <summary>This frame's numbers into a program that's in use.</summary>
@@ -255,6 +274,8 @@ namespace Sea
             var programs = new List<IShaderProgram>();
             foreach (var pass in Passes) programs.Add(capi.Shader.GetProgram((int)pass));
             try { programs.Add(capi.Shader.GetProgramByName("farterrain")); } catch (Exception) { }
+            // (0.4.7) Wmap 0.5's terraces take the same far-water uniforms
+            try { programs.Add(capi.Shader.GetProgramByName("farcells")); } catch (Exception) { }
             foreach (var prog in programs)
             {
                 try
@@ -273,6 +294,7 @@ namespace Sea
                         if (sky) GL.Uniform2(GL.GetUniformLocation(id, "seaEffects"), 0f, 0f);
                         if (floor) GL.Uniform3(GL.GetUniformLocation(id, "seaNightFloor"), 0f, 0f, 0f);
                         if (prog.HasUniform("seaNightEnabled")) GL.Uniform1(GL.GetUniformLocation(id, "seaNightEnabled"), 0f);
+                        if (prog.HasUniform("seaSkyReflect")) GL.Uniform1(GL.GetUniformLocation(id, "seaSkyReflect"), 0f);
                     }
                     finally { GL.UseProgram(previous); }
                 }

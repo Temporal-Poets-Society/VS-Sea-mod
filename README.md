@@ -5,6 +5,15 @@ calm down with the wind of the past hours, and are the same on the server and ev
 It also owns the water shaders, so ship mods (Magelan, Hansa) ask Sea to keep waves out of their hulls instead of each
 patching the shaders.
 
+Version **0.4.7-pre.1** (23 October 2026, `release/sea-0.4.7-pre.1.zip`, branch `wmap-far-waves`, a pre-release for
+testing with Wmap's 0.5.0-pre.2 mid-distance view; not merged): Wmap's distant sea continues Sea's waves. Wmap 0.5 declares
+the far-water uniforms itself (`seaNightFloor`, `seaSkyReflect`, `seaWaveCount`, `seaWave`) and shades its distant sea
+with them in all its far programs (its terraces too), and Sea now sends its wave trains to Wmap's programs as well as its
+sky reflection and night floor, so the far sea's surface follows the same waves (normals only, fading out with distance)
+and meets the near water without a ring. Sea leaves a Wmap shader that declares `seaNightFloor` unpatched (as 0.4.x
+already did); with Wmap 0.4.x the text patch works as before. Sea 0.4.6 works with Wmap 0.5 too, without the waves.
+Not yet confirmed in game.
+
 Version **0.4.6** (22 October 2026, `release/sea-0.4.6.zip`, installed): no red-brown horizon at night. The sea's sky
 reflection (near water and Wmap's distant sea) took the colour the game's sky function returns, which at night is the
 fog colour; the sky dome shows it only at its fog amount over dark space, and the reflection now does the same
