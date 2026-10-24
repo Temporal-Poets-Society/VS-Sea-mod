@@ -62,7 +62,11 @@ namespace Sea
         public readonly WavePlace CameraWaves = new();
         const int ClockPacketMs = 5000;
 
-        public SeaSystem() { waveSource = new WaveSource(this); }
+        public SeaSystem()
+        {
+            // (the corners of the 64-block grid, worked out once for every place in a cell: the camera and ships alike)
+            waveSource = new SharedCorners(new WaveSource(this), () => Model == null ? long.MinValue : System.Threading.Interlocked.Read(ref revision));
+        }
 
         public override double ExecuteOrder() => 0.15;
 
@@ -279,7 +283,7 @@ namespace Sea
             public long Revision => System.Threading.Interlocked.Read(ref sys.revision) + sys.sampleHours.Version;
         }
 
-        readonly WaveSource waveSource;
+        readonly SharedCorners waveSource;
 
         /// <summary>The game hour of each wave sample, the same on every side (the server's anchors).</summary>
         readonly SampleHours sampleHours = new();
