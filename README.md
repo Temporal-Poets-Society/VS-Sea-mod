@@ -5,6 +5,10 @@ calm down with the wind of the past hours, and are the same on the server and ev
 It also owns the water shaders, so ship mods (Magelan, Hansa) ask Sea to keep waves out of their hulls instead of each
 patching the shaders.
 
+Version **0.4.7-pre.2** (24 October 2026, `release/sea-0.4.7-pre.2.zip`, branch `playtest/2026-10-24`, a play-test
+build; not merged): 0.4.7-pre.1 with the review fixes of `claude/review-fixes-sea` merged in. After an upload error
+Wmap's far waves are switched off too, as the near water's are. Not yet confirmed in game.
+
 Version **0.4.7-pre.1** (23 October 2026, `release/sea-0.4.7-pre.1.zip`, branch `wmap-far-waves`, a pre-release for
 testing with Wmap's 0.5.0-pre.2 mid-distance view; not merged): Wmap's distant sea continues Sea's waves. Wmap 0.5 declares
 the far-water uniforms itself (`seaNightFloor`, `seaSkyReflect`, `seaWaveCount`, `seaWave`) and shades its distant sea

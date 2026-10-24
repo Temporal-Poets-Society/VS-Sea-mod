@@ -17,6 +17,9 @@ self-test. None of these runs a client, so these 0.4.2 paths have no automated c
   server's ships; the cleared storm's swell dies down over game hours.
 - A ship sailing across the 64-block sampling grid: no visible step in its motion or the drawn waves.
 - The AstraTerra adapter's typed delegates in a live client (only bound and called offline against the DLL).
+- (Review round 1, not released) Leaving a singleplayer world and joining another: the client's patches come off
+  and go back on, on the main thread (SEA-D38); `.sea` lists them again. After a water uniform upload error the water
+  shows vanilla waves and no hull cuts instead of frozen ones.
 
 ## Open, by design or deferred
 
@@ -33,18 +36,20 @@ self-test. None of these runs a client, so these 0.4.2 paths have no automated c
 | O9 | Info | **With the calendar stopped**, a cleared storm's past hours stay stormy until the calendar moves (only the current hour stops being fixed) | Correct for the model: no time passes for the sea to calm | None, unless a stopped calendar should calm the sea by wave time |
 | O10 | Info | **After a server restart** a fixed wind that was still waiting for its sample is in force at once, and ended ones count as ended for every sample | Wave samples count from the server's start (`ElapsedMilliseconds`), so saved sample numbers mean nothing after it (`WindOverride.Restarted`) | None needed |
 | O11 | Info | **`WavePlace.Sea` and `.Wind` are the nearest grid corner's**, as of the last time the place was sampled, not the place's own | Only reports read them (`.sea`); the trains themselves are blended by position | Blend them like the amplitudes if a mod needs them exact |
+| O12 | Low | **Around a hull that isn't dry the reflections' normal ignores the calming**: the water there is drawn flat or damped, but glints and the sky reflection still follow the full waves (review S1-3) | A visible change to the water's look; Magelan and Hansa use dry hulls, which aren't calmed | Have `seaWater` return its damping and scale `seaSurfaceSlope` by it (plus the clip plane's slope); judge it in game |
 
 ## Performance left on the table
 
-- **The star atlas is still drawn on the CPU** (about 4 ms for 6000 stars) whenever AstraTerra's sky has turned a
-  quarter of an atlas pixel, about every 0.7 s at normal speed. Drawing it once in sky coordinates and rotating the
-  reflected ray in the shader would leave only latitude and brightness changes to redraw (AstraTerra's star directions
-  already include the rotation, so its sidereal frame must be undone first).
 - **`CelestialRenderer`'s `Use` postfix** still asks two `HasUniform` lookups of every program the game uses and
-  uploads its celestial uniforms on every use of a water program (not once per frame like the water uniforms).
-- **Every wave place samples both ends again when a new anchor arrives** (every 5 s, and on each `/time set`):
-  8 sea-state lookups instead of 4 for that second, with identical results. Comparing the two samples' hours
-  instead of the anchor version would avoid it.
+  uploads its celestial uniforms on every use of a water program (not once per frame like the water uniforms); the
+  water uniforms' postfix compares each program's pass name (review S1-7, left open: tens of µs a frame). Its two
+  textures (units 10 and 11) must still be bound on every use, since other programs rebind those units between uses.
+- **The vertex stage runs the 24 trains twice** (`seaWaves` for the height, `seaSurfaceSlope` for the reflections'
+  normal) while reflections are on (review S1-8; since then the slope is skipped while glints and sky are both off).
+  One loop could give both.
+- **Every wave place samples both ends again when a new anchor arrives** (every 5 s, and on each `/time set`). Since
+  the shared corners (SEA-D39) the provider isn't asked again for hours it already answered, but the place still
+  blends both ends anew.
 - **`WavePlace.Sample` blends 4 × 252 amplitudes per call** even when the place hasn't moved and the time is in the
   same second; caching by (u, v, f) would skip it for stationary samplers called several times a frame.
 

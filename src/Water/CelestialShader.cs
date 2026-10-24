@@ -45,7 +45,8 @@ namespace Sea
             if (code == null || code.Contains("out vec2 seaSurfaceSlope;") || !code.Contains(anchor)) return null;
             code = code.Replace(anchor, anchor + @"
     seaSurfaceSlope = vec2(0.0);
-    if ((waterFlagsIn & 1) == 1 && (waterFlagsIn & LiquidIsLavaBitMask) == 0) {
+    // (only the glints and the sky reflection use it: not worked out while both are off)
+    if ((seaEffects.x > 0.0 || seaEffects.y > 0.0) && (waterFlagsIn & 1) == 1 && (waterFlagsIn & LiquidIsLavaBitMask) == 0) {
         float div = ((waterFlagsIn & LiquidWeakWaveBitMask) > 0 ? 90.0 : 5.0)
             * max(0.2, 1.0 - float((waterFlagsIn >> 2) & 255) / 255.0);
         for (int i = 0; i < seaWaveCount; i++) {
@@ -53,7 +54,8 @@ namespace Sea
             seaSurfaceSlope += w.w * w.xy * cos(dot(w.xy, (xyz + origin).xz) + w.z) / div;
         }
     }");
-            return code.Insert(code.IndexOf("void main(", StringComparison.Ordinal), "out vec2 seaSurfaceSlope;\n");
+            // (seaEffects as the fragment stage declares it: one uniform of the program)
+            return code.Insert(code.IndexOf("void main(", StringComparison.Ordinal), "out vec2 seaSurfaceSlope;\nuniform vec2 seaEffects = vec2(0.0);\n");
         }
 
         public static string Fragment(string code)
@@ -73,7 +75,7 @@ namespace Sea
         vec3 eye = eyeDelta / max(length(eyeDelta), 0.001);
         vec3 n = normalize(vec3(-seaSurfaceSlope.x, 1.0, -seaSurfaceSlope.y));
         vec3 ray = reflect(eye, n);
-        float fres = 0.02 + 0.98 * pow(1.0 - max(0.0, dot(-eye, n)), 5.0);
+        float fres = 0.02 + 0.98 * pow(1.0 - clamp(dot(-eye, n), 0.0, 1.0), 5.0);
         // (0.4.4) the sky the game draws, reflected by Fresnel: faint looking down, the sky's own colour at the horizon.
         // Smooth in direction, so waves shade it without speckles; it continues into Wmap's distant sea.
         if (seaEffects.y > 0.0) texColor = seaSkyReflect(texColor, ray, fres, rgbaFog.rgb);

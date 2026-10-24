@@ -875,6 +875,50 @@ namespace SeaTests
             Check(Math.Abs(a1.HeightAt(RingStart + 80, 510) - a2.HeightAt(RingStart + 80 + C, 510)) < 1e-9,
                 "on a ring the grid repeats with it: the same corners, the same surface, a lap apart");
 
+            // the corners are worked out once for every place in a cell (the camera and the ships there), and shared with
+            // the cell next door; the surface is what each place gets on its own
+            long inputs = 1;
+            var shared = new SharedCorners(src, () => inputs);
+            var alone = new WavePlace();
+            src.Asked = 0;
+            alone.Sample(spec, 500.4, 130, 140, 0, src);
+            int aloneAsks = src.Asked;
+            var places = new WavePlace[4];
+            for (int i = 0; i < places.Length; i++) places[i] = new WavePlace();
+            src.Asked = 0;
+            for (int i = 0; i < 3; i++) places[i].Sample(spec, 500.4, 130 + i * 9, 140 - i * 5, 0, shared);
+            int cellAsks = src.Asked;
+            places[3].Sample(spec, 500.4, 130 + 64, 140, 0, shared);   // the next cell east: its two west corners are known
+            int nextAsks = src.Asked - cellAsks;
+            double apart = 0;
+            for (int i = 0; i < 3; i++)
+            {
+                var own = new WavePlace();
+                own.Sample(spec, 500.4, 130 + i * 9, 140 - i * 5, 0, src);
+                apart = Math.Max(apart, Math.Abs(own.HeightAt(150, 120) - places[i].HeightAt(150, 120)));
+            }
+            Check(aloneAsks == 2 * 4 && cellAsks == 2 * 4 && nextAsks == 2 * 2 && apart == 0,
+                $"three places in a cell ask the sea state at its corners once ({cellAsks} asks, one place alone {aloneAsks}), the next cell only at its new corners ({nextAsks}), and each surface is the same as worked out alone");
+            // …and a change to what the wind comes from is worked out afresh
+            src.Shift = 0.3;
+            src.Revision++;
+            inputs++;
+            src.Asked = 0;
+            places[0].Sample(spec, 500.6, 130, 140, 0, shared);
+            var changed = new WavePlace();
+            changed.Sample(spec, 500.6, 130, 140, 0, src);
+            Check(src.Asked == 2 * 4 * 2 && places[0].HeightAt(150, 120) == changed.HeightAt(150, 120), "shared corners are worked out again after a change to the sea's inputs");
+            // …but nothing is kept while the answers aren't fixed by place and hour (no model yet: vanilla's wind)
+            inputs = long.MinValue;
+            src.Asked = 0;
+            places[1].Reset();
+            places[2].Reset();
+            places[1].Sample(spec, 500.7, 130, 140, 0, shared);
+            places[2].Sample(spec, 500.7, 131, 141, 0, shared);
+            Check(src.Asked == 2 * 2 * 4, "without fixed inputs every place asks for itself (once per corner, as alone)");
+            src.Shift = 0;
+            src.Revision++;
+
             // the wave clock refuses a time that isn't a number: it would stay NaN for good (a player's ping is NaN without a connection)
             var clock = new WaveClock();
             clock.OnServerTime(double.NaN, 10);

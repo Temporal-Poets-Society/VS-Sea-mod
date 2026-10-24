@@ -73,10 +73,24 @@ namespace Sea
             {
                 var prog = capi.Shader.GetProgram((int)pass);
                 if (prog == null || prog.Disposed || !prog.HasUniform("seaClipCount")) continue;
+                if (uploadFailed && (IsSwitchedOff(prog) || switchedOff.Count >= 8)) continue;
                 try
                 {
                     prog.Use();
-                    try { Upload(prog); }
+                    try
+                    {
+                        // (after an error: Sea's waves and hulls set to nothing, as on the Use path, not uploaded again)
+                        if (uploadFailed) SwitchOffOnce(prog);
+                        else
+                        {
+                            try { Upload(prog); }
+                            catch (Exception e)
+                            {
+                                FailOnce(e);
+                                SwitchOffOnce(prog);
+                            }
+                        }
+                    }
                     finally { prog.Stop(); }
                 }
                 catch (Exception e) { FailOnce(e); }
@@ -192,14 +206,22 @@ namespace Sea
         public static void OnUse(IShaderProgram prog)
         {
             var r = current;
-            if (r == null || r.uploadFailed) return;
+            if (r == null) return;
             if (prog.AssetDomain == "wmap")
             {
+                // (playtest merge) after an error the far waves are set to nothing too, as the water's are: their last
+                // numbers would otherwise freeze in Wmap's far sea
+                if (r.uploadFailed) { if (prog.HasUniform("seaWaveCount")) r.SwitchOffOnce(prog); return; }
                 try { r.UploadFarWaves(prog); }
-                catch (Exception e) { r.FailOnce(e); }
+                catch (Exception e)
+                {
+                    r.FailOnce(e);
+                    r.SwitchOffOnce(prog);
+                }
                 return;
             }
             if (!Injected || Array.IndexOf(WaterShader.Passes, prog.PassName) < 0) return;
+            if (r.uploadFailed) { r.SwitchOffOnce(prog); return; }
             try
             {
                 if (!prog.HasUniform("seaClipCount")) return;
@@ -214,7 +236,11 @@ namespace Sea
                 r.uploadedFrame[slot] = r.frame;
                 r.Upload(prog);
             }
-            catch (Exception e) { r.FailOnce(e); }
+            catch (Exception e)
+            {
+                r.FailOnce(e);
+                r.SwitchOffOnce(prog);
+            }
         }
 
         /// <summary>(0.4.7) The waves into a Wmap far-terrain program in use: none unless Sea's own waves are in the water
@@ -259,7 +285,42 @@ namespace Sea
         {
             if (uploadFailed) return;
             uploadFailed = true;
-            capi.Logger.Error("[sea] Water uniforms disabled after an error (waves and hull cuts stop updating): {0}", e);
+            capi.Logger.Error("[sea] Water uniforms disabled after an error (vanilla waves, no hull cuts, from now on): {0}", e);
+        }
+
+        readonly List<IShaderProgram> switchedOff = new();
+
+        /// <summary>
+        /// After an upload error, each water program the game uses gets Sea's waves and hulls set to nothing, once (it's in
+        /// use: inside the Use postfix): its last numbers would freeze the waves, and the camera-relative hull cut-outs
+        /// would move with the camera through open water. Straight through GL, as <see cref="SwitchOff"/>.
+        /// </summary>
+        void SwitchOffOnce(IShaderProgram prog)
+        {
+            if (switchedOff.Count >= 8 || IsSwitchedOff(prog)) return;
+            try
+            {
+                int id = prog.ProgramId;
+                if (id == 0) return;
+                int clips = GL.GetUniformLocation(id, "seaClipCount"), waves = GL.GetUniformLocation(id, "seaWaveCount");
+                if (clips >= 0) GL.Uniform1(clips, 0);
+                if (waves >= 0) GL.Uniform1(waves, 0);
+                // (only once both went in: otherwise it's tried again at the next use)
+                switchedOff.Add(prog);
+            }
+            catch (Exception e)
+            {
+                if (!switchOffWarned) capi.Logger.Warning("[sea] Could not switch Sea's water code off in {0}: {1}", prog.PassName, e.Message);
+                switchOffWarned = true;
+            }
+        }
+
+        bool switchOffWarned;
+
+        bool IsSwitchedOff(IShaderProgram prog)
+        {
+            foreach (var p in switchedOff) if (ReferenceEquals(p, prog)) return true;
+            return false;
         }
 
         /// <summary>

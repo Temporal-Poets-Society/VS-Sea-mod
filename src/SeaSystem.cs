@@ -62,7 +62,11 @@ namespace Sea
         public readonly WavePlace CameraWaves = new();
         const int ClockPacketMs = 5000;
 
-        public SeaSystem() { waveSource = new WaveSource(this); }
+        public SeaSystem()
+        {
+            // (the corners of the 64-block grid, worked out once for every place in a cell: the camera and ships alike)
+            waveSource = new SharedCorners(new WaveSource(this), () => Model == null ? long.MinValue : System.Threading.Interlocked.Read(ref revision));
+        }
 
         public override double ExecuteOrder() => 0.15;
 
@@ -70,8 +74,12 @@ namespace Sea
         {
             this.api = api;
             api.Network.RegisterChannel(ChannelName).RegisterMessageType<SeaParamsPacket>().RegisterMessageType<SeaClockPacket>();
-            Hooks.Apply(Mod.Logger);
+            // the client's patches only by the client (or a dedicated server, which has none): see Hooks
+            clientHooks = api.Side == EnumAppSide.Client || (api as ICoreServerAPI)?.Server.IsDedicated == true;
+            Hooks.Apply(Mod.Logger, clientHooks);
         }
+
+        bool clientHooks;
 
         public override void Dispose()
         {
@@ -96,7 +104,7 @@ namespace Sea
                 WaterRenderer.SwitchOff(capi);
                 Hooks.RequestShaderReload = null;
             }
-            Hooks.Remove();
+            Hooks.Remove(clientHooks);
         }
 
         // ---------------------------------------------------------------- API
@@ -275,7 +283,7 @@ namespace Sea
             public long Revision => System.Threading.Interlocked.Read(ref sys.revision) + sys.sampleHours.Version;
         }
 
-        readonly WaveSource waveSource;
+        readonly SharedCorners waveSource;
 
         /// <summary>The game hour of each wave sample, the same on every side (the server's anchors).</summary>
         readonly SampleHours sampleHours = new();
