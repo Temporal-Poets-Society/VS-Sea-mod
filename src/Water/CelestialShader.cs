@@ -81,7 +81,9 @@ namespace Sea
         if (seaEffects.y > 0.0) texColor = seaSkyReflect(texColor, ray, fres, rgbaFog.rgb);
         // Glints stop before Wmap's distant sea (from 0.75 of the view distance), which has none.
         float seaEdge = 1.0 - smoothstep(viewDistance * 0.50, viewDistance * 0.74, length(fWorldPos.xz));
-        float exposed = seaEdge * smoothstep(0.0, 0.08, ray.y);
+        // (0.4.7) Only rays turned down into the sea are cut; the lobe already needs the ray on the body, and a low
+        // sun's reflected ray is only a degree or two up (0.4.6 needed it 4.6 degrees up for full strength).
+        float exposed = seaEdge * smoothstep(-0.02, 0.01, ray.y);
         // The OIT pass premultiplies by alpha, so a glint must raise alpha to show (as vanilla's does). The sun and
         // moon are far brighter than the sky, so the glint saturates in a low-dynamic-range frame even where Fresnel
         // reflectance is small; Fresnel only shades it.
@@ -103,8 +105,10 @@ uniform vec4 seaSky; // the sky dome's daylight, sunset shift, fog minimum, fog 
 uniform sampler2D seaSkyTex;  // the game's sky colours (sky.png)
 uniform sampler2D seaGlowTex; // the game's sun glow (sunlight.png)
 float seaCelestial(float p, float width) { return exp(-max(0.0, 1.0-p) / width); }
+// (0.4.7) Fades only as the body itself sets (centre 2 degrees above to 2 below the horizon). Up to 0.4.6 it faded out
+// from 6 degrees altitude, so sunrise and sunset, when the glitter path is longest and brightest, had none.
 float seaLobe(vec3 ray, vec3 body, float width) {
-    return seaCelestial(dot(ray, body), width) * smoothstep(0.0, 0.10, body.y) * seaWeather.x;
+    return seaCelestial(dot(ray, body), width) * smoothstep(-0.035, 0.035, body.y) * seaWeather.x;
 }
 // Sun glitter and moon trail. glint: horizon/edge fade and Fresnel shading; shade: the sun's shadow-map brightness.
 vec4 seaGlints(vec4 c, vec3 ray, float glint, float shade) {
