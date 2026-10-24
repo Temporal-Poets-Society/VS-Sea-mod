@@ -15,12 +15,19 @@ namespace Sea
     /// side unloads. Each patch that fails only switches its own feature off. (0.4.0) All of them are about water:
     /// the patches that put Sea's wind into vanilla's weather (wind lookups, region wind, rain direction, cloud drift,
     /// rain streaks) moved to Earth with the weather (SEA-D30).
+    /// Two sets, each counted under one lock (a world starting while the last one's server is still unloading can't
+    /// lose its patches): the patches both sides need (breathing, splashes), and the client's (water shaders and
+    /// uniforms, the camera, particles), which only the client applies and removes, on its main thread. In singleplayer
+    /// the integrated server is disposed last, on its own thread, while the main menu draws through the patched shader
+    /// methods: it must not rewrite them then. A dedicated server applies the client's set too, for the self-test.
     /// </summary>
     public static class Hooks
     {
-        const string HarmonyId = "sea";
-        static Harmony harmony;
-        static int users;
+        const string HarmonyId = "sea", ClientHarmonyId = "sea.client";
+        static readonly object sync = new();
+        static Harmony harmony, clientHarmony;
+        static int users, clientUsers;
+        static readonly List<string> clientActive = new();
         static ILogger log;
 
         /// <summary>The water shader patch is in place (the shaders still have to be reloaded to pick it up).</summary>
@@ -29,13 +36,45 @@ namespace Sea
         /// <summary>Patches that went in, for the self-test and .sea.</summary>
         public static readonly List<string> Active = new();
 
-        public static void Apply(ILogger logger)
+        /// <param name="clientPatches">the client's set too: on the client, and on a dedicated server (the self-test)</param>
+        public static void Apply(ILogger logger, bool clientPatches)
         {
-            users++;
-            if (harmony != null) return;
-            log = logger;
-            harmony = new Harmony(HarmonyId);
+            lock (sync)
+            {
+                if (users++ == 0)
+                {
+                    log = logger;
+                    harmony = new Harmony(HarmonyId);
+                    ApplyBoth(harmony);
+                }
+                if (clientPatches && clientUsers++ == 0)
+                {
+                    log = logger;
+                    clientHarmony = new Harmony(ClientHarmonyId);
+                    int before = Active.Count;
+                    ApplyClient(clientHarmony);
+                    clientActive.AddRange(Active.GetRange(before, Active.Count - before));
+                }
+            }
+        }
 
+        /// <summary>The patches both sides need: creatures breathing (server), splashes (both).</summary>
+        static void ApplyBoth(Harmony harmony)
+        {
+            Try("breathing in dry places", () => harmony.Patch(AccessTools.Method(typeof(EntityBehaviorBreathe), nameof(EntityBehaviorBreathe.Check)),
+                postfix: new HarmonyMethod(typeof(Hooks), nameof(BreathePostfix))));
+            Try("no splashing in dry places", () =>
+            {
+                harmony.Patch(AccessTools.Method(typeof(EntityAgent), "SpawnFloatingSediment") ?? throw new Exception("SpawnFloatingSediment not found"),
+                    prefix: new HarmonyMethod(typeof(Hooks), nameof(NotInDryPlacePrefix)));
+                harmony.Patch(AccessTools.Method(typeof(Entity), nameof(Entity.OnCollideWithLiquid)),
+                    prefix: new HarmonyMethod(typeof(Hooks), nameof(NotInDryPlacePrefix)));
+            });
+        }
+
+        /// <summary>The client's patches: the water shaders and their uniforms, the camera in dry places, water particles.</summary>
+        static void ApplyClient(Harmony harmony)
+        {
             Try("water shader", () =>
             {
                 var registry = AccessTools.TypeByName("Vintagestory.Client.NoObf.ShaderRegistry");
@@ -63,15 +102,6 @@ namespace Sea
                 cameraEyePos = Need(camera, "CameraEyePos");
                 harmony.Patch(AccessTools.Method(client, "EyesInWaterDepth"), postfix: new HarmonyMethod(typeof(Hooks), nameof(EyesInWaterDepthPostfix)));
                 harmony.Patch(AccessTools.Method(client, "GetEyesInWaterColorShift"), postfix: new HarmonyMethod(typeof(Hooks), nameof(EyesInWaterColorShiftPostfix)));
-            });
-            Try("breathing in dry places", () => harmony.Patch(AccessTools.Method(typeof(EntityBehaviorBreathe), nameof(EntityBehaviorBreathe.Check)),
-                postfix: new HarmonyMethod(typeof(Hooks), nameof(BreathePostfix))));
-            Try("no splashing in dry places", () =>
-            {
-                harmony.Patch(AccessTools.Method(typeof(EntityAgent), "SpawnFloatingSediment") ?? throw new Exception("SpawnFloatingSediment not found"),
-                    prefix: new HarmonyMethod(typeof(Hooks), nameof(NotInDryPlacePrefix)));
-                harmony.Patch(AccessTools.Method(typeof(Entity), nameof(Entity.OnCollideWithLiquid)),
-                    prefix: new HarmonyMethod(typeof(Hooks), nameof(NotInDryPlacePrefix)));
             });
             // the particles vanilla makes in and on the world's water, which the dry clip doesn't cut (DryParticles)
             DryParticles.IsDry ??= ClientDry;
@@ -107,18 +137,31 @@ namespace Sea
 
         static FieldInfo Need(Type t, string name) => AccessTools.Field(t, name) ?? throw new Exception("field " + name + " not found");
 
-        public static void Remove()
+        /// <param name="clientPatches">as given to <see cref="Apply"/> on this side</param>
+        public static void Remove(bool clientPatches)
         {
-            if (--users > 0 || harmony == null) return;
-            harmony.UnpatchAll(HarmonyId);
-            harmony = null;
-            ShaderPatched = false;
-            UniformsOnUse = false;
-            Active.Clear();
-            // (0.4.2) what the shaders hold is found out again next time: the game may reload them without Sea's patch in
-            // between (a graphics setting changed in the main menu), and the next world must then reload them with it
-            WaterRenderer.Injected = WaterRenderer.WavesInjected = DryHullsInjected = false;
-            injectedLevel = -1;
+            lock (sync)
+            {
+                if (clientPatches && clientUsers > 0 && --clientUsers == 0 && clientHarmony != null)
+                {
+                    clientHarmony.UnpatchAll(ClientHarmonyId);
+                    clientHarmony = null;
+                    foreach (var what in clientActive) Active.Remove(what);
+                    clientActive.Clear();
+                    ShaderPatched = false;
+                    UniformsOnUse = false;
+                    // (0.4.2) what the shaders hold is found out again next time: the game may reload them without Sea's patch in
+                    // between (a graphics setting changed in the main menu), and the next world must then reload them with it
+                    WaterRenderer.Injected = WaterRenderer.WavesInjected = DryHullsInjected = false;
+                    injectedLevel = -1;
+                }
+                if (users > 0 && --users == 0 && harmony != null)
+                {
+                    harmony.UnpatchAll(HarmonyId);
+                    harmony = null;
+                    Active.Clear();
+                }
+            }
         }
 
         static void Try(string what, Action patch)

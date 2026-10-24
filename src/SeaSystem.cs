@@ -70,8 +70,12 @@ namespace Sea
         {
             this.api = api;
             api.Network.RegisterChannel(ChannelName).RegisterMessageType<SeaParamsPacket>().RegisterMessageType<SeaClockPacket>();
-            Hooks.Apply(Mod.Logger);
+            // the client's patches only by the client (or a dedicated server, which has none): see Hooks
+            clientHooks = api.Side == EnumAppSide.Client || (api as ICoreServerAPI)?.Server.IsDedicated == true;
+            Hooks.Apply(Mod.Logger, clientHooks);
         }
+
+        bool clientHooks;
 
         public override void Dispose()
         {
@@ -96,7 +100,7 @@ namespace Sea
                 WaterRenderer.SwitchOff(capi);
                 Hooks.RequestShaderReload = null;
             }
-            Hooks.Remove();
+            Hooks.Remove(clientHooks);
         }
 
         // ---------------------------------------------------------------- API
