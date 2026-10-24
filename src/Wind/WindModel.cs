@@ -165,10 +165,28 @@ namespace Sea
         /// </summary>
         public SeaState SeaAt(double x, double z, double hours) => SeaAt(x, z, hours, long.MaxValue);
 
+        // each past hour's weight in the fast build-up and the slow swell, and their sums (the same every time)
+        static readonly double[] FastWeight = Weights(3), SlowWeight = Weights(10);
+        static readonly double FastWeights = Sum(FastWeight), SlowWeights = Sum(SlowWeight);
+
+        static double[] Weights(double hours)
+        {
+            var w = new double[HistoryHours];
+            for (int k = 0; k < w.Length; k++) w[k] = Math.Exp(-k / hours);
+            return w;
+        }
+
+        static double Sum(double[] a)
+        {
+            double s = 0;
+            foreach (double v in a) s += v;
+            return s;
+        }
+
         /// <summary>(0.4.2) The same, as worked out for wave sample `sample` (an admin's change counts from its sample on).</summary>
         public SeaState SeaAt(double x, double z, double hours, long sample)
         {
-            double fast = 0, fastW = 0, slow = 0, slowW = 0, dx = 0, dz = 0;
+            double fast = 0, slow = 0, dx = 0, dz = 0;
             // (one look at what may change meanwhile, for all 16 hours: a change can't land half-way through them)
             WindOverride current = Override;
             WindOverride[] history = History;
@@ -177,12 +195,12 @@ namespace Sea
             {
                 var w = SeaWindIn(current, history, provider, x, z, hours - k, false, sample);
                 double s = w.Strength, h = DevelopedHeight(s);
-                double wf = Math.Exp(-k / 3.0), ws = Math.Exp(-k / 10.0);
-                fast += wf * h; fastW += wf;
-                slow += ws * h; slowW += ws;
+                double wf = FastWeight[k], ws = SlowWeight[k];
+                fast += wf * h;
+                slow += ws * h;
                 if (s > 1e-6) { dx += wf * h * w.X / s; dz += wf * h * w.Z / s; }
             }
-            double height = Math.Max(fast / fastW, 0.75 * slow / slowW);
+            double height = Math.Max(fast / FastWeights, 0.75 * slow / SlowWeights);
             double dl = Math.Sqrt(dx * dx + dz * dz);
             if (dl < 1e-9) { dx = 1; dz = 0; dl = 1; }
             double period = 2.5 + 3.2 * Math.Sqrt(height / Math.Max(0.1, Config.WaveScale));
