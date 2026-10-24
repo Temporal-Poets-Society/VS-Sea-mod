@@ -190,7 +190,8 @@ namespace Sea
         public static void OnUse(IShaderProgram prog)
         {
             var r = current;
-            if (r == null || r.uploadFailed || !Injected || Array.IndexOf(WaterShader.Passes, prog.PassName) < 0) return;
+            if (r == null || !Injected || Array.IndexOf(WaterShader.Passes, prog.PassName) < 0) return;
+            if (r.uploadFailed) { r.SwitchOffOnce(prog); return; }
             try
             {
                 if (!prog.HasUniform("seaClipCount")) return;
@@ -205,7 +206,11 @@ namespace Sea
                 r.uploadedFrame[slot] = r.frame;
                 r.Upload(prog);
             }
-            catch (Exception e) { r.FailOnce(e); }
+            catch (Exception e)
+            {
+                r.FailOnce(e);
+                r.SwitchOffOnce(prog);
+            }
         }
 
         /// <summary>This frame's numbers into a program that's in use.</summary>
@@ -240,7 +245,29 @@ namespace Sea
         {
             if (uploadFailed) return;
             uploadFailed = true;
-            capi.Logger.Error("[sea] Water uniforms disabled after an error (waves and hull cuts stop updating): {0}", e);
+            capi.Logger.Error("[sea] Water uniforms disabled after an error (vanilla waves, no hull cuts, from now on): {0}", e);
+        }
+
+        readonly List<IShaderProgram> switchedOff = new();
+
+        /// <summary>
+        /// After an upload error, each water program the game uses gets Sea's waves and hulls set to nothing, once (it's in
+        /// use: inside the Use postfix): its last numbers would freeze the waves, and the camera-relative hull cut-outs
+        /// would move with the camera through open water. Straight through GL, as <see cref="SwitchOff"/>.
+        /// </summary>
+        void SwitchOffOnce(IShaderProgram prog)
+        {
+            if (switchedOff.Count >= 8 || switchedOff.Exists(p => ReferenceEquals(p, prog))) return;
+            switchedOff.Add(prog);
+            try
+            {
+                int id = prog.ProgramId;
+                if (id == 0) return;
+                int clips = GL.GetUniformLocation(id, "seaClipCount"), waves = GL.GetUniformLocation(id, "seaWaveCount");
+                if (clips >= 0) GL.Uniform1(clips, 0);
+                if (waves >= 0) GL.Uniform1(waves, 0);
+            }
+            catch (Exception e) { capi.Logger.Warning("[sea] Could not switch Sea's water code off in {0}: {1}", prog.PassName, e.Message); }
         }
 
         /// <summary>
@@ -273,6 +300,7 @@ namespace Sea
                         if (sky) GL.Uniform2(GL.GetUniformLocation(id, "seaEffects"), 0f, 0f);
                         if (floor) GL.Uniform3(GL.GetUniformLocation(id, "seaNightFloor"), 0f, 0f, 0f);
                         if (prog.HasUniform("seaNightEnabled")) GL.Uniform1(GL.GetUniformLocation(id, "seaNightEnabled"), 0f);
+                        if (prog.HasUniform("seaSkyReflect")) GL.Uniform1(GL.GetUniformLocation(id, "seaSkyReflect"), 0f);
                     }
                     finally { GL.UseProgram(previous); }
                 }

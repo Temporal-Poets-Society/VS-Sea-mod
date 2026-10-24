@@ -61,7 +61,11 @@ namespace Sea
 
         void InitializeAstra()
         {
-            var asm = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "AstraTerra");
+            // (this world's AstraTerra: an earlier world's stays loaded in the process, so the AppDomain isn't asked)
+            astraPresent = false;
+            if (!api.ModLoader.IsModEnabled("astraterra")) return;
+            var asm = api.ModLoader.GetMod("astraterra")?.Systems?.FirstOrDefault()?.GetType().Assembly
+                ?? AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "AstraTerra");
             if (asm == null) return;
             astraPresent = true;
             try
@@ -224,6 +228,8 @@ namespace Sea
                 try
                 {
                     if (p.HasUniform("seaNightFloor")) p.Uniform("seaNightFloor", 0f, 0f, 0f);
+                    if (p.HasUniform("seaNightEnabled")) p.Uniform("seaNightEnabled", 0f);
+                    if (p.HasUniform("seaSkyReflect")) p.Uniform("seaSkyReflect", 0f);
                     if (p.HasUniform("seaEffects")) p.Uniform("seaEffects", 0f, 0f);
                 }
                 catch { }

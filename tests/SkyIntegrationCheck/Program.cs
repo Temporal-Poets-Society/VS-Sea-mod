@@ -11,10 +11,14 @@ using Vintagestory.API.Common;
 // Resolves the exact installed binaries, without starting a client or loading any save.
 public class Proxy : DispatchProxy
 {
-    public static object Logger;
+    public static object Logger, ModLoader;
+    /// <summary>Whether this world has AstraTerra (the mod loader's answer; its Mod itself isn't made here).</summary>
+    public static bool AstraEnabled;
     protected override object Invoke(MethodInfo method, object[] args)
     {
         if (method.Name == "get_Logger") return Logger;
+        if (method.Name == "get_ModLoader") return ModLoader;
+        if (method.Name == "IsModEnabled") return AstraEnabled && (string)args[0] == "astraterra";
         if (method.DeclaringType == typeof(ILogger) && args?.Length > 0) Console.WriteLine("  log  " + args[0]);
         return method.ReturnType == typeof(void) ? null : method.ReturnType.IsValueType ? Activator.CreateInstance(method.ReturnType) : null;
     }
@@ -45,6 +49,7 @@ static class Program
         if (args.Length > 0 && args[0] == "--vanilla")
         {
             Proxy.Logger = DispatchProxy.Create<ILogger, Proxy>();
+            Proxy.ModLoader = DispatchProxy.Create<IModLoader, Proxy>();
             var api = DispatchProxy.Create<ICoreClientAPI, Proxy>();
             var value = RuntimeHelpers.GetUninitializedObject(typeof(CelestialRenderer));
             typeof(CelestialRenderer).GetField("api", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(value, api);
@@ -55,6 +60,16 @@ static class Program
         string assemblyPath = Path.GetFullPath(args.Length > 0 ? args[0] : "obj/sky-inspection/AstraTerra.dll");
         var at = AssemblyLoadContext.Default.LoadFromAssemblyPath(assemblyPath);
         Proxy.Logger = DispatchProxy.Create<ILogger, Proxy>();
+        Proxy.ModLoader = DispatchProxy.Create<IModLoader, Proxy>();
+        // an earlier world's AstraTerra stays loaded: a world without it doesn't use it
+        {
+            var without = RuntimeHelpers.GetUninitializedObject(typeof(CelestialRenderer));
+            typeof(CelestialRenderer).GetField("api", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(without, DispatchProxy.Create<ICoreClientAPI, Proxy>());
+            typeof(CelestialRenderer).GetMethod("InitializeAstra", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(without, null);
+            Check(!(bool)typeof(CelestialRenderer).GetField("astraPresent", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(without),
+                "AstraTerra's assembly loaded but the mod not in this world: not used");
+        }
+        Proxy.AstraEnabled = true;
         var client = DispatchProxy.Create<ICoreClientAPI, Proxy>();
         var renderer = RuntimeHelpers.GetUninitializedObject(typeof(CelestialRenderer));
         typeof(CelestialRenderer).GetField("api", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(renderer, client);
