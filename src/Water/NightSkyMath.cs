@@ -27,6 +27,31 @@ namespace Sea
         public static float Visibility(float sunY, float moonY, float illuminated, float clear, float scale) =>
             scale * Night(sunY) * clear * (Moonless + FullMoonExtra * Math.Clamp(illuminated, 0, 1) * AboveHorizon(moonY));
 
+        /// <summary>(0.4.7) The sun's colour through the air by the sine of its altitude, high to low: white above 25 degrees,
+        /// orange on the horizon. The same table as AstraTerra's drawn sun (Twilight.SunColour), so the glitter path
+        /// matches the disc; the game's reflect colour stays pale yellow down to the horizon.</summary>
+        static readonly float[,] SunColours =
+        {
+            { 25, 1.00f, 1.00f, 1.00f }, { 12, 1.00f, 0.95f, 0.84f }, { 6, 1.00f, 0.87f, 0.64f }, { 3, 1.00f, 0.76f, 0.46f },
+            { 1, 1.00f, 0.63f, 0.32f }, { -1, 1.00f, 0.50f, 0.24f }, { -3, 0.95f, 0.40f, 0.20f },
+        };
+
+        public static (float R, float G, float B) SunThroughAir(float sunY)
+        {
+            float altitude = (float)(Math.Asin(Math.Clamp(sunY, -1, 1)) * 180 / Math.PI);
+            if (altitude >= SunColours[0, 0]) return (1, 1, 1);
+            int last = SunColours.GetLength(0) - 1;
+            for (int i = 1; i <= last; i++)
+            {
+                if (altitude < SunColours[i, 0]) continue;
+                float t = (altitude - SunColours[i, 0]) / (SunColours[i - 1, 0] - SunColours[i, 0]);
+                return (Lerp(i, 1, t), Lerp(i, 2, t), Lerp(i, 3, t));
+            }
+            return (SunColours[last, 1], SunColours[last, 2], SunColours[last, 3]);
+        }
+
+        static float Lerp(int row, int channel, float t) => SunColours[row, channel] + (SunColours[row - 1, channel] - SunColours[row, channel]) * t;
+
         /// <summary>Illuminated fraction from the *displayed* sun and moon directions (new moon = conjunction).</summary>
         public static float Illuminated(float dotSunMoon) => Math.Clamp((1 - dotSunMoon) * 0.5f, 0, 1);
 

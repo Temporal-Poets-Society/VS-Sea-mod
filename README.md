@@ -5,6 +5,12 @@ calm down with the wind of the past hours, and are the same on the server and ev
 It also owns the water shaders, so ship mods (Magelan, Hansa) ask Sea to keep waves out of their hulls instead of each
 patching the shaders.
 
+Version **0.4.7-pre.4** (25 October 2026, `release/sea-0.4.7-pre.4.zip`, branch `playtest/sunrise-2026-10-24`, a
+play-test build; not merged): after pre.3's sunset play-test, the glitter path stays full while the sun's centre is up and
+goes only when its top has set (pre.3 faded it from 2 degrees up), and it reddens with the sun: white above 25 degrees,
+yellow, then orange on the horizon (`NightSkyMath.SunThroughAir`, the same table as AstraTerra's drawn sun), where the
+game's reflect colour stays pale yellow. Not yet confirmed in game.
+
 Version **0.4.7-pre.3** (24 October 2026, `release/sea-0.4.7-pre.3.zip`, branch `playtest/sunrise-2026-10-24`, a
 play-test build; not merged): 0.4.7-pre.2 with a sunrise and sunset glitter path. The sun's glint used to fade out from 6
 degrees altitude (and needed its reflected ray 4.6 degrees up for full strength), so a low sun, whose path on the sea is

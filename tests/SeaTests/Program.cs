@@ -179,6 +179,11 @@ namespace SeaTests
                 Check(NightSkyMath.SkyDaylight(0, 0, 0) < 0.07f && NightSkyMath.SkyDaylight(1, 0, 0) == 1.25f && NightSkyMath.SkyDaylight(0.33f, 0.33f, 0) < 0.25f,
                     "sky daylight as the game's sky dome works it out (night: its fog colour)");
                 Check(NightSkyMath.Visibility(0.2f, 1, 1, 1, 1) == 0 && NightSkyMath.Visibility(-1, 1, 1, 1, 0) == 0, "daytime and disable add no outdoor floor");
+                var noon = NightSkyMath.SunThroughAir(0.8f);
+                var lowSun = NightSkyMath.SunThroughAir(0.1f);
+                var setting = NightSkyMath.SunThroughAir(0);
+                Check(noon == (1f, 1f, 1f) && lowSun.B < lowSun.G && lowSun.G < 1 && setting.G < 0.65f && setting.B < 0.3f && setting.G < lowSun.G,
+                    "the sun's glitter is white high up, yellow low, orange setting (as AstraTerra's drawn sun)");
                 Check(NightSkyMath.MoonAmbientScale(0.02f, 0.33f, 0.33f, -0.2f, 1) < 0.1f
                     && NightSkyMath.MoonAmbientScale(0.02f, 0.33f, 0.7f, -0.2f, 1) == 1
                     && NightSkyMath.MoonAmbientScale(1, 0.2f, 1, -0.2f, 1) == 1,

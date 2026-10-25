@@ -279,12 +279,15 @@ void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); outColor=vec4(seaLo
             var aligned = Read(0, 0.5f, 0.8660254f);
             var offset = Read(0.1f, 0.5f, MathF.Sqrt(0.74f));
             var below = Read(0, -0.5f, 0.8660254f);
-            var setting = Read(0, -0.04f, MathF.Sqrt(1 - 0.0016f));
+            var setting = Read(0, -0.045f, MathF.Sqrt(1 - 0.002025f));
             GL.Uniform3(GL.GetUniformLocation(p, "testEye"), 0f, -0.01f, MathF.Sqrt(1 - 0.0001f));
             var sunrise = Read(0, 0.01f, MathF.Sqrt(1 - 0.0001f));
-            Check(aligned[0] > 0.99 && aligned[1] > 0.99 && offset[1] > offset[0] && below[0] == 0 && setting[0] == 0 && sunrise[0] > 0.6,
-                "GPU: trail aligns with reflected celestial direction, rough lobe broadens, a sun 0.6° up still glints ("
-                + sunrise[0].ToString("0.00") + "), a set or below-horizon body gives zero");
+            GL.Uniform3(GL.GetUniformLocation(p, "testEye"), 0f, 0.01f, MathF.Sqrt(1 - 0.0001f));
+            var halfSet = Read(0, -0.01f, MathF.Sqrt(1 - 0.0001f));
+            Check(aligned[0] > 0.99 && aligned[1] > 0.99 && offset[1] > offset[0] && below[0] == 0 && setting[0] == 0
+                && sunrise[0] > 0.99 && halfSet[0] > 0.6,
+                "GPU: trail aligns with reflected celestial direction, rough lobe broadens, a sun 0.6° up glints fully ("
+                + sunrise[0].ToString("0.00") + "), 0.6° down still " + halfSet[0].ToString("0.00") + ", a set or below-horizon body gives zero");
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0); GL.UseProgram(0);
             GL.DeleteVertexArray(vao); GL.DeleteFramebuffer(fb); GL.DeleteTexture(tex); GL.DeleteProgram(p); GL.DeleteShader(vs); GL.DeleteShader(fs);
         }

@@ -255,7 +255,10 @@ namespace Sea
             p.Uniform("seaEye", c.eye);
             p.Uniform("seaSun", c.sun.X, c.sun.Y, c.sun.Z, 1.6f);  // saturates the glint core, as vanilla's does
             p.Uniform("seaMoon", c.moon.X, c.moon.Y, c.moon.Z, 0.75f * c.phase * c.night);
-            p.Uniform("seaSunColor", c.api.World.Calendar.ReflectColor);
+            // (0.4.7) The game's reflect colour, reddened as the sun sinks like the drawn sun (NightSkyMath.SunThroughAir).
+            var reflect = c.api.World.Calendar.ReflectColor;
+            var (airR, airG, airB) = NightSkyMath.SunThroughAir(c.sun.Y);
+            p.Uniform("seaSunColor", Math.Min(reflect.R, airR), Math.Min(reflect.G, airG), Math.Min(reflect.B, airB));
             var am = c.api.Ambient;
             p.Uniform("seaWeather", c.clear, c.night, am.BlendedCloudDensity, c.roughness);
             var su = c.api.Render.ShaderUniforms;
