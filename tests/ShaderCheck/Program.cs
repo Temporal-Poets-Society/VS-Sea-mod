@@ -103,7 +103,7 @@ namespace ShaderCheck
                     {
                         int fp = Build("Wmap 0.5 " + far + " with its far-water contract", Load(Path.Combine(wm, "shaders"), far + ".vsh"), Load(Path.Combine(wm, "shaders"), far + ".fsh"), defs);
                         if (fp == 0) continue;
-                        foreach (string u in new[] { "seaNightFloor", "seaSkyReflect", "seaWaveCount", "seaWave" })
+                        foreach (string u in new[] { "seaNightFloor", "seaSkyReflect", "seaWaveCount", "seaWave", "seaWaveFactor", "seaSunset" })
                             Check(GL.GetUniformLocation(fp, u) >= 0 || GL.GetUniformLocation(fp, u + "[0]") >= 0, "Wmap 0.5 " + far + ": " + u + " is live");
                         GL.DeleteProgram(fp);
                     }
@@ -147,7 +147,7 @@ namespace ShaderCheck
         static void SkyReflection()
         {
             const string v = "#version 330 core\nvoid main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0,1); }";
-            string f = "#version 330 core\n" + CelestialShader.Declarations + @"
+            string f = "#version 330 core\nuniform float flatFogDensity;\nuniform float flatFogStart;\n" + CelestialShader.Declarations + @"
 uniform vec3 testEye;
 out vec4 outColor;
 void main(){ vec3 e=normalize(testEye); vec3 n=vec3(0,1,0); vec3 r=reflect(e,n);
@@ -195,6 +195,20 @@ void main(){ vec3 e=normalize(testEye); vec3 n=vec3(0,1,0); vec3 r=reflect(e,n);
             Check(Math.Abs(down[2] - 0.04f) < 0.02f && down[3] < 0.45f && grazing[2] > 0.75f && grazing[3] > 0.9f
                 && night[2] < 0.02f && Math.Abs(nightFog[2] - 0.08f) < 0.02f && Math.Abs(off[2] - 0.04f) < 1e-4f && Math.Abs(off[3] - 0.4f) < 1e-4f,
                 $"GPU: sky reflection by Fresnel (looking down b {down[2]:0.000}, grazing {grazing[2]:0.00} alpha {grazing[3]:0.00}; at night the dome over dark space: clear {night[2]:0.00}, fog 0.5 {nightFog[2]:0.00}, not the fog colour 0.16); off leaves the water unchanged");
+            // (0.4.7) AstraTerra's sunset glow: a low sun ahead warms the grazing reflection beneath it, not the one behind;
+            // and the game's flat fog greys the reflected horizon as it greys the dome and Wmap's far sea
+            GL.Uniform4(GL.GetUniformLocation(p, "seaSun"), 0f, 0.035f, 0.9994f, 1.6f);
+            var plain = Read(1, 1, 0, -0.02f, 1);
+            GL.Uniform4(GL.GetUniformLocation(p, "seaSunset"), 1f, 0.7f, 0.4f, 1f);
+            var warm = Read(1, 1, 0, -0.02f, 1);
+            var behind = Read(1, 1, 0, -0.02f, -1);
+            GL.Uniform4(GL.GetUniformLocation(p, "seaSunset"), 0f, 0f, 0f, 0f);
+            GL.Uniform1(GL.GetUniformLocation(p, "flatFogDensity"), 0.5f);
+            var fogged = Read(1, 1, 0, -0.02f, 1);
+            GL.Uniform1(GL.GetUniformLocation(p, "flatFogDensity"), 0f);
+            Check(warm[0] > plain[0] + 0.2f && warm[0] > warm[2] && plain[2] > plain[0] && behind[2] > behind[0]
+                && Math.Abs(fogged[0] - 0.10f) < 0.03f && Math.Abs(fogged[2] - 0.16f) < 0.03f,
+                $"GPU: the sunset glow warms the sea beneath a low sun (r {plain[0]:0.00} -> {warm[0]:0.00}, b {warm[2]:0.00}) and not behind it (r {behind[0]:0.00} b {behind[2]:0.00}); flat fog greys the reflected horizon (r {fogged[0]:0.00} b {fogged[2]:0.00})");
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0); GL.UseProgram(0);
             GL.DeleteVertexArray(vao); GL.DeleteFramebuffer(fb); GL.DeleteTexture(tex); GL.DeleteTexture(sky); GL.DeleteTexture(glow);
             GL.DeleteProgram(p); GL.DeleteShader(vs); GL.DeleteShader(fs);
@@ -204,7 +218,7 @@ void main(){ vec3 e=normalize(testEye); vec3 n=vec3(0,1,0); vec3 r=reflect(e,n);
         static void CelestialVisible()
         {
             const string v = "#version 330 core\nvoid main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0,1); }";
-            string f = "#version 330 core\n" + CelestialShader.Declarations + @"
+            string f = "#version 330 core\nuniform float flatFogDensity;\nuniform float flatFogStart;\n" + CelestialShader.Declarations + @"
 uniform vec3 testEye;
 out vec4 outColor;
 void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); vec4 c=seaGlints(vec4(0.02,0.03,0.04,0.4), r, 0.6, 1.0); outColor=vec4(c.rgb*c.a, c.a); }";
@@ -252,7 +266,7 @@ void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); vec4 c=seaGlints(ve
         static void CelestialLobes()
         {
             const string v = "#version 330 core\nvoid main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0,1); }";
-            string f = "#version 330 core\n" + CelestialShader.Declarations + @"
+            string f = "#version 330 core\nuniform float flatFogDensity;\nuniform float flatFogStart;\n" + CelestialShader.Declarations + @"
 uniform vec3 testEye;
 uniform vec3 testBody;
 out vec4 outColor;

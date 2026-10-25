@@ -49,6 +49,9 @@ namespace Sea
 
         // this frame's numbers, and which programs already have them
         int frame, waveCount, clipCount, shapeCount;
+        // (0.4.7) blocks per pixel per block of distance (the near water fades trains by it, as Wmap's far sea does), and
+        // the open-sea wave factor at the camera (1 / the shader's divisor), which Wmap's far waves take
+        float pixel, waveFactor = 0.2f;
         readonly IShaderProgram[] uploadedTo = new IShaderProgram[4];
         readonly int[] uploadedFrame = new int[4];
         bool uploadFailed;
@@ -111,6 +114,10 @@ namespace Sea
                 wn = 1;
             }
             waveCount = LastWaveCount = wn;
+            var proj = capi.Render.PerspectiveProjectionMat;
+            int height = capi.Render.FrameHeight;
+            pixel = proj != null && proj[5] > 0 && height > 0 ? (float)(2 / (proj[5] * height)) : 0;
+            waveFactor = (float)sys.WaveFactorAt(camX, camZ);
 
             clips.Clear();
             foreach (var s in sys.WaterSources)
@@ -251,6 +258,9 @@ namespace Sea
             int wn = Injected && WavesInjected ? waveCount : 0;
             prog.Uniform("seaWaveCount", wn);
             if (wn > 0) prog.Uniforms4("seaWave", wn, WaveUniform);
+            // (0.4.7) the near water's divisor, so the far slopes match it (Wmap took the still-water 5, a fifth of the
+            // open sea's)
+            if (prog.HasUniform("seaWaveFactor")) prog.Uniform("seaWaveFactor", waveFactor);
         }
 
         /// <summary>This frame's numbers into a program that's in use.</summary>
@@ -278,6 +288,7 @@ namespace Sea
                 prog.Uniform("seaWaveCount", wn);
                 if (wn > 0) prog.Uniforms4("seaWave", wn, WaveUniform);
             }
+            if (prog.HasUniform("seaPixel")) prog.Uniform("seaPixel", pixel);
         }
 
         /// <summary>An error here would end the game (it's inside its drawing): Sea's water numbers stop instead, logged once.</summary>

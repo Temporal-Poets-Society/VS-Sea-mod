@@ -29,10 +29,17 @@ namespace Sea
         System.Func<double, IWorldAccessor, double> longitude;
         System.Func<double, double, bool, double> localMoonDays;
         System.Func<IGameCalendar, double, double> moonPhase;
-        bool astraFailed;
+        // (0.4.7) AstraTerra's sun as it draws it: whether it does, its colour through the air and its sunset glow in the
+        // sky (dev.19 and later; older builds have none of them and the moon adapter does not need them)
+        System.Func<bool> customSun;
+        System.Func<double, (float, float, float)> sunThroughAir;
+        System.Func<Vec4f> sunsetGlow;
+        bool astraFailed, astraSunFailed;
         float clear = 1, night, phase, floor, roughness, skyLight = 1;
-        float ambientScale = 1;
+        float ambientScale = 1, aboveSea;
         Vec3f sun = new(0, 1, 0), moon = new(0, -1, 0);
+        readonly Vec4f sunset = new();
+        float sunR = 1, sunG = 1, sunB = 1;
         readonly Vec3f eye = new();
         readonly double[] inverseView = new double[16];
         WeatherSystemClient weather;
@@ -63,6 +70,8 @@ namespace Sea
         {
             // (this world's AstraTerra: an earlier world's stays loaded in the process, so the AppDomain isn't asked)
             astraPresent = false;
+            customSun = null; sunThroughAir = null; sunsetGlow = null;
+            astraSunFailed = false;
             if (!api.ModLoader.IsModEnabled("astraterra")) return;
             var asm = api.ModLoader.GetMod("astraterra")?.Systems?.FirstOrDefault()?.GetType().Assembly
                 ?? AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "AstraTerra");
@@ -80,6 +89,21 @@ namespace Sea
                 api.Logger.Notification("[sea] Optional AstraTerra sky adapter ready: its local moon; no lighting patch on AstraTerra.");
             }
             catch (Exception ex) { FailAstra(ex); }
+            try
+            {
+                Type Need(string name) => asm.GetType(name) ?? throw new Exception(name + " missing");
+                customSun = Getter(Need("AstraTerra.Client.Rendering.SunDiscRenderer"), "HidesVanillaSun");
+                sunThroughAir = Bind<System.Func<double, (float, float, float)>>(Need("AstraTerra.Astronomy.Twilight"), "SunColour");
+                var shown = Need("AstraTerra.Astronomy.SunsetScatter").GetProperty("Shown", BindingFlags.Public | BindingFlags.Static)
+                    ?? throw new Exception("SunsetScatter.Shown missing");
+                sunsetGlow = Expression.Lambda<System.Func<Vec4f>>(Expression.Property(null, shown)).Compile();
+                api.Logger.Notification("[sea] AstraTerra's sun read too: the glint takes its colour, the sky reflection its sunset glow.");
+            }
+            catch (Exception ex)
+            {
+                customSun = null; sunThroughAir = null; sunsetGlow = null;
+                api.Logger.Notification("[sea] AstraTerra's sun colour and sunset glow not available ({0}); the glint uses Sea's own table.", ex.Message);
+            }
         }
 
         /// <summary>A static bool property as a delegate.</summary>
@@ -178,6 +202,41 @@ namespace Sea
             if (ep.Pos.Dimension != 0 || api.Render.ShaderUniforms.CameraUnderwater > 0.01f) { floor = 0; ambientScale = 1; }
             roughness = (float)Math.Clamp(sea.CameraWaves.SignificantHeight / 3, 0, 1);
             roughness *= (float)sea.WaveFactorAt(ep.Pos.X, ep.Pos.Z);
+            aboveSea = (float)ep.Pos.Y - api.World.SeaLevel;
+            SunAndGlow(cal);
+        }
+
+        /// <summary>
+        /// (0.4.7) The glint's colour and the sky's sunset glow, from one source. While AstraTerra draws the sun, its colour
+        /// through the air (Twilight.SunColour), so the glitter path is the disc's colour; otherwise the game's reflect
+        /// colour reddened by Sea's copy of that table, as in pre.4. The glow is AstraTerra's (SunsetScatter.Shown), zero
+        /// without it: the game's own sky has none.
+        /// </summary>
+        void SunAndGlow(IClientGameCalendar cal)
+        {
+            sunset.Set(0, 0, 0, 0);
+            if (astraPresent && !astraSunFailed && sunThroughAir != null)
+            {
+                try
+                {
+                    var glow = sunsetGlow();
+                    if (glow != null) sunset.Set(glow.X, glow.Y, glow.Z, glow.W);
+                    if (customSun())
+                    {
+                        (sunR, sunG, sunB) = sunThroughAir(sun.Y);
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    astraSunFailed = true;
+                    sunset.Set(0, 0, 0, 0);
+                    api.Logger.Warning("[sea] AstraTerra's sun colour and sunset glow disabled after an error: {0}", ex.Message);
+                }
+            }
+            var reflect = cal.ReflectColor;
+            var (airR, airG, airB) = NightSkyMath.SunThroughAir(sun.Y);
+            (sunR, sunG, sunB) = (Math.Min(reflect.R, airR), Math.Min(reflect.G, airG), Math.Min(reflect.B, airB));
         }
 
         // Harmony postfixes run inside vanilla's render loop: an exception there ends the game, so each one switches
@@ -231,6 +290,7 @@ namespace Sea
                     if (p.HasUniform("seaNightEnabled")) p.Uniform("seaNightEnabled", 0f);
                     if (p.HasUniform("seaSkyReflect")) p.Uniform("seaSkyReflect", 0f);
                     if (p.HasUniform("seaEffects")) p.Uniform("seaEffects", 0f, 0f);
+                    if (p.HasUniform("seaSunset")) p.Uniform("seaSunset", 0f, 0f, 0f, 0f);
                 }
                 catch { }
                 return;
@@ -247,6 +307,8 @@ namespace Sea
                 p.Uniform("seaNightFloor", c.floor * 0.78f, c.floor * 0.88f, c.floor);
                 if (p.HasUniform("seaNightEnabled")) p.Uniform("seaNightEnabled", c.NightStrength > 0 ? 1f : 0f);
                 if (p.HasUniform("seaSkyReflect")) p.Uniform("seaSkyReflect", c.api.World?.Player?.Entity?.Pos.Dimension == 0 ? c.SkyStrength : 0f);
+                // (0.4.7) Wmap's far haze and far-sea reflection take the same sunset glow as the dome and the near water
+                if (p.HasUniform("seaSunset")) p.Uniform("seaSunset", c.sunset.X, c.sunset.Y, c.sunset.Z, c.sunset.W);
             }
             if (!p.HasUniform("seaEffects")) return;
             c.WaterPatched = true;
@@ -255,10 +317,10 @@ namespace Sea
             p.Uniform("seaEye", c.eye);
             p.Uniform("seaSun", c.sun.X, c.sun.Y, c.sun.Z, 1.6f);  // saturates the glint core, as vanilla's does
             p.Uniform("seaMoon", c.moon.X, c.moon.Y, c.moon.Z, 0.75f * c.phase * c.night);
-            // (0.4.7) The game's reflect colour, reddened as the sun sinks like the drawn sun (NightSkyMath.SunThroughAir).
-            var reflect = c.api.World.Calendar.ReflectColor;
-            var (airR, airG, airB) = NightSkyMath.SunThroughAir(c.sun.Y);
-            p.Uniform("seaSunColor", Math.Min(reflect.R, airR), Math.Min(reflect.G, airG), Math.Min(reflect.B, airB));
+            // (0.4.7) The drawn sun's colour (SunAndGlow)
+            p.Uniform("seaSunColor", c.sunR, c.sunG, c.sunB);
+            p.Uniform("seaAboveSea", c.aboveSea);
+            p.Uniform("seaSunset", c.sunset.X, c.sunset.Y, c.sunset.Z, c.sunset.W);
             var am = c.api.Ambient;
             p.Uniform("seaWeather", c.clear, c.night, am.BlendedCloudDensity, c.roughness);
             var su = c.api.Render.ShaderUniforms;

@@ -1,3 +1,19 @@
+# Sea 0.4.7-pre.5 — 25 October 2026 (sunset colour, sky glow, near/far seam)
+
+Branch `playtest/sunset-seam-2026-10-25` from pre.4 (`a9aa45d`); `release/sea-0.4.7-pre.5.zip`. With AstraTerra
+0.15.0-dev.20 (branch `feat/sunset-sky-glow`) and Wmap 0.5.0-pre.6 (branch `playtest/sunset-seam-2026-10-25`).
+[What and why](sky-light-model.md).
+
+- `tests/SeaTests`: ALL OK, new: the near water's footprint fade, flat fog, eye height and glow in the shader text (the
+  "no star reflections" check now ignores the game's own `flatFogStart`).
+- `tests/ShaderCheck` (RX 6600, `WMAP_ROOT` = the Wmap branch): ALL OK. Water variants compile and link; Wmap's
+  `farterrain` and `farcells` compile with `seaWaveFactor` and `seaSunset` live; new GPU check: the glow warms the
+  grazing reflection beneath a low sun (r 0.27 → 0.72) and not behind it, and flat fog greys the reflected horizon.
+- `tests/SkyIntegrationCheck`: `--vanilla` OK; against the installed dev.18 DLL the sun pieces are absent and the glint
+  keeps Sea's table, the moon adapter intact; against the dev.20 DLL AstraTerra's sun colour (horizon 1.00 0.57 0.28)
+  and glow are bound.
+- Not verified: anything in game (the seam's continuity, the glint's width far off, the glow's strength), other GPUs.
+
 # Sea 0.4.6 — 22 October 2026 (no fog-coloured horizon at night)
 
 **Reported in game** (0.4.5 with Wmap 0.4.5, clear night at sea): a red-brown band where the sea meets the sky.

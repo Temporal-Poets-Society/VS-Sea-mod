@@ -192,8 +192,14 @@ namespace SeaTests
                 string ff = File.ReadAllText(Path.Combine(Environment.GetEnvironmentVariable("APPDATA"), "Vintagestory/assets/game/shaders/chunkliquid.fsh"));
                 string cv = CelestialShader.Vertex(WaterShader.Inject(vf)), cf = CelestialShader.Fragment(ff);
                 Check(cv != null && cf != null && CelestialShader.Vertex(cv) == null && CelestialShader.Fragment(cf) == null, "celestial anchors apply once to installed water shader");
+                // (0.4.7-pre.5) the near water fades each train by Wmap's far-sea rule, keeping the faded slope as glint roughness;
+                // its sky reflection has the game's flat fog and the eye's height, and AstraTerra's sunset glow
+                Check(cv.Contains("1.0 - smoothstep(0.25, 0.75, k * seaFootprint)") && cv.Contains("seaSurfaceRough +=") && cf.Contains("in float seaSurfaceRough;")
+                    && cf.Contains("1.0 - 1.0 / exp((skyPos.y - fogFrom - bias) * flatFogDensity)") && cf.Contains("0.25 * seaAboveSea")
+                    && cf.Contains("seaSunsetShape(d, seaSun.xyz)") && cf.Contains("glint *= width / spread;"),
+                    "near water: trains fade by the far sea's footprint rule; the sky reflection has flat fog, the eye's height and the sunset glow");
                 Check(cf.Contains("if (seaEffects.x <= 0.0)") && cf.Contains("cameraUnderwater < 0.01") && cf.Contains("skyExposed > 0") && cf.Contains("c.a = max(c.a, max(sun, moon))") && cf.Contains("texColor = seaGlints(")
-                    && cf.Contains("texColor = seaSkyReflect(texColor, ray, fres, rgbaFog.rgb);") && !cf.Contains("Star") && !cf.Contains("texColor.a += added"),
+                    && cf.Contains("texColor = seaSkyReflect(texColor, ray, fres, rgbaFog.rgb);") && !cf.Replace("flatFogStart", "").Contains("Star") && !cf.Contains("texColor.a += added"),
                     "vanilla highlight retained behind disable; water-only sky gates; glints and the Fresnel sky reflection raise alpha (premultiplied OIT); no star reflections");
                 const string haze = "    haze = min(haze, clamp(dayLight, 0.0, 1.0));\n    color.rgb = mix(color.rgb, sky.rgb, haze);\n}";
                 string sunLit = "void main()\n{\n    vec4 color = vec4(albedo * max(vec3(0.05), sun) * (0.55 + 0.45 * light), 1.0);\n" + haze;

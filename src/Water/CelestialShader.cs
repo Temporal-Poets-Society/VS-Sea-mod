@@ -45,17 +45,31 @@ namespace Sea
             if (code == null || code.Contains("out vec2 seaSurfaceSlope;") || !code.Contains(anchor)) return null;
             code = code.Replace(anchor, anchor + @"
     seaSurfaceSlope = vec2(0.0);
+    seaSurfaceRough = 0.0;
     // (only the glints and the sky reflection use it: not worked out while both are off)
     if ((seaEffects.x > 0.0 || seaEffects.y > 0.0) && (waterFlagsIn & 1) == 1 && (waterFlagsIn & LiquidIsLavaBitMask) == 0) {
         float div = ((waterFlagsIn & LiquidWeakWaveBitMask) > 0 ? 90.0 : 5.0)
             * max(0.2, 1.0 - float((waterFlagsIn >> 2) & 255) / 255.0);
+        // (0.4.7) Blocks per pixel here, as Wmap's far sea measures it (length of fwidth of the position): the distance
+        // times the pixel's angle, stretched along the view by how grazing it is. 0 (no fading) until Sea sets seaPixel.
+        vec3 seaFromEye = (xyz + origin) - seaEye;
+        float seaDist = length(seaFromEye);
+        float seaGraze = max(abs(seaFromEye.y) / max(seaDist, 0.001), 0.01);
+        float seaFootprint = seaPixel * seaDist * sqrt(1.0 + 1.0 / (seaGraze * seaGraze));
         for (int i = 0; i < seaWaveCount; i++) {
             vec4 w = seaWave[i];
-            seaSurfaceSlope += w.w * w.xy * cos(dot(w.xy, (xyz + origin).xz) + w.z) / div;
+            // A train shorter than about four pixels fades out (Wmap's wmapWaveNormal, the same rule), so the near water
+            // meets the far sea without a step; the slope it would have given is kept as roughness for the glints.
+            float k = length(w.xy);
+            float keep = 1.0 - smoothstep(0.25, 0.75, k * seaFootprint);
+            float steep = w.w * k / div;
+            seaSurfaceSlope += keep * w.w * w.xy * cos(dot(w.xy, (xyz + origin).xz) + w.z) / div;
+            seaSurfaceRough += (1.0 - keep * keep) * 0.5 * steep * steep;
         }
     }");
-            // (seaEffects as the fragment stage declares it: one uniform of the program)
-            return code.Insert(code.IndexOf("void main(", StringComparison.Ordinal), "out vec2 seaSurfaceSlope;\nuniform vec2 seaEffects = vec2(0.0);\n");
+            // (seaEffects and seaEye as the fragment stage declares them: one uniform of the program)
+            return code.Insert(code.IndexOf("void main(", StringComparison.Ordinal),
+                "out vec2 seaSurfaceSlope;\nout float seaSurfaceRough;\nuniform vec2 seaEffects = vec2(0.0);\nuniform vec3 seaEye;\nuniform float seaPixel = 0.0;\n");
         }
 
         public static string Fragment(string code)
@@ -95,6 +109,7 @@ namespace Sea
 
         public const string Declarations = @"
 in vec2 seaSurfaceSlope;
+in float seaSurfaceRough; // (0.4.7) the slope variance of trains too short for the pixel, faded out of seaSurfaceSlope
 uniform vec3 seaEye;
 uniform vec4 seaSun;
 uniform vec4 seaMoon;
@@ -102,9 +117,22 @@ uniform vec3 seaSunColor;
 uniform vec4 seaWeather; // clear sky, night, horizon cloud (the game's horizonFog), roughness
 uniform vec2 seaEffects = vec2(0.0); // glints, sky reflection
 uniform vec4 seaSky; // the sky dome's daylight, sunset shift, fog minimum, fog density
+uniform float seaAboveSea; // (0.4.7) the eye above sea level (the game's playerToSealevelOffset)
+uniform vec4 seaSunset = vec4(0.0); // (0.4.7) AstraTerra's sunset glow (SunsetScatter.Shown): sun colour x strength, strength
 uniform sampler2D seaSkyTex;  // the game's sky colours (sky.png)
 uniform sampler2D seaGlowTex; // the game's sun glow (sunlight.png)
 float seaCelestial(float p, float width) { return exp(-max(0.0, 1.0-p) / width); }
+// (0.4.7) AstraTerra's sunset glow for a direction v and the sun (its SunsetScatter.Shape, the same numbers): a halo round
+// the sun and a band along the horizon, strongest beneath it.
+float seaSunsetShape(vec3 v, vec3 sun) {
+    float c = max(dot(v, sun), 0.0);
+    float halo = 0.8 * pow(c, 24.0) + 0.3 * pow(c, 4.0);
+    vec2 vh = v.xz / max(length(v.xz), 1e-4);
+    vec2 sh = sun.xz / max(length(sun.xz), 1e-4);
+    float toward = 0.5 + 0.5 * dot(vh, sh);
+    float band = exp(-max(v.y, 0.0) * 10.0) * (0.15 + 0.85 * toward * toward);
+    return halo + 0.55 * band;
+}
 // (0.4.7) Full while the body's centre is up, gone once its top has set (2.3 degrees below). Up to 0.4.6 it faded out
 // from 6 degrees altitude, so sunrise and sunset, when the glitter path is longest and brightest, had none; pre.3
 // faded it from 2 degrees up, which a play-test found too soon.
@@ -112,10 +140,15 @@ float seaLobe(vec3 ray, vec3 body, float width) {
     return seaCelestial(dot(ray, body), width) * smoothstep(-0.04, 0.0, body.y) * seaWeather.x;
 }
 // Sun glitter and moon trail. glint: horizon/edge fade and Fresnel shading; shade: the sun's shadow-map brightness.
+// (0.4.7) Far off, the trains too short for a pixel are faded out of the normal; their slope widens the lobe instead
+// (a reflected ray turns twice the slope: 1 - cos = 2 x the variance) and spreads the same light over it, so the glitter
+// path keeps its width toward the horizon instead of narrowing to a mirror's line.
 vec4 seaGlints(vec4 c, vec3 ray, float glint, float shade) {
     float width = 0.0012 + seaWeather.w * 0.018;
-    float sun = clamp(seaEffects.x * glint * seaLobe(ray, seaSun.xyz, width) * seaSun.w * shade, 0.0, 1.0);
-    float moon = clamp(seaEffects.x * glint * seaLobe(ray, seaMoon.xyz, width * 1.3) * seaMoon.w, 0.0, 1.0);
+    float spread = width + min(2.0 * seaSurfaceRough, 0.02);
+    glint *= width / spread;
+    float sun = clamp(seaEffects.x * glint * seaLobe(ray, seaSun.xyz, spread) * seaSun.w * shade, 0.0, 1.0);
+    float moon = clamp(seaEffects.x * glint * seaLobe(ray, seaMoon.xyz, spread * 1.3) * seaMoon.w, 0.0, 1.0);
     c.rgb = mix(c.rgb, seaSunColor, sun);
     c.rgb = mix(c.rgb, vec3(0.62, 0.72, 0.90), moon);
     c.a = max(c.a, max(sun, moon));
@@ -124,19 +157,33 @@ vec4 seaGlints(vec4 c, vec3 ray, float glint, float shade) {
 // The game's sky colour in a direction (skycolor.fsh getSkyColorAt, without its per-pixel dither): sky.png by the sun's
 // height and the direction's, its sunlight.png glow, its fog, and the fog colour it fades to as the light goes. As the
 // light goes the dome's alpha falls to its fog amount and it shows rgb * alpha over dark space, so that is returned.
+// (0.4.7) With the game's flat fog and its horizon raised by the eye's height above the sea, as the dome and Wmap's far
+// sea (which calls getSkyColorAt itself) have them: without them the near water reflected a clearer, darker sky than
+// the far sea beyond it. And AstraTerra's sunset glow, mixed in after, as it is into the dome.
 vec3 seaSkyColor(vec3 ray, vec3 fogColor) {
     vec3 d = normalize(vec3(ray.x, max(ray.y, 0.0), ray.z));
+    vec3 skyPos = d * 250.0; // the length Wmap's far sea gives getSkyColorAt
+    vec3 v2 = normalize(vec3(skyPos.x, skyPos.y + 0.25 * seaAboveSea, skyPos.z));
     float u = (seaSun.y + 1.0) / 2.0;
     float vl = 1.0 - clamp(distance(d, seaSun.xyz) / 6.0, 0.0, 1.0);
     vec4 glow = texture(seaGlowTex, vec2(clamp(u - seaSky.y * 2.0, 0.0, 1.0), 1.0 - vl));
-    vec3 c = texture(seaSkyTex, vec2(u, pow(1.0 - d.y, 0.25))).rgb;
+    vec3 c = texture(seaSkyTex, vec2(u, pow(max(1.0 - v2.y, 0.0), 0.25))).rgb;
     c = c * (1.0 - glow.a) + glow.rgb * glow.a;
-    float fog = clamp(seaSky.z + max(seaSky.w * 120.0 - 0.12, 0.0), 0.0, 1.0);
-    fog += max(0.0, ((1.0 - d.y) / 2.0 + 0.3) * 0.7667 - 0.5) * max(min(1.0, 5.0 * fog), seaWeather.z);
+    float fogFrom = flatFogDensity < 0.0 ? flatFogStart : 0.0;
+    float bias = flatFogDensity < 0.0 ? 0.55 * seaAboveSea : 0.0;
+    float fog = max(seaSky.z + max(seaSky.w * 120.0 - 0.12, 0.0) + max(-flatFogDensity * fogFrom / 3.3, 0.0),
+        1.0 - 1.0 / exp((skyPos.y - fogFrom - bias) * flatFogDensity));
+    fog += max(0.0, ((1.0 - v2.y) / 2.0 + 0.3) * 0.7667 - 0.5) * max(min(1.0, 5.0 * fog), seaWeather.z);
     fog = clamp(fog, 0.0, 1.0);
     c = mix(c, fogColor, fog);
     float dark = 1.0 - clamp(seaSky.x, 0.0, 1.0);
-    return mix(c, fogColor, dark) * mix(1.0, fog, dark);
+    c = mix(c, fogColor, dark);
+    if (seaSunset.w > 0.001) {
+        float k = clamp(seaSunset.w * seaSunsetShape(d, seaSun.xyz) * (1.0 - 0.5 * fog), 0.0, 0.7);
+        float near = pow(max(dot(d, seaSun.xyz), 0.0), 8.0);
+        c = mix(c, seaSunset.rgb / seaSunset.w * (0.55 + 0.45 * near), k);
+    }
+    return c * mix(1.0, fog, dark);
 }
 // Water reflects the sky by Fresnel; reflected light covers what is seen through the water, so alpha rises with it.
 vec4 seaSkyReflect(vec4 c, vec3 ray, float fres, vec3 fogColor) {

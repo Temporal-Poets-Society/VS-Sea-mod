@@ -88,6 +88,18 @@ static class Program
             Check(Math.Abs(localDays(4.0, 90.0, true) - 4.25) < 1e-12 && localDays(4.0, 90.0, false) == 4.0
                 && D("longitude") != null && D("moonPhase") != null,
                 $"the adapter's typed delegates call AstraTerra (moon days 4.25; moons replaced: near body {near}, disc {disc})");
+            // (0.4.7-pre.5) AstraTerra's sun as it draws it, where the build has it (dev.19 on): the glint's colour and the
+            // sunset glow come from it; an older build leaves them to Sea's own table, with the moon adapter unharmed
+            var air = (System.Func<double, (float, float, float)>)D("sunThroughAir");
+            if (at.GetType("AstraTerra.Astronomy.SunsetScatter") != null)
+            {
+                var twilight = at.GetType("AstraTerra.Astronomy.Twilight").GetMethod("SunColour");
+                var expected = ((float, float, float))twilight.Invoke(null, new object[] { 0.0 });
+                var glow = ((System.Func<Vintagestory.API.MathTools.Vec4f>)D("sunsetGlow"))();
+                Check(air != null && air(0.0) == expected && expected.Item3 < 0.35f && glow != null && D("customSun") != null,
+                    $"AstraTerra's sun colour (horizon {expected.Item1:0.00} {expected.Item2:0.00} {expected.Item3:0.00}) and sunset glow (strength {glow?.W:0.00} with no sky drawn) bound");
+            }
+            else Check(air == null && D("sunsetGlow") == null, "an AstraTerra without SunsetScatter: the glint keeps Sea's own sun table");
         }
 
         var p = typeof(CelestialRenderer).GetMethod("FarFragment");

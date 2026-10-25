@@ -5,6 +5,15 @@ calm down with the wind of the past hours, and are the same on the server and ev
 It also owns the water shaders, so ship mods (Magelan, Hansa) ask Sea to keep waves out of their hulls instead of each
 patching the shaders.
 
+Version **0.4.7-pre.5** (25 October 2026, `release/sea-0.4.7-pre.5.zip`, branch `playtest/sunset-seam-2026-10-25`
+from pre.4, a play-test build; not merged), after issue 5 of the 25 October play-test (an orange glitter path under a pale
+sun, no glow in the sky, a band where the near waves meet Wmap's far sea). While AstraTerra draws the sun the glitter
+path takes AstraTerra's sun colour (`Twilight.SunColour`) instead of Sea's copy capped by the game's reflect colour; the
+sky reflection draws AstraTerra's sunset glow (`SunsetScatter.Shown`, dev.20) and the game's flat fog and eye height as
+the dome has them; and the near water fades each wave train shorter than about four pixels by Wmap's far-sea rule, the
+lost slope widening the glint. Wmap 0.5.0-pre.6 takes `seaWaveFactor` (the open sea's divisor; it took still water's,
+a fifth of the slope) and `seaSunset`. [Sky light model](docs/sky-light-model.md). Not yet seen in game.
+
 Version **0.4.7-pre.4** (25 October 2026, `release/sea-0.4.7-pre.4.zip`, branch `playtest/sunrise-2026-10-24`, a
 play-test build; not merged): after pre.3's sunset play-test, the glitter path stays full while the sun's centre is up and
 goes only when its top has set (pre.3 faded it from 2 degrees up), and it reddens with the sun: white above 25 degrees,
