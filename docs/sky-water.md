@@ -1,5 +1,8 @@
 # Celestial water and night visibility — 0.4.4
 
+**0.4.7-night (25 October 2026):** night levels, twilight, the moon's light and weather are recalibrated; see
+[night light](night-light.md). The night numbers below are 0.4.4's.
+
 **0.4.4 (21 October 2026), after the first night play-tests (SEA-D35, SEA-D36).** Star reflections are removed: on
 small waves they showed as blotches ("leopard skin"), and at the default strength they were invisible. In their place
 the water reflects **the sky the game draws**, by Fresnel through Sea's wave normals: barely anything looking down, the
@@ -98,7 +101,7 @@ Server `ModConfig/sea.json`, sent to clients (matching Sea version required). Ex
 |---|---|---|
 | `CelestialReflections` | 1 | Sun/moon highlight strength. 0 restores vanilla's highlight |
 | `SkyReflections` | 1 | (0.4.4) The sky reflected by Fresnel, near and on Wmap's distant sea. 1 is physical; 0 disables |
-| `NightVisibility` | 1 | Outdoor ambient floor/local-moon correction (0.4.4: 1 = moonless 0.15, full moon 0.45). 0 keeps existing ambient lighting |
+| `NightVisibility` | 1 | Outdoor ambient floor, real twilight and local-moon correction (0.4.7-night: 1 = moonless 0.10, full moon 0.40; 0.4.4: 0.15 / 0.45). 0 keeps the game's own night and twilight |
 
 Tuning by eye (0.4.3): on a client, `.sea night <0–4>`, `.sea sky <0–4>` and `.sea glint <0–4>` change these three
 strengths on that client at once, until you leave the world; `.sea night` alone shows the value, `.sea night default`

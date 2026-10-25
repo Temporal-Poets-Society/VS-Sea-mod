@@ -69,7 +69,7 @@ namespace Sea
                 .HandleWith(args => TextCommandResult.Success(ClientReport(capi, sys)))
                 // (0.4.3) tuning by eye: this client only, at once, until you leave the world (sea.json is unchanged)
                 .BeginSubCommand("night")
-                    .WithDescription("Night visibility on your client now, 0-4 (sea.json's NightVisibility otherwise; 1 = clear moonless 0.15, high full moon 0.45)")
+                    .WithDescription("Night visibility on your client now, 0-4 (sea.json's NightVisibility otherwise; 1 = clear moonless 0.10, high full moon 0.40, 1.5 = the 0.4.4 level; 0 = the game's own night and twilight)")
                     .WithArgs(parsers.OptionalWord("value"))
                     .HandleWith(args => Tune(sys, args[0] as string, "night", c => c.NightOverride, (c, v) => c.NightOverride = v, c => c.NightStrength))
                 .EndSubCommand()

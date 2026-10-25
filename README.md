@@ -5,6 +5,13 @@ calm down with the wind of the past hours, and are the same on the server and ev
 It also owns the water shaders, so ship mods (Magelan, Hansa) ask Sea to keep waves out of their hulls instead of each
 patching the shaders.
 
+Version **0.4.7-night.1** (25 October 2026, `release/sea-0.4.7-night.1.zip`, branch `night-light-2026-10-25` from
+0.4.7-pre.4, not merged or installed): night light recalibrated after the user's issue #7 ([night light](docs/night-light.md)).
+The client's rendered day's light gets real twilight (dark by the sun's 12–18° depression instead of vanilla's 46°), its
+moon term is cut by weather, and the night floor is 0.10 moonless / 0.40 full moon (was 0.15 / 0.45), with the moon by
+phase and height and thick fog counted. Ground, sky, clouds and Wmap's far terrain read the same number. The server,
+spawning and gameplay light are untouched. Not yet seen in game.
+
 Version **0.4.7-pre.4** (25 October 2026, `release/sea-0.4.7-pre.4.zip`, branch `playtest/sunrise-2026-10-24`, a
 play-test build; not merged): after pre.3's sunset play-test, the glitter path stays full while the sun's centre is up and
 goes only when its top has set (pre.3 faded it from 2 degrees up), and it reddens with the sun: white above 25 degrees,
@@ -213,7 +220,7 @@ Nothing about the wind or the waves is sent while you play, except a clock:
 | `SeaWindStrength` | 0.3 | without a wind provider: that steady wind's strength, 0–1.5 (0 = a calm sea) (0.4.0) |
 | `CelestialReflections` | 1 | sun/moon trails; 0 restores vanilla highlights; range 0–2 |
 | `SkyReflections` | 1 | the sky reflected by Fresnel, near and on Wmap's distant sea (0.4.4; no star reflections); 1 physical; 0 disables; range 0–2 |
-| `NightVisibility` | 1 | outdoor ambient night floor/local-moon correction; 1 = clear moonless 0.15, high full moon 0.45 (0.4.4, twice 0.4.3's); 0 keeps existing ambient lighting; range 0–2 |
+| `NightVisibility` | 1 | outdoor ambient night floor, real twilight and local-moon correction on the client's rendering ([night light](docs/night-light.md)); 1 = clear moonless 0.10, high full moon 0.40 (0.4.7-night; 0.4.4–0.4.7-pre: 0.15 / 0.45, now 1.5); 0 keeps the game's own night and twilight; range 0–2 |
 
 A negative, NaN or infinite number goes back to its default when the server loads the file (0.3.7); `SeaWindFrom` may
 be any finite number (it's taken round the compass). The weather settings of 0.3 (`WindModel`, `PrevailingStrength`,
