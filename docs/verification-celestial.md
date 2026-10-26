@@ -3,7 +3,15 @@
 Branch `playtest/2026-10-26`: `playtest/sunset-seam-2026-10-25` (`66ecc59`) and `night-light-2026-10-25` (`13c7ca8`),
 both from `a9aa45d`; `release/sea-0.4.7-pre.6.zip`. The two branches change different functions of `NightSkyMath.cs`
 and `CelestialRenderer.cs` (night.1: night/visibility/clear sky, ambient and the calendar postfix; pre.5: `SunAndGlow`
-appended at the end of `Sky()`); the merge kept both. RESULTS_PLACEHOLDER
+appended at the end of `Sky()`); the merge kept both.
+
+- `tests/SeaTests`: ALL OK (both branches' new checks).
+- `tests/ShaderCheck` (RX 6600, `WMAP_ROOT` = Wmap `playtest/2026-10-26`, 0.5.0-pre.7): ALL OK, including the sunset
+  glow beneath a low sun (r 0.27 -> 0.72) and the night dome's Fresnel reflection.
+- `tests/SkyIntegrationCheck` against the merged AstraTerra 0.15.0-dev.21 DLL (`playtest/2026-10-26`): ALL OK (moon
+  adapter, sun colour horizon 1.00 0.57 0.28 and sunset glow bound); `--vanilla`: OK.
+- Release build 0 warnings/errors; not run: the night-light server probe (no server-side change in the merge).
+- **In game: not run.**
 
 # Sea 0.4.7-pre.5 — 25 October 2026 (sunset colour, sky glow, near/far seam)
 
