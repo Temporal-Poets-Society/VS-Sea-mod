@@ -58,6 +58,7 @@ namespace Sea
             Patch("shader uniforms", () => harmony.Patch(AccessTools.Method(AccessTools.TypeByName("Vintagestory.Client.NoObf.ShaderProgramBase"), "Use"), postfix: new HarmonyMethod(typeof(CelestialRenderer), nameof(UsePostfix))));
             Patch("outdoor night lighting", () => harmony.Patch(AccessTools.Method(AccessTools.TypeByName("Vintagestory.Client.NoObf.AmbientManager"), "UpdateAmbient"), postfix: new HarmonyMethod(typeof(CelestialRenderer), nameof(AmbientPostfix))));
             Patch("real twilight", PatchTwilight);
+            Patch("shadow and shading hand-off", PatchHandOff);
             api.Event.LevelFinalize += InitializeAstra;
         }
 
@@ -273,7 +274,68 @@ namespace Sea
 
         // Harmony postfixes run inside vanilla's render loop: an exception there ends the game, so each one switches
         // its effect off and logs once instead.
-        static bool ambientFailed, usesFailed, twilightFailed;
+        static bool ambientFailed, usesFailed, twilightFailed, handOffFailed;
+        static AccessTools.FieldRef<object, float> ambientShadows;
+
+        /// <summary>
+        /// (0.4.7-pre.7) The game's light hand-off from the sun to the moon, made smooth (issue 15). Its shadow map is cast
+        /// from whichever of the two has the larger light term and stays on while the moon is up; with real twilight the
+        /// terms cross soon after sunset, so the shadows were cast from a sun at or under the horizon and then flipped to the
+        /// moon in one frame, and the shading direction swung within a 0.02 difference. Shadows now fade out while the
+        /// casting body is low and around the crossing (NightSkyMath.ShadowKeep), and the shading direction turns over the
+        /// same span (LightTowardMoon). Rendering only; off with night visibility 0, as the twilight is.
+        /// </summary>
+        void PatchHandOff()
+        {
+            var shadows = AccessTools.TypeByName("Vintagestory.Client.NoObf.SystemRenderShadowMap") ?? throw new Exception("SystemRenderShadowMap missing");
+            var before = AccessTools.Method(shadows, "OnRenderBefore") ?? throw new Exception("SystemRenderShadowMap.OnRenderBefore missing");
+            var sunMoon = AccessTools.TypeByName("Vintagestory.Client.NoObf.SystemRenderSunMoon") ?? throw new Exception("SystemRenderSunMoon missing");
+            var frame = AccessTools.Method(sunMoon, "OnRenderFrame3D") ?? throw new Exception("SystemRenderSunMoon.OnRenderFrame3D missing");
+            ambientShadows = AccessTools.FieldRefAccess<float>(AccessTools.TypeByName("Vintagestory.Client.NoObf.AmbientManager"), "DropShadowIntensity");
+            harmony.Patch(before, postfix: new HarmonyMethod(typeof(CelestialRenderer), nameof(ShadowPostfix)));
+            harmony.Patch(frame, postfix: new HarmonyMethod(typeof(CelestialRenderer), nameof(LightPositionPostfix)));
+        }
+
+        static bool HandOffActive(out CelestialRenderer c)
+        {
+            c = current;
+            return !handOffFailed && !twilightFailed && c != null && c.NightStrength > 0 && c.api.World?.Calendar != null;
+        }
+
+        static void ShadowPostfix()
+        {
+            if (!HandOffActive(out var c)) return;
+            try
+            {
+                var cal = c.api.World.Calendar;
+                float diff = cal.MoonLightStrength - cal.SunLightStrength;
+                // the body the game casts them from (SystemRenderShadowMap.PrepareForShadowRendering)
+                float castingY = diff > 0 ? cal.MoonPosition.Y / Math.Max(cal.MoonPosition.Length(), 1e-6f) : cal.SunPositionNormalized.Y;
+                float keep = NightSkyMath.ShadowKeep(castingY, diff);
+                if (keep >= 1) return;
+                var su = c.api.Render.ShaderUniforms;
+                su.DropShadowIntensity *= keep;
+                ref float held = ref ambientShadows(c.api.Ambient);
+                held *= keep;
+            }
+            catch (Exception ex) { Fail(ref handOffFailed, "Shadow hand-off", ex); }
+        }
+
+        static void LightPositionPostfix()
+        {
+            if (!HandOffActive(out var c)) return;
+            try
+            {
+                var cal = c.api.World.Calendar;
+                float t = NightSkyMath.LightTowardMoon(cal.MoonLightStrength - cal.SunLightStrength);
+                var sun = cal.SunPositionNormalized;
+                var moon = cal.MoonPosition;
+                float len = Math.Max(moon.Length(), 1e-6f);
+                c.api.Render.ShaderUniforms.LightPosition3D.Set(
+                    sun.X + (moon.X / len - sun.X) * t, sun.Y + (moon.Y / len - sun.Y) * t, sun.Z + (moon.Z / len - sun.Z) * t);
+            }
+            catch (Exception ex) { Fail(ref handOffFailed, "Shading hand-off", ex); }
+        }
         static void Fail(ref bool failed, string what, Exception ex)
         {
             failed = true;
@@ -308,20 +370,17 @@ namespace Sea
                 int s = sunlightPixel(raw, Math.Clamp(x + mod, 0, 1), 0.01f), r = sunlightPixel(raw, Math.Clamp(x - mod, 0, 1), 0.01f);
                 float sr = (s >> 16 & 255) / 255f, sg = (s >> 8 & 255) / 255f, sb = (s & 255) / 255f;
                 float twilight = (sr + sg + sb) / 3;
-                if (twilight < sunV)
-                {
-                    sunL = twilight;
-                    cal.SunColor.Set(sr, sg, sb);
-                    // The game's reflect colour (the ambient's tint) for the same sun, darkened below the horizon toward
-                    // ClientGameCalendar.nightColor as the game does it
-                    float rr = (r >> 16 & 255) / 255f, rg = (r >> 8 & 255) / 255f, rb = (r & 255) / 255f;
-                    if (y * 50 < -0.1f)
-                    {
-                        float k = -y * 5 - 0.3f;
-                        rr = Math.Max(rr - k, 0); rg = Math.Max(rg - k, 0.0627451f); rb = Math.Max(rb - k, 2f / 15f);
-                    }
-                    cal.ReflectColor.Set(rr, rg, rb);
-                }
+                // (0.4.7-pre.7) Always below the horizon. Up to pre.6 only where the table read darker than the game's own
+                // value: just after sunset both are one texel apart in an 8-bit table, often equal, so the colours switched
+                // between the two each tick, and with them the game's 0.29 step below (issue 15: the light flickered).
+                sunL = Math.Min(twilight, sunV);
+                cal.SunColor.Set(sr, sg, sb);
+                // The game's reflect colour (the ambient's tint) for the same sun, darkened below the horizon toward
+                // ClientGameCalendar.nightColor, without the game's brightening step (NightSkyMath.ReflectDarkening)
+                float rr = (r >> 16 & 255) / 255f, rg = (r >> 8 & 255) / 255f, rb = (r & 255) / 255f;
+                float k = NightSkyMath.ReflectDarkening(y);
+                if (k > 0) { rr = Math.Max(rr - k, 0); rg = Math.Max(rg - k, 0.0627451f); rb = Math.Max(rb - k, 2f / 15f); }
+                cal.ReflectColor.Set(rr, rg, rb);
             }
             if (sunL == sunV && moonL == moonV) return;
             float day = NightSkyMath.Daylight(cal.DayLightStrength, sunV, moonV, sunL, moonL);
@@ -372,6 +431,7 @@ namespace Sea
                     if (p.HasUniform("seaSkyReflect")) p.Uniform("seaSkyReflect", 0f);
                     if (p.HasUniform("seaEffects")) p.Uniform("seaEffects", 0f, 0f);
                     if (p.HasUniform("seaSunset")) p.Uniform("seaSunset", 0f, 0f, 0f, 0f);
+                    if (p.HasUniform("seaGlint")) p.Uniform("seaGlint", 0f);
                 }
                 catch { }
                 return;
@@ -390,6 +450,15 @@ namespace Sea
                 if (p.HasUniform("seaSkyReflect")) p.Uniform("seaSkyReflect", c.api.World?.Player?.Entity?.Pos.Dimension == 0 ? c.SkyStrength : 0f);
                 // (0.4.7) Wmap's far haze and far-sea reflection take the same sunset glow as the dome and the near water
                 if (p.HasUniform("seaSunset")) p.Uniform("seaSunset", c.sunset.X, c.sunset.Y, c.sunset.Z, c.sunset.W);
+                // (0.4.7-pre.7) the glitter path on Wmap's far sea: the near water's glint, the same numbers (issue 14)
+                if (p.HasUniform("seaGlint"))
+                {
+                    p.Uniform("seaGlint", c.api.World?.Player?.Entity?.Pos.Dimension == 0 ? c.GlintStrength : 0f);
+                    p.Uniform("seaSun", c.sun.X, c.sun.Y, c.sun.Z, 1.6f);
+                    p.Uniform("seaMoon", c.moon.X, c.moon.Y, c.moon.Z, 0.75f * c.phase * c.night);
+                    p.Uniform("seaSunColor", c.sunR, c.sunG, c.sunB);
+                    p.Uniform("seaWeather", c.clear, c.night, c.api.Ambient.BlendedCloudDensity, c.roughness);
+                }
             }
             if (!p.HasUniform("seaEffects")) return;
             c.WaterPatched = true;

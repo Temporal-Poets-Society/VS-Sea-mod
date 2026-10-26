@@ -103,7 +103,7 @@ namespace ShaderCheck
                     {
                         int fp = Build("Wmap 0.5 " + far + " with its far-water contract", Load(Path.Combine(wm, "shaders"), far + ".vsh"), Load(Path.Combine(wm, "shaders"), far + ".fsh"), defs);
                         if (fp == 0) continue;
-                        foreach (string u in new[] { "seaNightFloor", "seaSkyReflect", "seaWaveCount", "seaWave", "seaWaveFactor", "seaSunset" })
+                        foreach (string u in new[] { "seaNightFloor", "seaSkyReflect", "seaWaveCount", "seaWave", "seaWaveFactor", "seaSunset", "seaGlint", "seaSun", "seaSunColor", "seaWeather" })
                             Check(GL.GetUniformLocation(fp, u) >= 0 || GL.GetUniformLocation(fp, u + "[0]") >= 0, "Wmap 0.5 " + far + ": " + u + " is live");
                         GL.DeleteProgram(fp);
                     }
@@ -136,6 +136,7 @@ namespace ShaderCheck
             CelestialLobes();
             CelestialVisible();
             SkyReflection();
+            FarGlintMatchesNear();
 
             Console.WriteLine(failures == 0 ? "ALL OK" : $"{failures} FAILED");
             return failures == 0 ? 0 : 1;
@@ -262,6 +263,61 @@ void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); vec4 c=seaGlints(ve
         }
 
         readonly struct vec4 { public readonly float x, y, z, w; public vec4(float x, float y, float z, float w) { this.x = x; this.y = y; this.z = z; this.w = w; } }
+
+        // (0.4.7-pre.7, issue 14) Wmap's far sea carries the near water's glitter to the horizon: its wmapSeaGlints, taken from
+        // the working tree's include, must give what Sea's seaGlints gives for the same ray, roughness and uniforms.
+        static void FarGlintMatchesNear()
+        {
+            string wm = Path.GetFullPath(Path.Combine(Environment.GetEnvironmentVariable("WMAP_ROOT") ?? "../Wmap", "assets/wmap/shaderincludes/wmapfaralbedo.ash"));
+            if (!File.Exists(wm)) { Console.WriteLine("  --   Wmap's far glint not compared (no Wmap working tree)"); return; }
+            string albedo = File.ReadAllText(wm);
+            int from = albedo.IndexOf("float wmapLobe(", StringComparison.Ordinal), to = albedo.IndexOf("// Land this many blocks", StringComparison.Ordinal);
+            if (from < 0 || to <= from) { Console.WriteLine("  --   Wmap's far glint not compared (this Wmap has none)"); return; }
+            const string v = "#version 330 core\nvoid main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0,1); }";
+            string f = "#version 330 core\nuniform float flatFogDensity;\nuniform float flatFogStart;\nuniform float seaGlint;\nin float seaSurfaceRoughIn;\n"
+                + CelestialShader.Declarations.Replace("in float seaSurfaceRough;", "float seaSurfaceRough;") + albedo.Substring(from, to - from) + @"
+uniform vec3 testRay;
+uniform float testRough;
+out vec4 outColor;
+void main(){ seaSurfaceRough = testRough; vec3 r = normalize(testRay);
+  vec4 near = seaGlints(vec4(0.0, 0.0, 0.0, 1.0), r, 0.8, 1.0);
+  vec3 far = wmapSeaGlints(vec3(0.0), r, 0.8, testRough);
+  outColor = vec4(near.r, far.r, near.g - far.g, near.b - far.b); }";
+            int vs = Compile(ShaderType.VertexShader, v, out string vl), fs = Compile(ShaderType.FragmentShader, f, out string fl);
+            if (vs == 0 || fs == 0) { Check(false, "far glint comparison program compiles", vl + fl); return; }
+            int p = GL.CreateProgram(); GL.AttachShader(p, vs); GL.AttachShader(p, fs); GL.LinkProgram(p);
+            GL.GetProgram(p, GetProgramParameterName.LinkStatus, out int linked);
+            if (linked != 1) { Check(false, "far glint comparison program links", GL.GetProgramInfoLog(p)); return; }
+            int tex = GL.GenTexture(), fb = GL.GenFramebuffer(), vao = GL.GenVertexArray();
+            GL.BindTexture(TextureTarget.Texture2D, tex);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba32f, 1, 1, 0, PixelFormat.Rgba, PixelType.Float, IntPtr.Zero);
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, fb);
+            GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, tex, 0);
+            GL.BindVertexArray(vao); GL.Viewport(0, 0, 1, 1); GL.UseProgram(p);
+            // a sun 0.6° up, orange; Sea's glint strength 1 on both (seaEffects.x for the near water, seaGlint for the far sea)
+            GL.Uniform2(GL.GetUniformLocation(p, "seaEffects"), 1f, 0f);
+            GL.Uniform1(GL.GetUniformLocation(p, "seaGlint"), 1f);
+            GL.Uniform4(GL.GetUniformLocation(p, "seaSun"), 0f, 0.0105f, 0.99994f, 1.6f);
+            GL.Uniform4(GL.GetUniformLocation(p, "seaMoon"), 0f, -1f, 0f, 0f);
+            GL.Uniform3(GL.GetUniformLocation(p, "seaSunColor"), 1f, 0.6f, 0.3f);
+            GL.Uniform4(GL.GetUniformLocation(p, "seaWeather"), 1f, 0f, 0f, 0.2f);
+            float worst = 0, peak = 0, wide = 0;
+            foreach (float rough in new[] { 0f, 0.002f, 0.05f })
+                foreach (float off in new[] { 0f, 0.02f, 0.06f, 0.15f })
+                {
+                    GL.Uniform1(GL.GetUniformLocation(p, "testRough"), rough);
+                    GL.Uniform3(GL.GetUniformLocation(p, "testRay"), off, 0.0105f, 1f);
+                    GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
+                    float[] o = new float[4]; GL.ReadPixels(0, 0, 1, 1, PixelFormat.Rgba, PixelType.Float, o);
+                    worst = Math.Max(worst, Math.Max(Math.Abs(o[0] - o[1]), Math.Max(Math.Abs(o[2]), Math.Abs(o[3]))));
+                    if (rough == 0 && off == 0) peak = o[1];
+                    if (rough == 0.05f && off == 0.15f) wide = o[1];
+                }
+            Check(worst < 1e-5f && peak > 0.7f && wide > 0.05f,
+                $"GPU: Wmap's far glint equals the near water's (largest difference {worst:0.000000}; on the path {peak:0.00}; a rough far sea spreads it, 0.15 off the path {wide:0.00})");
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0); GL.UseProgram(0);
+            GL.DeleteVertexArray(vao); GL.DeleteFramebuffer(fb); GL.DeleteTexture(tex); GL.DeleteProgram(p); GL.DeleteShader(vs); GL.DeleteShader(fs);
+        }
 
         static void CelestialLobes()
         {

@@ -193,6 +193,38 @@ namespace SeaTests
                 // sunlight.png's night value (its x < 0.1) needs a sun 46° down in vanilla, 18° down now
                 Check(NightSkyMath.SunlightTextureX(Deg(-18)) > 0.38f && NightSkyMath.SunlightTextureX(NightSkyMath.TwilightSunY(Deg(-18))) < 0.11f,
                     "(0.4.7-night) at the end of astronomical twilight the game's sun term reads its night value");
+                // (0.4.7-pre.7, issue 15) no steps at sunset: the reflect colour only darkens below the horizon, from nothing
+                // (the game's step brightened it by 0.29 a tenth of a degree down); shadows fade while the casting body is low
+                // and while the sun's and moon's terms are close; the shading direction turns across the same span
+                {
+                    bool darkens = NightSkyMath.ReflectDarkening(0) == 0 && NightSkyMath.ReflectDarkening(-0.002f) == 0
+                        && NightSkyMath.ReflectDarkening(-0.06f) == 0 && NightSkyMath.ReflectDarkening(-0.2f) > 0.69f;
+                    float last = 0, worstStep = 0;
+                    for (float y = 0; y > -0.3f; y -= 0.0005f) { float k = NightSkyMath.ReflectDarkening(y); worstStep = Math.Max(worstStep, Math.Abs(k - last)); last = k; }
+                    bool shadows = NightSkyMath.ShadowKeep(0.5f, 0.5f) == 1 && NightSkyMath.ShadowKeep(-0.01f, 0.5f) == 0
+                        && NightSkyMath.ShadowKeep(0.5f, 0) == 0 && NightSkyMath.ShadowKeep(0.5f, -0.02f) > 0.4f && NightSkyMath.ShadowKeep(0.5f, -0.02f) < 0.6f
+                        && NightSkyMath.ShadowKeep(0.5f, 0.02f) == NightSkyMath.ShadowKeep(0.5f, -0.02f);
+                    bool turns = NightSkyMath.LightTowardMoon(-0.05f) == 0 && NightSkyMath.LightTowardMoon(0.05f) == 1 && Math.Abs(NightSkyMath.LightTowardMoon(0) - 0.5f) < 1e-6f;
+                    Check(darkens && worstStep < 0.003f && shadows && turns,
+                        $"sunset hand-off without steps: reflect darkening continuous (largest step {worstStep:0.0000} per 0.03°), shadows off near the horizon and around the sun/moon crossing, shading turns over ±0.04");
+                }
+                // the game's members the hand-off postfixes bind to (CelestialRenderer.PatchHandOff), in the installed game
+                {
+                    string game = Environment.GetEnvironmentVariable("VINTAGE_STORY") ?? System.IO.Path.Combine(Environment.GetEnvironmentVariable("APPDATA") ?? "", "Vintagestory");
+                    // (its types need the game's libraries, OpenTK among them, to load)
+                    AppDomain.CurrentDomain.AssemblyResolve += (_, e) =>
+                    {
+                        string file = System.IO.Path.Combine(game, "Lib", new System.Reflection.AssemblyName(e.Name).Name + ".dll");
+                        return System.IO.File.Exists(file) ? System.Reflection.Assembly.LoadFrom(file) : null;
+                    };
+                    var lib = System.Reflection.Assembly.LoadFrom(System.IO.Path.Combine(game, "VintagestoryLib.dll"));
+                    Type T(string n) => lib.GetType(n);
+                    bool bound = HarmonyLib.AccessTools.Method(T("Vintagestory.Client.NoObf.SystemRenderShadowMap"), "OnRenderBefore") != null
+                        && HarmonyLib.AccessTools.Method(T("Vintagestory.Client.NoObf.SystemRenderSunMoon"), "OnRenderFrame3D") != null
+                        && HarmonyLib.AccessTools.Field(T("Vintagestory.Client.NoObf.AmbientManager"), "DropShadowIntensity")?.FieldType == typeof(float);
+                    Check(bound, "the game has the shadow pass, the sun-and-moon pass and the ambient's shadow intensity the hand-off patches"
+                        + (bound ? "" : $" (types: {T("Vintagestory.Client.NoObf.SystemRenderShadowMap") != null}, {T("Vintagestory.Client.NoObf.SystemRenderSunMoon") != null}, {T("Vintagestory.Client.NoObf.AmbientManager") != null})"));
+                }
                 Check(Math.Abs(NightSkyMath.Daylight(0.51f, 0.51f, 0, 0.06f, 0) - 0.06f) < 1e-6f && NightSkyMath.Daylight(0.33f, 0.06f, 0.33f, 0.06f, 0.33f) == 0.33f
                     && Math.Abs(NightSkyMath.Daylight(0.4f, 0.06f, 0.33f, 0.06f, 0.1f) - 0.17f) < 1e-6f && NightSkyMath.Daylight(0.2f, 0.1f, 0, 0.3f, 0) == 0.2f,
                     "(0.4.7-night) rendered daylight: only the sun's and moon's part changes, the game's extras stay, never brighter");
@@ -219,6 +251,8 @@ namespace SeaTests
                     && cf.Contains("1.0 - 1.0 / exp((skyPos.y - fogFrom - bias) * flatFogDensity)") && cf.Contains("0.25 * seaAboveSea")
                     && cf.Contains("seaSunsetShape(d, seaSun.xyz)") && cf.Contains("glint *= width / spread;"),
                     "near water: trains fade by the far sea's footprint rule; the sky reflection has flat fog, the eye's height and the sunset glow");
+                Check(cf.Contains("smoothstep(viewDistance * 0.76, viewDistance * 0.80, length(fWorldPos.xz))") && !cf.Contains("viewDistance * 0.50"),
+                    "near glints last until the game's water has faded (0.76-0.8 of the view distance), where Wmap's far sea takes the glitter on (issue 14)");
                 Check(cf.Contains("if (seaEffects.x <= 0.0)") && cf.Contains("cameraUnderwater < 0.01") && cf.Contains("skyExposed > 0") && cf.Contains("c.a = max(c.a, max(sun, moon))") && cf.Contains("texColor = seaGlints(")
                     && cf.Contains("texColor = seaSkyReflect(texColor, ray, fres, rgbaFog.rgb);") && !cf.Replace("flatFogStart", "").Contains("Star") && !cf.Contains("texColor.a += added"),
                     "vanilla highlight retained behind disable; water-only sky gates; glints and the Fresnel sky reflection raise alpha (premultiplied OIT); no star reflections");

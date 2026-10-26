@@ -55,6 +55,24 @@ namespace Sea
         /// <summary>Where the game reads its sunlight.png row for a sun this high (ClientGameCalendar.Update).</summary>
         public static float SunlightTextureX(float sunY) => (Math.Clamp(sunY * 1.4f + 0.2f, -1, 1) + 1) / 2;
 
+        /// <summary>(0.4.7-pre.7) How much the reflect colour (the ambient's and the fog's tint) is darkened for a sun this far
+        /// down (the twilight's sine). The game's own step (ClientGameCalendar.Update) subtracts −5y − 0.3 once the sun is
+        /// 0.1° down, which is negative until 3.4° down: the colour jumped 0.29 brighter at that instant and the fog with it.
+        /// Here it only darkens, from nothing.</summary>
+        public static float ReflectDarkening(float sunY) => Math.Max(0, -5 * sunY - 0.3f);
+
+        /// <summary>(0.4.7-pre.7) How much of the game's shadows to keep. The game casts them from the moon when its light term
+        /// is the larger, else from the sun (SystemRenderShadowMap), with no margin, and keeps them on whenever the moon is up:
+        /// with real twilight the two terms cross soon after sunset, so for a while the shadows came from a sun at or below the
+        /// horizon and flipped to the moon at once. Gone while the casting light is under 3° (the game drops a sun-only shadow
+        /// under 2.75° itself) and while the two terms are within 0.04 of each other.</summary>
+        public static float ShadowKeep(float castingY, float moonMinusSun) =>
+            Smooth(0, 0.05f, castingY) * Smooth(0, 0.04f, Math.Abs(moonMinusSun));
+
+        /// <summary>(0.4.7-pre.7) How far the shading direction has gone from the sun to the moon (the game: all within a 0.02
+        /// difference, 50 × (moon − sun)); here over ±0.04, while ShadowKeep has the shadows off.</summary>
+        public static float LightTowardMoon(float moonMinusSun) => Smooth(-0.04f, 0.04f, moonMinusSun);
+
         /// <summary>(0.4.7-night) The rendered day's light once the sun's term is replaced: vanilla takes the larger of the
         /// sun's and the moon's terms, so only the part of it that came from them changes and anything else the game added
         /// (height above the sea) stays. Never brighter than the game's.</summary>

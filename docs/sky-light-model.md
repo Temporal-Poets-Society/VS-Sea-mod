@@ -48,8 +48,19 @@ The screenshot's band had three causes. All three are addressed, but **none is c
   than the far sea beyond it.
 
 Not addressed: the base water colour under the reflection (the game's water texture near, Wmap's albedo far). At a
-grazing angle it shows only about 10%. Also: Wmap's far sea has no glitter path (Sea fades the glint out between 0.5 and
-0.74 of the view distance).
+grazing angle it shows only about 10%. (Wmap's far sea had no glitter path until 0.5.0-pre.8; see below.)
+
+## 26 October: the glitter path to the horizon, and the sunset flicker (Sea pre.7, Wmap pre.8)
+
+- **Issue 14** (a calm band between the end of the glitter path and the horizon): Sea's glints now last until the game's
+  water has faded, and Wmap's far sea draws the same glint on to the horizon, with the same sun, colour and weather, widened
+  where its waves are too short for the pixel. A GPU check shows the two give identical values for the same inputs.
+- **Issue 15** (the whole scene's light flickering near sunset): the real twilight switched the sun and reflect colours
+  between its own and the game's each tick just after sunset (two near-equal values one texel apart in the table), and
+  each switch toggled the game's 0.29 brightening of the reflect colour, which tints the fog. Now the twilight always
+  applies below the horizon and only darkens. The game's shadows, which come from whichever of sun and moon has the
+  larger light term with no margin and stay on while the moon is up, now fade out while the casting body is under 3° and
+  around the sun/moon crossing; the shading direction turns over the same span. Found by reading the code, not reproduced.
 
 ## What to look at in game
 

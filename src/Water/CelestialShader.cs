@@ -93,8 +93,10 @@ namespace Sea
         // (0.4.4) the sky the game draws, reflected by Fresnel: faint looking down, the sky's own colour at the horizon.
         // Smooth in direction, so waves shade it without speckles; it continues into Wmap's distant sea.
         if (seaEffects.y > 0.0) texColor = seaSkyReflect(texColor, ray, fres, rgbaFog.rgb);
-        // Glints stop before Wmap's distant sea (from 0.75 of the view distance), which has none.
-        float seaEdge = 1.0 - smoothstep(viewDistance * 0.50, viewDistance * 0.74, length(fWorldPos.xz));
+        // (0.4.7-pre.7) Glints go on until the game's water has faded (0.76 to 0.8 of the view distance); Wmap 0.5.0-pre.8's
+        // far sea, from 0.75, carries the same glitter on to the horizon (seaGlint). Up to pre.6 they stopped from half the
+        // view distance, leaving a calm band short of the horizon (issue 14).
+        float seaEdge = 1.0 - smoothstep(viewDistance * 0.76, viewDistance * 0.80, length(fWorldPos.xz));
         // (0.4.7) Only rays turned well down into the sea are cut; the lobe already needs the ray on the body, and a
         // setting sun's reflected ray is level or a little below (0.4.6 needed it 4.6 degrees up for full strength).
         float exposed = seaEdge * smoothstep(-0.06, -0.02, ray.y);

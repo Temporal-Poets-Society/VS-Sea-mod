@@ -5,6 +5,17 @@ calm down with the wind of the past hours, and are the same on the server and ev
 It also owns the water shaders, so ship mods (Magelan, Hansa) ask Sea to keep waves out of their hulls instead of each
 patching the shaders.
 
+Version **0.4.7-pre.7** (26 October 2026, `release/sea-0.4.7-pre.7.zip`, branch `fix/sunset-glint-flicker-2026-10-26`
+from `playtest/2026-10-26`, a play-test build; not merged), after issues 14 and 15 of the pre.6 play-test. **The glitter
+path reaches the horizon:** the near water's glints last until the game's water has faded (0.76 to 0.8 of the view
+distance, was 0.5 to 0.74) and Wmap 0.5.0-pre.8's far sea carries the same glint on (`seaGlint` with the sun, moon, sun
+colour and weather). **No flicker at sunset:** the real twilight (night.1) replaced the sun and reflect colours only where
+the table read darker than the game's own; just after sunset both are one texel apart, so the colours switched each tick,
+and with them the game's 0.29 brightening of the reflect colour a tenth of a degree down, which tints the fog. Now the
+twilight always applies below the horizon and the reflect colour only darkens. The game's shadows, cast from whichever of
+sun and moon has the larger light term with no margin, fade out while that body is under 3° and around the crossing, and
+the shading direction turns over the same span. Not yet seen in game.
+
 Version **0.4.7-pre.6** (26 October 2026, `release/sea-0.4.7-pre.6.zip`, branch `playtest/2026-10-26`, a play-test
 build; not merged): pre.5 (sunset colour, sky glow, near/far seam) and 0.4.7-night.1 (night light) merged into one build,
 for AstraTerra 0.15.0-dev.21 and Wmap 0.5.0-pre.7. Both are described below. Not yet seen in game.

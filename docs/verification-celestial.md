@@ -1,3 +1,18 @@
+# Sea 0.4.7-pre.7 — 26 October 2026 (glitter path to the horizon, no sunset flicker)
+
+Branch `fix/sunset-glint-flicker-2026-10-26` from `playtest/2026-10-26` (`8b9fba2`); `release/sea-0.4.7-pre.7.zip`. With
+Wmap 0.5.0-pre.8 (same branch name in Wmap). SEA-D44, SEA-D45.
+
+- `tests/SeaTests`: ALL OK. New: the reflect darkening is continuous (largest step 0.0025 per 0.03°), shadows are off near
+  the horizon and around the sun/moon crossing, the shading turns over ±0.04; the near glints last to 0.76–0.8 of the view
+  distance; the shadow pass, the sun-and-moon pass and the ambient's shadow intensity exist in the installed game.
+- `tests/ShaderCheck` (RX 6600, `WMAP_ROOT` = the Wmap branch): ALL OK. Wmap's `farterrain` and `farcells` compile with
+  `seaGlint`, `seaSun`, `seaSunColor`, `seaWeather` live; new GPU check: Wmap's far glint equals the near water's for the
+  same rays, roughness and uniforms (largest difference 0.000000; on the path 1.00; rough, 0.15 off the path 0.16).
+- `tests/SkyIntegrationCheck`: `--vanilla` OK; against the installed AstraTerra dev.21 OK.
+- Not verified: anything in game. The flicker's cause is from reading the code, not reproduced: that it is gone, the far
+  glitter's look and continuity at the hand-off, and the shadows at dusk with the moon up need the play-test.
+
 # Sea 0.4.7-pre.6 — 26 October 2026 (pre.5 + night.1 merged)
 
 Branch `playtest/2026-10-26`: `playtest/sunset-seam-2026-10-25` (`66ecc59`) and `night-light-2026-10-25` (`13c7ca8`),
