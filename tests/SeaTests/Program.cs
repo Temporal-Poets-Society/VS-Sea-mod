@@ -173,9 +173,29 @@ namespace SeaTests
                 float low = NightSkyMath.Visibility(-0.7f, -0.1f, 1, 1, 1);
                 float storm = NightSkyMath.ClearSky(1, 1);
                 Check(full > dark * 2 && dark > 0 && low == dark, "moonlit > moonless > black; moon below horizon contributes nothing");
-                Check(storm < 0.02f && NightSkyMath.ClearSky(0, 0) == 1 && NightSkyMath.ClearSky(1, 0) < 0.1f, "overcast and rain attenuate clear sky (fog doesn't: the game fogs the scene itself)");
-                Check(Math.Abs(dark - 0.15f) < 1e-6f && Math.Abs(NightSkyMath.Visibility(-0.7f, 1, 1, 1, 1) - 0.45f) < 1e-6f,
-                    "night floor at strength 1: clear moonless 0.15 (the user's choice, 21 October), high full moon 0.45");
+                Check(storm < 0.02f && NightSkyMath.ClearSky(0, 0) == 1 && NightSkyMath.ClearSky(1, 0) < 0.1f, "overcast and rain attenuate clear sky");
+                Check(NightSkyMath.ClearSky(0.5f, 0) < 0.45f && NightSkyMath.ClearSky(0.25f, 0) < 0.7f && NightSkyMath.ClearSky(0, 0, 0.001f) == 1
+                    && Math.Abs(NightSkyMath.ClearSky(0, 0, 0.05f) - 0.5f) < 1e-6f,
+                    "(0.4.7-night) thickening cloud darkens more than linearly; vanilla's clear-sky fog nothing, thick fog half");
+                Check(Math.Abs(dark - 0.10f) < 1e-6f && Math.Abs(NightSkyMath.Visibility(-0.7f, 1, 1, 1, 1) - 0.40f) < 1e-6f
+                    && Math.Abs(NightSkyMath.Visibility(-0.7f, 0, 0, 1, 1.5f) - 0.15f) < 1e-6f,
+                    "(0.4.7-night) night floor at strength 1: clear moonless 0.10, high full moon 0.40; strength 1.5 = 21 October's 0.15");
+                float half = NightSkyMath.MoonLight(0.5f, 1), rising = NightSkyMath.MoonLight(1, 0.02f), ten = NightSkyMath.MoonLight(1, 0.174f);
+                Check(half > 0.3f && half < 0.4f && rising > 0.1f && rising < 0.35f && ten > 0.5f && ten < 0.6f && NightSkyMath.MoonLight(1, 0.6f) == 1
+                    && NightSkyMath.MoonLight(1, -0.05f) == 0,
+                    "(0.4.7-night) moonlight by phase (half moon about a third) and height (dim on the horizon, full from 35°)");
+                float Deg(float d) => MathF.Sin(d * MathF.PI / 180);
+                Check(NightSkyMath.Night(0) == 0 && NightSkyMath.Night(Deg(-6.1f)) == 1 && NightSkyMath.Night(Deg(-3)) > 0.3f && NightSkyMath.Night(Deg(-3)) < 0.7f,
+                    "(0.4.7-night) the floor fades in through civil twilight, under the twilight's own light, and is all in from −6°");
+                Check(NightSkyMath.TwilightSunY(0.3f) == 0.3f && NightSkyMath.TwilightSunY(0) == 0
+                    && Math.Abs(NightSkyMath.TwilightSunY(Deg(-18)) - Deg(-45)) < 1e-4f && NightSkyMath.TwilightSunY(Deg(-60)) == -1,
+                    "(0.4.7-night) twilight reads the sun 2.5 times as far down below the horizon, nothing above it");
+                // sunlight.png's night value (its x < 0.1) needs a sun 46° down in vanilla, 18° down now
+                Check(NightSkyMath.SunlightTextureX(Deg(-18)) > 0.38f && NightSkyMath.SunlightTextureX(NightSkyMath.TwilightSunY(Deg(-18))) < 0.11f,
+                    "(0.4.7-night) at the end of astronomical twilight the game's sun term reads its night value");
+                Check(Math.Abs(NightSkyMath.Daylight(0.51f, 0.51f, 0, 0.06f, 0) - 0.06f) < 1e-6f && NightSkyMath.Daylight(0.33f, 0.06f, 0.33f, 0.06f, 0.33f) == 0.33f
+                    && Math.Abs(NightSkyMath.Daylight(0.4f, 0.06f, 0.33f, 0.06f, 0.1f) - 0.17f) < 1e-6f && NightSkyMath.Daylight(0.2f, 0.1f, 0, 0.3f, 0) == 0.2f,
+                    "(0.4.7-night) rendered daylight: only the sun's and moon's part changes, the game's extras stay, never brighter");
                 Check(NightSkyMath.SkyDaylight(0, 0, 0) < 0.07f && NightSkyMath.SkyDaylight(1, 0, 0) == 1.25f && NightSkyMath.SkyDaylight(0.33f, 0.33f, 0) < 0.25f,
                     "sky daylight as the game's sky dome works it out (night: its fog colour)");
                 Check(NightSkyMath.Visibility(0.2f, 1, 1, 1, 1) == 0 && NightSkyMath.Visibility(-1, 1, 1, 1, 0) == 0, "daytime and disable add no outdoor floor");
@@ -186,8 +206,9 @@ namespace SeaTests
                     "the sun's glitter is white high up, yellow low, orange setting (as AstraTerra's drawn sun)");
                 Check(NightSkyMath.MoonAmbientScale(0.02f, 0.33f, 0.33f, -0.2f, 1) < 0.1f
                     && NightSkyMath.MoonAmbientScale(0.02f, 0.33f, 0.7f, -0.2f, 1) == 1
-                    && NightSkyMath.MoonAmbientScale(1, 0.2f, 1, -0.2f, 1) == 1,
-                    "local moon removes a false vanilla ambient moon; stronger external lighting and daylight are preserved");
+                    && NightSkyMath.MoonAmbientScale(1, 0.2f, 1, -0.2f, 1) == 1
+                    && NightSkyMath.MoonAmbientScale(0.02f, 0.33f, 0.33f, 0.8f, 1, 0.2f) < 0.25f,
+                    "local moon removes a false vanilla ambient moon (and clouds hide it); stronger external lighting and daylight are preserved");
                 string vf = File.ReadAllText(Path.Combine(Environment.GetEnvironmentVariable("APPDATA"), "Vintagestory/assets/game/shaders/chunkliquid.vsh"));
                 string ff = File.ReadAllText(Path.Combine(Environment.GetEnvironmentVariable("APPDATA"), "Vintagestory/assets/game/shaders/chunkliquid.fsh"));
                 string cv = CelestialShader.Vertex(WaterShader.Inject(vf)), cf = CelestialShader.Fragment(ff);

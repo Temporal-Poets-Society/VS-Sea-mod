@@ -20,8 +20,8 @@ namespace Sea
         /// <summary>(0.4.4) The sky reflected by Fresnel (weak looking down, the sky's own colour at the horizon), near and on
         /// Wmap's distant sea; 0 disables, 1 is physical. No star reflections since 0.4.4.</summary>
         [ProtoMember(11, IsRequired = true)] public float SkyReflections = 1;
-        /// <summary>Outdoor night visibility floor on the existing sunlight channel; 0 disables. (0.4.4) 1 = clear moonless 0.15, high
-        /// full moon 0.45 (twice 0.4.3's, as the user chose in game).</summary>
+        /// <summary>Outdoor night visibility floor on the existing sunlight channel; 0 disables it and the real twilight. (0.4.7-night)
+        /// 1 = clear moonless 0.10, high full moon 0.40 (0.4.4: 0.15 / 0.45, now 1.5).</summary>
         [ProtoMember(12, IsRequired = true)] public float NightVisibility = 1;
 
         /// <summary>

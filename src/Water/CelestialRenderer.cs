@@ -57,7 +57,39 @@ namespace Sea
             ambientFailed = usesFailed = false;
             Patch("shader uniforms", () => harmony.Patch(AccessTools.Method(AccessTools.TypeByName("Vintagestory.Client.NoObf.ShaderProgramBase"), "Use"), postfix: new HarmonyMethod(typeof(CelestialRenderer), nameof(UsePostfix))));
             Patch("outdoor night lighting", () => harmony.Patch(AccessTools.Method(AccessTools.TypeByName("Vintagestory.Client.NoObf.AmbientManager"), "UpdateAmbient"), postfix: new HarmonyMethod(typeof(CelestialRenderer), nameof(AmbientPostfix))));
+            Patch("real twilight", PatchTwilight);
             api.Event.LevelFinalize += InitializeAstra;
+        }
+
+        // (0.4.7-night) The client calendar's rendered copy of the day's light, written after the game's (and AstraTerra's)
+        // own update each frame. Bound once as typed delegates: no boxing in the frame.
+        static System.Action<object, float> setSunLight, setMoonLight, setDayLight;
+        static System.Func<object, float> sunsetMod;
+        static System.Func<object, float, float, int> sunlightPixel;
+
+        void PatchTwilight()
+        {
+            var calendar = AccessTools.TypeByName("Vintagestory.Common.ClientGameCalendar") ?? throw new Exception("ClientGameCalendar missing");
+            var update = AccessTools.Method(calendar, "Update") ?? throw new Exception("ClientGameCalendar.Update missing");
+            System.Action<object, float> Setter(string name)
+            {
+                var set = AccessTools.PropertySetter(calendar, name) ?? throw new Exception(name + " has no setter");
+                var o = Expression.Parameter(typeof(object)); var v = Expression.Parameter(typeof(float));
+                return Expression.Lambda<System.Action<object, float>>(Expression.Call(Expression.Convert(o, calendar), set, v), o, v).Compile();
+            }
+            setSunLight = Setter("SunLightStrength");
+            setMoonLight = Setter("MoonLightStrength");
+            setDayLight = Setter("DayLightStrength");
+            var mod = AccessTools.PropertyGetter(calendar, "SunsetMod") ?? throw new Exception("SunsetMod missing");
+            var cal = Expression.Parameter(typeof(object));
+            sunsetMod = Expression.Lambda<System.Func<object, float>>(Expression.Call(Expression.Convert(cal, calendar), mod), cal).Compile();
+            var pixel = AccessTools.Method(calendar, "getSunlightPixelRel", new[] { typeof(float), typeof(float) }) ?? throw new Exception("getSunlightPixelRel missing");
+            var argb = pixel.ReturnType.GetMethod("ToArgb", Type.EmptyTypes) ?? throw new Exception("sunlight pixel has no ToArgb");
+            var x = Expression.Parameter(typeof(float)); var y = Expression.Parameter(typeof(float));
+            sunlightPixel = Expression.Lambda<System.Func<object, float, float, int>>(
+                Expression.Call(Expression.Call(Expression.Convert(cal, calendar), pixel, x, y), argb), cal, x, y).Compile();
+            // After every other postfix (AstraTerra's local moon and near-body light), so this reads the light they leave.
+            harmony.Patch(update, postfix: new HarmonyMethod(typeof(CelestialRenderer), nameof(CalendarPostfix)) { priority = Priority.Low });
         }
 
         void Patch(string name, Action action)
@@ -187,7 +219,7 @@ namespace Sea
             phase = phaseFromCalendar ? (float)(0.5 - 0.5 * Math.Cos(exact * Math.PI / 4))
                 : NightSkyMath.Illuminated(sun.Dot(moon)); // vanilla shades from sun/moon directions; AstraTerra uses ExactAt
             ambientScale = phaseFromCalendar && NightStrength > 0
-                ? NightSkyMath.MoonAmbientScale(cal.SunLightStrength, cal.MoonLightStrength, cal.DayLightStrength, moon.Y, phase) : 1;
+                ? NightSkyMath.MoonAmbientScale(cal.SunLightStrength, cal.MoonLightStrength, cal.DayLightStrength, moon.Y, phase, clear) : 1;
             var am = api.Ambient;
             if (api.ElapsedMilliseconds - weatherAt > 250)
             {
@@ -195,7 +227,7 @@ namespace Sea
                 rain = weather?.GetPrecipitation(ep.Pos.X, api.World.SeaLevel, ep.Pos.Z) ?? 0;
                 weatherAt = api.ElapsedMilliseconds;
             }
-            clear = NightSkyMath.ClearSky(am.BlendedCloudDensity, rain);
+            clear = NightSkyMath.ClearSky(am.BlendedCloudDensity, rain, am.BlendedFogDensity);
             skyLight = NightSkyMath.SkyDaylight(cal.DayLightStrength, cal.MoonLightStrength, ep.Pos.Y - api.World.SeaLevel);
             night = NightSkyMath.Night(sun.Y);
             floor = NightSkyMath.Visibility(sun.Y, moon.Y, phase, clear, NightStrength);
@@ -241,12 +273,61 @@ namespace Sea
 
         // Harmony postfixes run inside vanilla's render loop: an exception there ends the game, so each one switches
         // its effect off and logs once instead.
-        static bool ambientFailed, usesFailed;
+        static bool ambientFailed, usesFailed, twilightFailed;
         static void Fail(ref bool failed, string what, Exception ex)
         {
             failed = true;
             if (current != null) { current.floor = 0; current.ambientScale = 1; }
             current?.api.Logger.Error("[sea] {0} disabled after an error: {1}", what, ex);
+        }
+
+        /// <summary>
+        /// (0.4.7-night) Real twilight and weather on the client's rendered day's light, the one number the ground's ambient,
+        /// the sky dome, the clouds, the fog's brightness and Wmap's far terrain all read: the sun's term as for a sun 2.5
+        /// times as far below the horizon (NightSkyMath.TwilightSunY), with its colours, and the moon's term cut by cloud,
+        /// rain and fog. Rendering only: the server, spawning and every gameplay light query keep the game's own value
+        /// (GameCalendar.GetDayLightStrength is not touched). Never brighter than the game's; off with night visibility 0.
+        /// </summary>
+        static void CalendarPostfix(object __instance)
+        {
+            var c = current;
+            if (twilightFailed || ambientFailed || c == null || c.NightStrength <= 0 || __instance is not IClientGameCalendar cal
+                || !ReferenceEquals(c.api.World?.Calendar, __instance)) return;
+            try { c.Twilight(cal, __instance); }
+            catch (Exception ex) { Fail(ref twilightFailed, "Real twilight", ex); }
+        }
+
+        void Twilight(IClientGameCalendar cal, object raw)
+        {
+            float sunY = cal.SunPositionNormalized.Y;
+            float sunV = cal.SunLightStrength, moonV = cal.MoonLightStrength;
+            float sunL = sunV, moonL = moonV * Math.Clamp(clear, 0, 1);
+            if (sunY < 0)
+            {
+                float y = NightSkyMath.TwilightSunY(sunY), x = NightSkyMath.SunlightTextureX(y), mod = sunsetMod(raw);
+                int s = sunlightPixel(raw, Math.Clamp(x + mod, 0, 1), 0.01f), r = sunlightPixel(raw, Math.Clamp(x - mod, 0, 1), 0.01f);
+                float sr = (s >> 16 & 255) / 255f, sg = (s >> 8 & 255) / 255f, sb = (s & 255) / 255f;
+                float twilight = (sr + sg + sb) / 3;
+                if (twilight < sunV)
+                {
+                    sunL = twilight;
+                    cal.SunColor.Set(sr, sg, sb);
+                    // The game's reflect colour (the ambient's tint) for the same sun, darkened below the horizon toward
+                    // ClientGameCalendar.nightColor as the game does it
+                    float rr = (r >> 16 & 255) / 255f, rg = (r >> 8 & 255) / 255f, rb = (r & 255) / 255f;
+                    if (y * 50 < -0.1f)
+                    {
+                        float k = -y * 5 - 0.3f;
+                        rr = Math.Max(rr - k, 0); rg = Math.Max(rg - k, 0.0627451f); rb = Math.Max(rb - k, 2f / 15f);
+                    }
+                    cal.ReflectColor.Set(rr, rg, rb);
+                }
+            }
+            if (sunL == sunV && moonL == moonV) return;
+            float day = NightSkyMath.Daylight(cal.DayLightStrength, sunV, moonV, sunL, moonL);
+            setSunLight(raw, sunL);
+            setMoonLight(raw, moonL);
+            setDayLight(raw, day);
         }
 
         static void AmbientPostfix(object __instance)

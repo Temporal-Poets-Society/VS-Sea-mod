@@ -1,0 +1,1 @@
+{ "type": "code", "modid": "nightlightprobe", "name": "Night light probe (test only)", "version": "0.1.0", "side": "Server", "requiredOnClient": false, "dependencies": { "game": "" } }

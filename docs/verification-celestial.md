@@ -1,3 +1,10 @@
+# Sea 0.4.7-pre.6 — 26 October 2026 (pre.5 + night.1 merged)
+
+Branch `playtest/2026-10-26`: `playtest/sunset-seam-2026-10-25` (`66ecc59`) and `night-light-2026-10-25` (`13c7ca8`),
+both from `a9aa45d`; `release/sea-0.4.7-pre.6.zip`. The two branches change different functions of `NightSkyMath.cs`
+and `CelestialRenderer.cs` (night.1: night/visibility/clear sky, ambient and the calendar postfix; pre.5: `SunAndGlow`
+appended at the end of `Sky()`); the merge kept both. RESULTS_PLACEHOLDER
+
 # Sea 0.4.7-pre.5 — 25 October 2026 (sunset colour, sky glow, near/far seam)
 
 Branch `playtest/sunset-seam-2026-10-25` from pre.4 (`a9aa45d`); `release/sea-0.4.7-pre.5.zip`. With AstraTerra
@@ -13,6 +20,41 @@ Branch `playtest/sunset-seam-2026-10-25` from pre.4 (`a9aa45d`); `release/sea-0.
   keeps Sea's table, the moon adapter intact; against the dev.20 DLL AstraTerra's sun colour (horizon 1.00 0.57 0.28)
   and glow are bound.
 - Not verified: anything in game (the seam's continuity, the glint's width far off, the glow's strength), other GPUs.
+
+# Sea 0.4.7-night.1 — 25 October 2026 (night light, issue #7)
+
+Branch `night-light-2026-10-25` from `a9aa45d` (installed 0.4.7-pre.4), with AstraTerra branch `fix/local-moon-light`
+(`581463e` on `19d9282`). Proposal, answers and targets: [night light](night-light.md); full tables:
+[measurements](night-light-measurements.md).
+
+**Dedicated server** (`tests/NightLightProbe/run_probe.py`, Earth world, seed 386217; probe mod sweeps 5 latitudes ×
+2 longitudes × 4 seasons × new/full moon, 97 instants a night, through the game's calendar; then reads `GetLightLevel`
+at the spawn's surface):
+
+- Installed stack with and without AstraTerra: identical server daylight at longitude 0. No installed mod raises the
+  server's night light; Sea never reaches it. Spawn surface at 47.5°N: sunlight 22, block light 0, time-of-day light 3
+  at a new-moon midnight, 5 at a full-moon midnight (`OnlyBlockLight`, which drifters, wolves, bears, shivers and
+  bowtorns use, is 0 day and night).
+- Vanilla's long twilight, measured: June new-moon midnight 0.378 (light 9) at 45°N, 0.609 (14) at 60°N, 0.671 (16) at
+  63.3°N; the same at 40°S in December 0.259 (6). Unchanged by this work (server = vanilla's spawn calibration).
+- With AstraTerra `0.15.0-dev.18-nightlight.1`: longitude 0 unchanged in every case; at 169°W a full-moon midnight
+  follows the drawn moon: light 1 → 7 (March 40°S, September 10°N and 45°N), 1 → 4–6 (June 10°N/40°S, December 10–63°N),
+  unchanged where the drawn moon is down or twilight dominates. Startup logs "moon light follows the local moon".
+
+**Offline**: SeaTests ALL OK (new: twilight reading, floor 0.10/0.40 and strength 1.5 = 0.15, moon phase and height,
+cloud^0.75 and fog, rendered daylight only lowers the sun and moon terms, the floor's fade). SkyIntegrationCheck against
+the new AstraTerra DLL (with `WMAP_ROOT` = the installed Wmap 0.5.0-pre.5 source) and `--vanilla`: ALL OK. ShaderCheck
+(GPU) ALL OK (no shader changed). AstraTerra suite 1289/1289 with 6 new `LocalMoonLightTests`.
+
+**Model of the rendered result** (the game's client formulas on the measured sun and moon; `night_table.py`): clear
+moonless midnight 0.133 → 0.089 everywhere the sun is past −12°; June 45°N 0.139 → 0.089 (3.2 hours with the sun below
+−18°); June 60°N stays a white night, 0.439 → 0.332 (sun −6.9°); overcast moonless 0.035 → 0.018; overcast full moon
+0.105 → 0.070; 45°N in March one hour after sunset (−9.9°) 0.420 → 0.108, two hours (−20°) 0.210 → 0.089.
+
+Release build 0 warnings/errors → `release/sea-0.4.7-night.1.zip`; older ZIPs kept; **not installed** (the coordinator
+installs). **In game: not run.** To check in game: twilight timing and colour (dusk at sea and on land, 45°N and 60°N),
+clouds and Wmap's far terrain at dusk agreeing with the ground, moonless and full-moon nights (`.sea night 1`, `1.5`),
+overcast and rain darkening, thick fog, and the moon's light at a far longitude (Bering Strait) matching the drawn moon.
 
 # Sea 0.4.6 — 22 October 2026 (no fog-coloured horizon at night)
 
