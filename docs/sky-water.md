@@ -1,5 +1,12 @@
 # Celestial water and night visibility — 0.4.4
 
+**0.4.7-pre.10 (31 October 2026), issue #35:** [foam direction/morphology audit](foam-direction.md), SEA-D49.
+Wind whitecaps are finite crest patches; thin, broken windrows begin around force 8 and follow the wind-toward
+vector. Cellular holes/lace replace the smooth grain floor. Wake film uses world coordinates and its own freshness
+channel; wind rows/crest patches and wakes still share this document's water light/alpha/fog and dry-cut path.
+Vanilla contact/depth foam remains owned by vanilla. `.sea foam all|wind|wakes|off` isolates only Sea's overlays;
+`.sea` reports the current provider-driven foam wind, rather than assuming fallback config 0.3.
+
 **0.4.7-night (25 October 2026):** night levels, twilight, the moon's light and weather are recalibrated; see
 [night light](night-light.md). The night numbers below are 0.4.4's.
 

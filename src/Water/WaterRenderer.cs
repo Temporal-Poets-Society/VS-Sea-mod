@@ -54,7 +54,9 @@ namespace Sea
         // (0.4.7) blocks per pixel per block of distance (the near water fades trains by it, as Wmap's far sea does), and
         // the open-sea wave factor at the camera (1 / the shader's divisor), which Wmap's far waves take
         float pixel, waveFactor = 0.2f;
-        float stormX, stormZ, foamCoverage, spume, foamAlong, foamAcross, foamDrift;
+        float stormX, stormZ, foamCoverage, foamWindStrength, foamAlong, foamAcross, foamDrift;
+        Wind foamWind;
+        public string FoamStatus => $"Foam wind: {foamWind} (toward {Compass.Name(foamWind.ToDegrees)}, Beaufort {Beaufort.Force(foamWind.Strength)}); rows toward {Compass.Name(Compass.Bearing(stormX,stormZ))} (3s smoothing); whitecap input {100*foamCoverage:0.000}%, streak ramp {100*FoamMath.StreakRamp(foamWind.Strength):0.0}%; view {sys.FoamView}. Input is the current local sea wind (provider/admin, otherwise steady sea config), not a measured foam area.";
         bool foamReady;
         double foamCamX, foamCamZ, foamTime, foamAngle, foamAnchorAlong, foamAnchorAcross;
         readonly IShaderProgram[] uploadedTo = new IShaderProgram[4];
@@ -121,7 +123,9 @@ namespace Sea
                 wn = 1;
             }
             waveCount = LastWaveCount = wn;
-            var wind = place.Wind;
+            // Foam is cosmetic: use the local provider's current wind, not a grid/clock sample from the wave
+            // history. SeaWind retains the configured steady sea wind when there is no wind provider.
+            var wind = foamWind = sys.Model?.SeaWind(camX, camZ, sys.Hours, true) ?? place.Wind;
             double ws = wind.Strength;
             double angle = ws > 1e-6 ? Math.Atan2(wind.Z, wind.X) : foamAngle;
             double dt = foamReady ? Math.Max(0, place.Time - foamTime) : 0;
@@ -145,7 +149,7 @@ namespace Sea
             stormZ = (float)Math.Sin(foamAngle);
             foamCoverage = wn > 0 && place.SignificantHeight > 1e-5
                 && capi.World.Player.Entity.Pos.Dimension == 0 ? (float)WaveSpectrum.WhitecapCoverage(ws) : 0;
-            spume = (float)Math.Clamp((ws - 0.9) / 0.6, 0, 1);
+            foamWindStrength = (float)ws;
             // All procedural scales are powers of two; wrapping at 65536 is continuous at each noise octave.
             foamAnchorAlong = WorldShape.Mod(foamAnchorAlong, 65536);
             foamAnchorAcross = WorldShape.Mod(foamAnchorAcross, 65536);
@@ -331,7 +335,8 @@ namespace Sea
                 if (wn > 0) prog.Uniforms4("seaWave", wn, WaveUniform);
             }
             if (prog.HasUniform("seaPixel")) prog.Uniform("seaPixel", pixel);
-            if (prog.HasUniform("seaStorm")) prog.Uniform("seaStorm", stormX, stormZ, foamCoverage, spume);
+            if (prog.HasUniform("seaStorm")) prog.Uniform("seaStorm", stormX, stormZ,
+                sys.FoamView == FoamView.Wakes || sys.FoamView == FoamView.Off ? 0 : foamCoverage, foamWindStrength);
             if (prog.HasUniform("seaFoamOrigin")) prog.Uniform("seaFoamOrigin", foamAlong, foamAcross, foamDrift);
             Wakes.Bind(prog, wakeCamX, wakeCamY, wakeCamZ);
         }

@@ -167,6 +167,7 @@ namespace SeaTests
             Waves();
             StormEvidence.Run(Check);
             WakeChecks.Run(Check);
+            FoamChecks.Run(Check);
 
             Console.WriteLine("night sky presentation");
             {

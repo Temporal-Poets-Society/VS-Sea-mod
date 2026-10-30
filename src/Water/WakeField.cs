@@ -134,7 +134,7 @@ namespace Sea
         }
     }
 
-    /// <summary>Bounded camera-near raster: foam, reserved, premultiplied rest-water height, coverage. Linear-filtered
+    /// <summary>Bounded camera-near raster: foam, premultiplied freshness, premultiplied rest-water height, coverage. Linear-filtered
     /// onto the actual displaced liquid triangles; no independently sampled floating wake mesh.</summary>
     public sealed class WakeMap
     {
@@ -162,7 +162,7 @@ namespace Sea
             }
             foreach(var r in field.Rings) {
                 double age=now-r.Born;
-                Ring(r.X,r.Z,0.2+r.Speed*age,0.24+age*0.025,r.Energy*WakeMath.Fade(age,WakeField.RingLife),r.SurfaceY);
+                Ring(r.X,r.Z,0.2+r.Speed*age,0.24+age*0.025,r.Energy*WakeMath.Fade(age,WakeField.RingLife),r.SurfaceY,Math.Clamp(1-age/WakeField.RingLife,0,1));
             }
         }
         void Draw(WakeTrack t,double now)
@@ -179,7 +179,7 @@ namespace Sea
                     if(n.Born-p.Born<=3 && Math.Abs(p.SurfaceY-n.SurfaceY)<0.5)
                     {
                         WakeMath.Stern(p,now,out double px,out double pz);
-                        Line(px,pz,sx,sz,width,tail*0.75,n.SurfaceY);
+                        Line(px,pz,sx,sz,width,tail*0.75,n.SurfaceY,Math.Clamp(1-age/WakeMath.FoamLife(n.Hull.Length),0,1));
                     }
                 }
                 if(age<12 && i>0) {
@@ -213,14 +213,14 @@ namespace Sea
             double sternX=c.X-c.Fx*c.Hull.Length*0.5,sternZ=c.Z-c.Fz*c.Hull.Length*0.5;
             Line(sternX,sternZ,sternX-c.Fx*c.Hull.Beam,sternZ-c.Fz*c.Hull.Beam,c.Hull.Beam*0.35,e*0.85,c.SurfaceY);
         }
-        void Put(int x,int z,double value,double surfaceY)
+        void Put(int x,int z,double value,double surfaceY,double freshness)
         {
             double edge=Math.Clamp(Math.Min(Math.Min(x,z),Math.Min(Size-1-x,Size-1-z))/16.0,0,1);
             float f=(float)Math.Clamp(value*edge,0,1); int i=(z*Size+x)*4;
             if(f<=Pixels[i+3]) return;
-            Pixels[i]=f; Pixels[i+1]=0; Pixels[i+2]=(float)(surfaceY-CameraY)*f; Pixels[i+3]=f;
+            Pixels[i]=f; Pixels[i+1]=(float)freshness*f; Pixels[i+2]=(float)(surfaceY-CameraY)*f; Pixels[i+3]=f;
         }
-        void Line(double ax,double az,double bx,double bz,double width,double energy,double surfaceY)
+        void Line(double ax,double az,double bx,double bz,double width,double energy,double surfaceY,double freshness=1)
         {
             if(energy<=0.005 || Samples>=MaxSamples) return;
             width=Math.Max(Texel*0.6,width);
@@ -238,7 +238,7 @@ namespace Sea
                 for(int z=iz0;z<=iz1 && Samples<MaxSamples;z++) for(int x=ix0;x<=ix1 && Samples<MaxSamples;x++) {
                     Samples++; double rx=X+(x+0.5)*Texel-x0,rz=Z+(z+0.5)*Texel-z0;
                     double u=Math.Clamp((rx*vx+rz*vz)/d2,0,1),d=Math.Sqrt((rx-u*vx)*(rx-u*vx)+(rz-u*vz)*(rz-u*vz));
-                    double f=Math.Clamp(1-d/width,0,1); Put(x,z,energy*f*f*(3-2*f),surfaceY);
+                    double f=Math.Clamp(1-d/width,0,1); Put(x,z,energy*f*f*(3-2*f),surfaceY,freshness);
                 }
             }
         }
@@ -247,7 +247,7 @@ namespace Sea
             if(Math.Abs(p)<1e-12) return q>=0;
             double t=q/p; if(p<0)lo=Math.Max(lo,t);else hi=Math.Min(hi,t);return lo<=hi;
         }
-        void Ring(double cx,double cz,double radius,double width,double energy,double surfaceY)
+        void Ring(double cx,double cz,double radius,double width,double energy,double surfaceY,double freshness)
         {
             if(energy<0.005 || radius<0 || Samples>=MaxSamples) return;
             width=Math.Max(width,Texel*0.65);
@@ -256,7 +256,7 @@ namespace Sea
             for(int z=z0;z<=z1 && Samples<MaxSamples;z++) for(int x=x0;x<=x1 && Samples<MaxSamples;x++) {
                 Samples++; double dx=X+(x+0.5)*Texel-cx,dz=Z+(z+0.5)*Texel-cz;
                 double f=Math.Clamp(1-Math.Abs(Math.Sqrt(dx*dx+dz*dz)-radius)/width,0,1);
-                Put(x,z,energy*f*f*(3-2*f),surfaceY);
+                Put(x,z,energy*f*f*(3-2*f),surfaceY,freshness);
             }
         }
     }

@@ -1,5 +1,10 @@
 # Visual wakes — issue #29, SEA-D48
 
+**Pre.10 update (31 October, SEA-D49):** [issue #35](foam-direction.md) gives wake foam its own wind-independent
+porous film, opening into lace with node age. The atlas's spare green channel now stores premultiplied freshness;
+texture allocation, shape, lifetime, dry cuts and the accepted 250,000-sample raster cap stay unchanged.
+`.sea foam all|wind|wakes|off` isolates surface foam layers without clearing histories.
+
 Sea 0.4.7-pre.9 adds client-only moving-source foam and spray on accepted pre.8 (`d11e6ba`). Pre.8 had no source
 histories: ships, swimmers and thrown objects could produce vanilla contact particles but no persistent Sea-aware
 wake. Sea now observes nearby water contacts, keeps bounded visual histories and samples their foam on the
@@ -90,7 +95,7 @@ legitimate floodwater.
 | Drawn trails | Nearest 32 tracks; old trails persist after source unload/despawn until TTL/eviction |
 | Splash contacts / rings | 64 queued contacts, 64 rings; same-source entries within 0.7 seconds deduplicated |
 | Atlas | 512² RGBA16F over 256² blocks, 0.5-block texels; 2 MiB GPU, 4 MiB upload buffer |
-| CPU raster | At most 1,500,000 sample visits/update; far segments clipped before subdivision |
+| CPU raster | At most 250,000 sample visits/update (coordinator review); far segments clipped before subdivision |
 | Upload | At most 4 MiB/update (40 MiB/s at 10 Hz), one texture, no extra offscreen render pass; idle uploads skipped |
 | Spray | Four births/update maximum (40/s), lifetime 0.5 seconds, sources within 64 blocks |
 | Fade | Starts min(96, 0.50 view distance), ends min(120, 0.68 view distance); Wmap starts at 0.75 |

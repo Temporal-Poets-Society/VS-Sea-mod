@@ -88,6 +88,20 @@ namespace Sea
                     .WithArgs(parsers.OptionalWord("value"))
                     .HandleWith(args => TuneWakes(sys, args[0] as string))
                 .EndSubCommand()
+                .BeginSubCommand("foam")
+                    .WithDescription("Isolate Sea foam without losing wake history: all, wind, wakes, off")
+                    .WithArgs(parsers.OptionalWord("view"))
+                    .HandleWith(args =>
+                    {
+                        string value=args[0] as string;
+                        if (!string.IsNullOrEmpty(value)) {
+                            if (!Enum.TryParse<FoamView>(value,true,out var view) || !Enum.IsDefined(view) || char.IsDigit(value[0]))
+                                return TextCommandResult.Error("Use .sea foam all|wind|wakes|off");
+                            sys.FoamView=view;
+                        }
+                        return TextCommandResult.Success(sys.FoamStatus);
+                    })
+                .EndSubCommand()
                 .BeginSubCommand("reset")
                     .WithDescription("Back to sea.json's night, sky, glint and wake strengths")
                     .HandleWith(args =>
@@ -96,6 +110,7 @@ namespace Sea
                         if (c == null) return TextCommandResult.Error("Sea's sky presentation isn't running on this client.");
                         c.NightOverride = c.SkyOverride = c.GlintOverride = null;
                         if (sys.Wakes != null) sys.Wakes.StrengthOverride = null;
+                        sys.FoamView = FoamView.All;
                         return TextCommandResult.Success($"Back to sea.json: night {c.NightStrength:0.##}, sky {c.SkyStrength:0.##}, glint {c.GlintStrength:0.##}.");
                     })
                 .EndSubCommand();
@@ -157,6 +172,7 @@ namespace Sea
             sb.Append($"\nDry hulls: water cut out {(Hooks.DryHullsInjected ? "in the shader" : "MISSING")}, {sys.DrawnDryHullCount} drawn this frame, {sys.DrySpaceSources} mod(s) with dry places; your eyes are {(sys.IsDry(eye.X, eye.Y, eye.Z) ? "in a dry place" : "not in a dry place")}; {DryParticles.Dropped} water specks, splashes and spray kept out of dry places so far.");
             sb.Append($"\nPatches in: {string.Join(", ", Hooks.Active)}.");
             sb.Append("\n" + sys.CelestialStatus);
+            sb.Append("\n" + sys.FoamStatus);
             sb.Append("\n" + (sys.Wakes?.Status ?? "Wakes unavailable."));
             return sb.ToString();
         }

@@ -82,7 +82,7 @@ namespace ShaderCheck
                             int cp = Build("celestial water, dry cut " + dry, cv, cf, defs);
                             if (cp != 0)
                             {
-                                foreach (string u in new[] { "seaSun", "seaMoon", "seaEffects", "seaSky", "seaSkyTex", "seaGlowTex", "seaWeather", "seaEye", "seaStorm", "seaFoamOrigin", "seaWakeTex", "seaWakeArea", "seaWakeHeight" })
+                                foreach (string u in new[] { "seaSun", "seaMoon", "seaEffects", "seaSky", "seaSkyTex", "seaGlowTex", "seaWeather", "seaEye", "seaStorm", "seaFoamOrigin", "seaWakeTex", "seaWakeArea", "seaWakeHeight", "seaWakeOrigin" })
                                     Check(GL.GetUniformLocation(cp, u) >= 0, "celestial uniform live: " + u);
                                 GL.DeleteProgram(cp);
                             }
@@ -137,80 +137,11 @@ namespace ShaderCheck
             CelestialVisible();
             SkyReflection();
             FarGlintMatchesNear();
-            StormFoam();
+            FoamGpu();
             WakeGpu();
 
             Console.WriteLine(failures == 0 ? "ALL OK" : $"{failures} FAILED");
             return failures == 0 ? 0 : 1;
-        }
-
-        // The real foam function on the GPU: occupancy/anisotropy, crest preference, off, world-anchor wrapping.
-        // Diagnostic PPMs are masks over blue, not game renders or visual acceptance.
-        static void StormFoam()
-        {
-            const int n = 256;
-            const string vertex = "#version 330 core\nvoid main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0,1); }";
-            string fragment = "#version 330 core\nuniform float flatFogDensity;\nuniform float flatFogStart;\n" + CelestialShader.Declarations + @"
-uniform float testCoverage;
-uniform float testSpume;
-uniform float testCrest;
-uniform vec2 testOrigin;
-out vec4 outColor;
-void main() {
-    vec2 p = gl_FragCoord.xy * 0.5 + testOrigin;
-    float crest = testCrest > 3.0 ? 1.5 * sin(p.x * 0.09817477) : testCrest;
-    float foam = seaWindFoam(p, crest, testCoverage, testSpume);
-    outColor = vec4(foam, foam, foam, 1);
-}";
-            int p = Build("storm foam diagnostic", vertex, fragment, new Dictionary<string,int>());
-            if (p == 0) return;
-            int vao = GL.GenVertexArray(), tex = GL.GenTexture(), fbo = GL.GenFramebuffer();
-            GL.BindVertexArray(vao);
-            GL.BindTexture(TextureTarget.Texture2D, tex);
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba32f, n, n, 0, PixelFormat.Rgba, PixelType.Float, IntPtr.Zero);
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, fbo);
-            GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, tex, 0);
-            GL.Viewport(0,0,n,n); GL.UseProgram(p);
-            float[] Draw(double coverage, float crest, float spume, float ox = 0, float oy = 0)
-            {
-                GL.Uniform1(GL.GetUniformLocation(p,"testCoverage"), (float)coverage);
-                GL.Uniform1(GL.GetUniformLocation(p,"testCrest"), crest);
-                GL.Uniform1(GL.GetUniformLocation(p,"testSpume"), spume);
-                GL.Uniform2(GL.GetUniformLocation(p,"testOrigin"), ox, oy);
-                GL.DrawArrays(PrimitiveType.Triangles,0,3);
-                var data = new float[n*n];
-                GL.ReadPixels(0,0,n,n,PixelFormat.Red,PixelType.Float,data);
-                return data;
-            }
-            double Mean(float[] a) { double sum=0; foreach(float v in a) sum+=v; return sum/a.Length; }
-            double previous = -1;
-            Directory.CreateDirectory("obj");
-            foreach (double strength in new[] {0.3,0.8,1.2,1.5})
-            {
-                float[] data = Draw(WaveSpectrum.WhitecapCoverage(strength), 4, (float)Math.Clamp((strength-0.9)/0.6,0,1));
-                double mean=Mean(data); int white=0; foreach(float v in data) if(v>0.5) white++;
-                Check(mean > previous && (strength != 0.3 || mean < 0.005) && (strength != 1.5 || mean > 0.65),
-                    $"GPU foam {strength:0.0}: mean mask {mean:0.0000}, area > 0.5 = {100.0*white/data.Length:F1}%");
-                previous=mean;
-                using var file = File.Create($"obj/storm-foam-{strength.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)}.ppm");
-                byte[] header = System.Text.Encoding.ASCII.GetBytes($"P6\n{n} {n}\n255\n"); file.Write(header);
-                foreach(float v in data) { file.WriteByte((byte)(15+225*v)); file.WriteByte((byte)(40+200*v)); file.WriteByte((byte)(55+185*v)); }
-            }
-            double c=WaveSpectrum.WhitecapCoverage(0.8);
-            Check(Mean(Draw(0,2,1)) == 0 && Mean(Draw(c,2,0)) > Mean(Draw(c,-2,0))+0.1,
-                "GPU: zero coverage (calm/shelter/disabled waves) gives no foam; breaking foam favours crests over troughs");
-            float[] streaks=Draw(WaveSpectrum.WhitecapCoverage(1.2),-2,0);
-            double along=0,across=0;
-            for(int y=0;y<n-1;y++) for(int x=0;x<n-1;x++) {
-                along+=Math.Abs(streaks[y*n+x+1]-streaks[y*n+x]);
-                across+=Math.Abs(streaks[(y+1)*n+x]-streaks[y*n+x]);
-            }
-            Check(across>along*2, $"GPU: streaks align downwind (cross/along gradient {across/along:0.0})");
-            float[] wrapped=Draw(WaveSpectrum.WhitecapCoverage(1.2),-2,0,65536,65536);
-            double worst=0; for(int i=0;i<wrapped.Length;i++) worst=Math.Max(worst,Math.Abs(wrapped[i]-streaks[i]));
-            Check(worst<0.001, $"GPU: procedural world-anchor wrap is continuous ({worst:E2})");
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer,0); GL.UseProgram(0);
-            GL.DeleteFramebuffer(fbo); GL.DeleteTexture(tex); GL.DeleteVertexArray(vao); GL.DeleteProgram(p);
         }
 
         // (0.4.4) The sky reflection: little looking down, the sky's own colour at a grazing angle; and alpha rises with it

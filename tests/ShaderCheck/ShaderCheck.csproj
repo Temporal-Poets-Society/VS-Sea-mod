@@ -20,6 +20,7 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="WakeGpu.cs" />
+    <Compile Include="FoamGpu.cs" />
     <Compile Include="..\..\src\Water\WakeField.cs" Link="Water\WakeField.cs" />
     <Compile Include="..\..\src\Water\WaterShader.cs" Link="Water\WaterShader.cs" />
     <Compile Include="..\..\src\Water\CelestialShader.cs" Link="Water\CelestialShader.cs" />

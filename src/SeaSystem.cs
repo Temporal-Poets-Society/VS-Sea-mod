@@ -48,6 +48,9 @@ namespace Sea
         public CelestialRenderer Celestial => celestialRenderer;
         /// <summary>Client-only wake presentation (null on the server).</summary>
         public WakeRenderer Wakes => waterRenderer?.Wakes;
+        /// <summary>Client-only diagnostic isolation; does not delete wake histories or change waves.</summary>
+        public FoamView FoamView;
+        public string FoamStatus => waterRenderer?.FoamStatus ?? "Foam input unavailable.";
 
         readonly System.Collections.Generic.Dictionary<long, WakeHull> wakeHulls = new();
         readonly object wakeSync = new();

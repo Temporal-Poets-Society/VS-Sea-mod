@@ -1,5 +1,9 @@
 # Storm waves — issue #28, SEA-D46 (30 October 2026)
 
+**Pre.10 note (SEA-D49, issue #35):** the wave-spectrum evidence below is unchanged. Its foam equation/old mask
+renders are historical; [the new foam audit](foam-direction.md) replaces the smooth ribbon morphology, distinguishes
+empirical input from actual rendered coverage, and supplies current four-strength GPU renders under `obj/foam35/`.
+
 Implemented in 0.4.7-pre.8; uncommitted work for the coordinator. No game client, installation or save was used.
 The issue is the force-12 sea off Sri Lanka (6.6°N, 82.7°E): small regular waves and glassy reflections over a few
 swells, without breaking crests or wind foam. Appearance and gameplay acceptance still require an in-game look.

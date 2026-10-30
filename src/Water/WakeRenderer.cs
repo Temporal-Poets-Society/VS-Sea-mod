@@ -249,9 +249,11 @@ namespace Sea
         {
             if(!p.HasUniform("seaWakeArea")) return;
             try {
-                p.Uniform("seaWakeArea",(float)(map.X-camX),(float)(map.Z-camZ),(float)(1/WakeMap.Span),texture!=0 && atlasContainsInk?strength:0);
+                bool visible=sea.FoamView!=FoamView.Wind && sea.FoamView!=FoamView.Off;
+                p.Uniform("seaWakeArea",(float)(map.X-camX),(float)(map.Z-camZ),(float)(1/WakeMap.Span),texture!=0 && atlasContainsInk && visible?strength:0);
                 if(strength<=0 || texture==0)return;
                 p.Uniform("seaWakeHeight",(float)(map.CameraY-camY));
+                if(p.HasUniform("seaWakeOrigin")) p.Uniform("seaWakeOrigin",(float)WorldShape.Mod(camX,8192),(float)WorldShape.Mod(camZ,8192));
                 GL.GetInteger(GetPName.ActiveTexture,out int active);
                 try { p.BindTexture2D("seaWakeTex",texture,12); } finally { GL.ActiveTexture((TextureUnit)active); }
             } catch(Exception e) {

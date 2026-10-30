@@ -5,6 +5,14 @@ calm down with the wind of the past hours, and are the same on the server and ev
 It also owns the water shaders, so ship mods (Magelan, Hansa) ask Sea to keep waves out of their hulls instead of each
 patching the shaders.
 
+Version **0.4.7-pre.10** (31 October 2026, issue #35): broken crest patches, thin windrows from about Beaufort 8,
+and porous bubble/lace foam replace pre.9's smooth white ribbons. Windrows follow the wind's **travel** direction;
+wake texture follows its own world-space trail and ages independently. `.sea` now reports the exact current local
+foam wind/coverage input (Earth overrides the fallback `SeaWindStrength`); `.sea foam all|wind|wakes|off` isolates
+the layers without deleting wake history. Wave/ship samples and the accepted 250,000-sample wake cap are unchanged.
+[Cause, compass audit, four-strength GPU comparisons and verification limits](docs/foam-direction.md), SEA-D49.
+Offline checks pass; **in-game appearance and the screenshot ribbon's exact source remain to be checked**.
+
 Version **0.4.7-pre.9** (30 October 2026, issue #29): client-side ship/swimmer wakes, splash rings and bow spray.
 Kelvin arms, bow foam, stern wash and a spreading foam trail are painted onto Sea's own displaced water, using the
 wind-whitecap lighting and dry-hull cut. Ships can declare waterline dimensions with `SetWakeHull`; otherwise Sea
@@ -281,6 +289,9 @@ strengths on that client at once, until you leave the world; `.sea night` alone 
 and `.sea reset` go back to `sea.json`, which they never change.
 `.sea wakes off`, `.sea wakes 0..2` and `.sea wakes default` control wakes on this client until leaving the world;
 `.sea` reports the source/node/raster counts. `.sea reset` also resets the wake override.
+`.sea foam all|wind|wakes|off` isolates Sea foam layers while retaining the same histories; vanilla contact foam
+and reflections remain visible. `.sea`/`.sea foam` report **Foam wind**, its wind-from/toward bearings, Beaufort
+force, whitecap input and windrow ramp. With Earth as provider, read those values rather than `SeaWindStrength`.
 
 ## Dry hulls (for ship mods)
 

@@ -6,6 +6,11 @@ and the README's 0.4.2 note. Severity is the reviewers' estimate; nothing here h
 
 ## Not verified at all
 
+Pre.10 issue #35: [wind axes, ribbon causes, cellular/lace changes and GPU comparisons](foam-direction.md) are
+recorded with SEA-D49. The supplied image does not establish actual Earth wind strength or the individual
+toward-camera ribbon's source. Capture `.sea` and `.sea foam wind|wakes|off|all` at the same camera to identify it.
+Close-view appearance, storm density and frame time remain in-game checks; no client was launched for this fix.
+
 Pre.9 issue #29: wake geometry, histories, bounded raster, shader compilation, rest-height rejection and dry-cut
 composition are checked offline. Live entity contacts, the optional size API in a ship mod, spray, moving-camera
 appearance and the near/far handoff still need the [wake play-test checklist](wakes.md#in-game-checklist).
