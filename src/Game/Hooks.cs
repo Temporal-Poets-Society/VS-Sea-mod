@@ -75,6 +75,8 @@ namespace Sea
         /// <summary>The client's patches: the water shaders and their uniforms, the camera in dry places, water particles.</summary>
         static void ApplyClient(Harmony harmony)
         {
+            Try("wake splash contacts", () => harmony.Patch(AccessTools.Method(typeof(Entity), nameof(Entity.OnCollideWithLiquid)),
+                postfix: new HarmonyMethod(typeof(Hooks), nameof(WakeContactPostfix))));
             Try("water shader", () =>
             {
                 var registry = AccessTools.TypeByName("Vintagestory.Client.NoObf.ShaderRegistry");
@@ -310,6 +312,12 @@ namespace Sea
             var block = e.World.BlockAccessor.GetBlock(new BlockPos((int)Math.Floor(eyeX), (int)Math.Floor(eyeY), (int)Math.Floor(eyeZ), pos.Dimension), BlockLayersAccess.MostSolid);
             if (block != null && block.Id != 0 && !block.IsLiquid()) return;   // something solid at the eyes: vanilla's call stands
             if (sys.IsDry(eyeX, eyeY, eyeZ)) __instance.HasAir = true;
+        }
+
+        /// <summary>Retain client entry impacts between the visual wake observer's polls.</summary>
+        static void WakeContactPostfix(Entity __instance)
+        {
+            if (__instance?.World?.Side == EnumAppSide.Client) SeaSystem.For(EnumAppSide.Client)?.Wakes?.Contact(__instance);
         }
 
         /// <summary>

@@ -6,6 +6,11 @@ and the README's 0.4.2 note. Severity is the reviewers' estimate; nothing here h
 
 ## Not verified at all
 
+Pre.9 issue #29: wake geometry, histories, bounded raster, shader compilation, rest-height rejection and dry-cut
+composition are checked offline. Live entity contacts, the optional size API in a ship mod, spray, moving-camera
+appearance and the near/far handoff still need the [wake play-test checklist](wakes.md#in-game-checklist).
+The Kelvin pattern is a visual approximation; it adds foam/shading only and never moves a ship.
+
 0.4.2 passed `tests/SeaTests`, `tests/ShaderCheck` (GPU), `tests/SkyIntegrationCheck` and the dedicated-server
 self-test. None of these runs a client, so these 0.4.2 paths have no automated check and need a play test:
 

@@ -36,6 +36,10 @@ namespace Sea
         /// strength 1.5. Blends in over strength 0.4..0.8; clients receive the server's value.</summary>
         [ProtoMember(15, IsRequired = true)] public float StormHeightScale = 1;
 
+        /// <summary>Client-only cosmetic wakes; never change the shared wave samples or ship physics.</summary>
+        [ProtoMember(16, IsRequired = true)] public bool WakeEnabled = true;
+        [ProtoMember(17, IsRequired = true)] public float WakeStrength = 1;
+
         /// <summary>
         /// (0.3.7) Numbers a hand-edited sea.json can't use (negative, NaN, infinite) back to their defaults.
         /// </summary>
@@ -45,6 +49,7 @@ namespace Sea
             static float Ok(float v, float fallback) => float.IsFinite(v) && v >= 0 ? v : fallback;
             WaveScale = Ok(WaveScale, d.WaveScale);
             StormHeightScale = System.Math.Clamp(Ok(StormHeightScale, d.StormHeightScale), 0, 4);
+            WakeStrength = System.Math.Clamp(Ok(WakeStrength, d.WakeStrength), 0, 2);
             CelestialReflections = System.Math.Clamp(Ok(CelestialReflections, d.CelestialReflections), 0, 2);
             SkyReflections = System.Math.Clamp(Ok(SkyReflections, d.SkyReflections), 0, 2);
             NightVisibility = System.Math.Clamp(Ok(NightVisibility, d.NightVisibility), 0, 2);

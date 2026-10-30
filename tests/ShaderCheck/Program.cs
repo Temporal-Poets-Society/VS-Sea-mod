@@ -15,7 +15,7 @@ namespace ShaderCheck
     /// high. Vanilla's own shaders go through first: if they don't compile here, the check itself is off.
     ///   dotnet run --project tests/ShaderCheck
     /// </summary>
-    static class Program
+    static partial class Program
     {
         static int failures;
         static readonly Dictionary<string, string> includes = new();
@@ -82,7 +82,7 @@ namespace ShaderCheck
                             int cp = Build("celestial water, dry cut " + dry, cv, cf, defs);
                             if (cp != 0)
                             {
-                                foreach (string u in new[] { "seaSun", "seaMoon", "seaEffects", "seaSky", "seaSkyTex", "seaGlowTex", "seaWeather", "seaEye", "seaStorm", "seaFoamOrigin" })
+                                foreach (string u in new[] { "seaSun", "seaMoon", "seaEffects", "seaSky", "seaSkyTex", "seaGlowTex", "seaWeather", "seaEye", "seaStorm", "seaFoamOrigin", "seaWakeTex", "seaWakeArea", "seaWakeHeight" })
                                     Check(GL.GetUniformLocation(cp, u) >= 0, "celestial uniform live: " + u);
                                 GL.DeleteProgram(cp);
                             }
@@ -138,6 +138,7 @@ namespace ShaderCheck
             SkyReflection();
             FarGlintMatchesNear();
             StormFoam();
+            WakeGpu();
 
             Console.WriteLine(failures == 0 ? "ALL OK" : $"{failures} FAILED");
             return failures == 0 ? 0 : 1;

@@ -71,7 +71,12 @@ foam** separately, after reflections and before fog: crest patches, downwind str
 depth/contact foam intact. It requires animated, upward, sky-exposed water above the camera's underwater threshold;
 oceanity suppresses it in sheltered/weak-wave water and dry-hull discard still runs first. It remains on with glints
 and sky reflection disabled and with vanilla's foam graphics option off, as Sea's waves do with waving-stuff off.
-It shares the celestial shader compile fallback, so that fallback also removes wind foam. Added reflections require upward, sky-exposed
+Since pre.9, moving-source wake foam shares this same light/alpha/fog path (SEA-D48, [wake notes](wakes.md)).
+Its mask samples the displaced triangles, tests their original water level and runs after the existing dry-hull
+discard. Wakes also work on sheltered/covered water; only wind foam requires oceanity and sky exposure. Wake foam
+fades out by min(120 blocks, 0.68 view distance), before Wmap starts at 0.75. Wakes add no displacement, depth-pass
+work or far-water consumer. The optional bow-spray particles also veto dry-space births/predicted endpoints.
+It shares the celestial shader compile fallback, so that fallback also removes wind foam and wakes. Added reflections require upward, sky-exposed
 water and a camera above water. The eye ray comes from the inverse camera matrix, including third-person offsets.
 Directional sun shadows are retained; moon and star occlusion use the water's existing skylight exposure flag,
 not a new terrain ray trace. Weather attenuation is a local average, not exact occlusion by each visible cloud.

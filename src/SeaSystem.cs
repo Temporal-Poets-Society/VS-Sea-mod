@@ -46,6 +46,24 @@ namespace Sea
         public string CelestialStatus => celestialRenderer?.Status ?? "Celestial presentation unavailable.";
         /// <summary>The client's sky and night presentation (null on the server, or before the world is ready).</summary>
         public CelestialRenderer Celestial => celestialRenderer;
+        /// <summary>Client-only wake presentation (null on the server).</summary>
+        public WakeRenderer Wakes => waterRenderer?.Wakes;
+
+        readonly System.Collections.Generic.Dictionary<long, WakeHull> wakeHulls = new();
+        readonly object wakeSync = new();
+        /// <summary>Declare an entity's visual waterline dimensions in blocks, on the client. No physics or network
+        /// state. Call after spawning, remove on despawn; at most 512 declarations. False means invalid/server/full.</summary>
+        public bool SetWakeHull(long entityId, double length, double beam, double draft, double centreOffset = 0)
+        {
+            var hull = new WakeHull(length, beam, draft, centreOffset);
+            if (capi == null || !hull.Valid) return false;
+            lock (wakeSync) {
+                if (!wakeHulls.ContainsKey(entityId) && wakeHulls.Count >= 512) return false;
+                wakeHulls[entityId] = hull; return true;
+            }
+        }
+        public void RemoveWakeHull(long entityId) { lock (wakeSync) wakeHulls.Remove(entityId); }
+        internal bool TryWakeHull(long id, out WakeHull hull) { lock (wakeSync) return wakeHulls.TryGetValue(id, out hull); }
 
         public SeaConfig Config = new();
         /// <summary>The wind model; null until the world is ready (server) or the server's parameters arrived (client).</summary>
@@ -83,6 +101,7 @@ namespace Sea
 
         public override void Dispose()
         {
+            lock (wakeSync) wakeHulls.Clear();
             if (api == null) return;
             if (api.Side == EnumAppSide.Server && serverInstance == this) serverInstance = null;
             if (api.Side == EnumAppSide.Client && clientInstance == this) clientInstance = null;

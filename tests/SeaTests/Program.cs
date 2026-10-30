@@ -166,6 +166,7 @@ namespace SeaTests
 
             Waves();
             StormEvidence.Run(Check);
+            WakeChecks.Run(Check);
 
             Console.WriteLine("night sky presentation");
             {
@@ -815,7 +816,7 @@ namespace SeaTests
                 // (0.4.0) a 0.3 server's config (members 1-8 were Sea's weather, now retired) still reads: those are skipped
                 var old = new OldSeaConfig { WindModel = "Steady", PrevailingStrength = 2, Variability = 3, Gusts = 4, StormFrequency = 5, StormRadius = 6, StormSpeed = 7, SeasonShift = 8, WaveScale = 0.5f, CelestialReflections = 0 };
                 var read = Vintagestory.API.Util.SerializerUtil.Deserialize<SeaConfig>(Vintagestory.API.Util.SerializerUtil.Serialize(old));
-                Check(read.WaveScale == 0.5f && read.CelestialReflections == 0 && read.SeaWindFrom == d.SeaWindFrom && read.SeaWindStrength == d.SeaWindStrength && read.StormHeightScale == 1,
+                Check(read.WaveScale == 0.5f && read.CelestialReflections == 0 && read.SeaWindFrom == d.SeaWindFrom && read.SeaWindStrength == d.SeaWindStrength && read.StormHeightScale == 1 && read.WakeEnabled && read.WakeStrength == 1,
                     "a 0.3 config's retired weather members (1-8) are skipped; the rest reads as before");
             }
 

@@ -19,6 +19,8 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="StormEvidence.cs" />
+    <Compile Include="WakeChecks.cs" />
+    <Compile Include="..\..\src\Water\WakeField.cs" Link="Water\WakeField.cs" />
     <Compile Include="..\..\src\Wind\*.cs" Link="Wind\%(Filename).cs" />
     <Compile Include="..\..\src\Water\WaterShader.cs" Link="Water\WaterShader.cs" />
     <Compile Include="..\..\src\Water\CelestialShader.cs" Link="Water\CelestialShader.cs" />

@@ -24,6 +24,8 @@ namespace Sea
 
         readonly ICoreClientAPI capi;
         readonly SeaSystem sys;
+        public WakeRenderer Wakes { get; }
+        double wakeCamX, wakeCamY, wakeCamZ;
         readonly List<WaterClipBox> clips = new();
         readonly float[] clipA = new float[WaterShader.MaxClips * 4];
         readonly float[] clipB = new float[WaterShader.MaxClips * 4];
@@ -63,6 +65,7 @@ namespace Sea
         {
             this.capi = capi;
             this.sys = sys;
+            Wakes = new WakeRenderer(capi, sys);
             current = this;
         }
 
@@ -105,6 +108,7 @@ namespace Sea
 
         void Prepare(double camX, double camY, double camZ)
         {
+            wakeCamX = camX; wakeCamY = camY; wakeCamZ = camZ;
             // the waves ships ride (SampleWaves), whoever decides the wind: without a wind provider they follow the
             // config's steady wind (WindModel.SeaWind). Vanilla's warp only until the first trains are worked out.
             var place = sys.CameraWaves;
@@ -216,6 +220,9 @@ namespace Sea
             clipCount = LastClipCount = n;
             LastDryCount = dry;
             shapeCount = LastDryShapeCount = shapes;
+            var visibleWater = capi.Shader.GetProgram((int)EnumShaderProgram.Chunkliquid);
+            Wakes.Prepare(camX, camY, camZ, clips, wn > 0 && WavesInjected && !Hooks.CelestialDisabled && !uploadFailed
+                && visibleWater != null && !visibleWater.Disposed && visibleWater.HasUniform("seaWakeArea"));
         }
 
         /// <summary>
@@ -266,6 +273,7 @@ namespace Sea
             try
             {
                 if (!prog.HasUniform("seaClipCount")) return;
+                r.Wakes.Bind(prog, r.wakeCamX, r.wakeCamY, r.wakeCamZ);
                 int slot = -1, free = -1;
                 for (int i = 0; i < r.uploadedTo.Length; i++)
                 {
@@ -325,6 +333,7 @@ namespace Sea
             if (prog.HasUniform("seaPixel")) prog.Uniform("seaPixel", pixel);
             if (prog.HasUniform("seaStorm")) prog.Uniform("seaStorm", stormX, stormZ, foamCoverage, spume);
             if (prog.HasUniform("seaFoamOrigin")) prog.Uniform("seaFoamOrigin", foamAlong, foamAcross, foamDrift);
+            Wakes.Bind(prog, wakeCamX, wakeCamY, wakeCamZ);
         }
 
         /// <summary>An error here would end the game (it's inside its drawing): Sea's water numbers stop instead, logged once.</summary>
@@ -354,6 +363,8 @@ namespace Sea
                 if (waves >= 0) GL.Uniform1(waves, 0);
                 int storm = GL.GetUniformLocation(id, "seaStorm");
                 if (storm >= 0) GL.Uniform4(storm, 0f, 0f, 0f, 0f);
+                int wake = GL.GetUniformLocation(id, "seaWakeArea");
+                if (wake >= 0) GL.Uniform4(wake, 0f, 0f, 0f, 0f);
                 // (only once both went in: otherwise it's tried again at the next use)
                 switchedOff.Add(prog);
             }
@@ -402,6 +413,7 @@ namespace Sea
                         if (water) GL.Uniform1(GL.GetUniformLocation(id, "seaClipCount"), 0);
                         if (waves) GL.Uniform1(GL.GetUniformLocation(id, "seaWaveCount"), 0);
                         if (prog.HasUniform("seaStorm")) GL.Uniform4(GL.GetUniformLocation(id, "seaStorm"), 0f, 0f, 0f, 0f);
+                        if (prog.HasUniform("seaWakeArea")) GL.Uniform4(GL.GetUniformLocation(id, "seaWakeArea"), 0f, 0f, 0f, 0f);
                         if (sky) GL.Uniform2(GL.GetUniformLocation(id, "seaEffects"), 0f, 0f);
                         if (floor) GL.Uniform3(GL.GetUniformLocation(id, "seaNightFloor"), 0f, 0f, 0f);
                         if (prog.HasUniform("seaNightEnabled")) GL.Uniform1(GL.GetUniformLocation(id, "seaNightEnabled"), 0f);
@@ -427,6 +439,7 @@ namespace Sea
 
         public void Dispose()
         {
+            Wakes.Dispose();
             if (current == this) current = null;
         }
     }

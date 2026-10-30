@@ -47,6 +47,7 @@ namespace Sea
     seaSurfaceSlope = vec2(0.0);
     seaSurfaceRough = 0.0;
     seaFoamCrest = vec2(0.0);
+    seaWakeSurface = (xyz + origin).y;
     if ((seaEffects.x > 0.0 || seaEffects.y > 0.0 || seaStorm.z > 0.0) && (waterFlagsIn & 1) == 1 && (waterFlagsIn & LiquidIsLavaBitMask) == 0) {
         float div = ((waterFlagsIn & LiquidWeakWaveBitMask) > 0 ? 90.0 : 5.0)
             * max(0.2, 1.0 - float((waterFlagsIn >> 2) & 255) / 255.0);
@@ -76,7 +77,7 @@ namespace Sea
     }");
             // (seaEffects and seaEye as the fragment stage declares them: one uniform of the program)
             return code.Insert(code.IndexOf("void main(", StringComparison.Ordinal),
-                "out vec2 seaSurfaceSlope;\nout float seaSurfaceRough;\nout vec2 seaFoamCrest;\nuniform vec4 seaStorm = vec4(0.0);\nuniform vec2 seaEffects = vec2(0.0);\nuniform vec3 seaEye;\nuniform float seaPixel = 0.0;\n");
+                "out vec2 seaSurfaceSlope;\nout float seaSurfaceRough;\nout vec2 seaFoamCrest;\nout float seaWakeSurface;\nuniform vec4 seaStorm = vec4(0.0);\nuniform vec2 seaEffects = vec2(0.0);\nuniform vec3 seaEye;\nuniform float seaPixel = 0.0;\n");
         }
 
         public static string Fragment(string code)
@@ -112,15 +113,20 @@ namespace Sea
         // reflectance is small; Fresnel only shades it.
         if (seaEffects.x > 0.0) texColor = seaGlints(texColor, ray, exposed * (0.55 + 0.45 * fres), clamp(pow(shadowBright, 4.0), 0.0, 1.0));
     }
-    // Sea owns open-sea wind foam; vanilla's depth/contact foam above is preserved. This sits outside the
+    // Sea owns wind/wake foam; vanilla's depth/contact foam above is preserved. This sits outside the
     // reflection switch and FOAMEFFECT, as the shared waves do outside WAVINGSTUFF. Lit by the water's own light.
-    if (!isLava && fragNormal.y > 0.9 && skyExposed > 0 && cameraUnderwater < 0.01 && seaStorm.z > 0.0) {
+    if (!isLava && fragNormal.y > 0.9 && cameraUnderwater < 0.01 && (seaStorm.z > 0.0 || seaWakeArea.w > 0.0)) {
         vec2 alongAcross = vec2(dot(fWorldPos.xz, seaStorm.xy), dot(fWorldPos.xz, vec2(-seaStorm.y, seaStorm.x)));
         vec2 foamPos = alongAcross + seaFoamOrigin.xy;
-        float coverage = seaStorm.z * seaFoamCrest.y;
-        float foam = seaWindFoam(foamPos, seaFoamCrest.x, coverage, seaStorm.w);
+        float coverage = skyExposed > 0 ? seaStorm.z * seaFoamCrest.y : 0.0;
+        float foam = coverage > 0.0 ? seaWindFoam(foamPos, seaFoamCrest.x, coverage, seaStorm.w) : 0.0;
         float edge = 1.0 - smoothstep(viewDistance * 0.76, viewDistance * 0.80, length(fWorldPos.xz));
         foam *= edge;
+        // Wakes share the wind-foam lighting/alpha path. The original liquid height rejects stacked ponds;
+        // sampling the mask on fWorldPos makes it ride these very triangles, including Sea's waves/hull calming.
+        float wake = seaWakeFoam(fWorldPos.xz, seaWakeSurface, viewDistance);
+        float turbulence = wake > 0.0 ? 0.30 + 0.70 * smoothstep(0.2, 0.85, seaFoamNoise(foamPos * 1.5)) : 0.0;
+        foam = clamp(max(foam, wake * turbulence), 0.0, 1.0);
         texColor.rgb = mix(texColor.rgb, vec3(0.88, 0.94, 0.92) * rgba.rgb * shadowBright, foam);
         texColor.a = max(texColor.a, foam * 0.96);
     }
@@ -128,10 +134,31 @@ namespace Sea
             return code.Insert(code.IndexOf("void main(", StringComparison.Ordinal), Declarations);
         }
 
+        // Shared by the production water shader and the offline GPU raster/height/fade checks.
+        public const string WakeDeclarations = @"
+uniform sampler2D seaWakeTex;
+uniform vec4 seaWakeArea = vec4(0.0); // camera-relative map origin xz, reciprocal span, strength
+uniform float seaWakeHeight = 0.0; // atlas bake camera y minus current camera y
+float seaWakeFoam(vec2 p, float restY, float viewRange) {
+    if (seaWakeArea.w <= 0.0) return 0.0;
+    vec2 uv = (p - seaWakeArea.xy) * seaWakeArea.z;
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 0.0;
+    float fade = 1.0 - smoothstep(min(96.0, viewRange * 0.50), min(120.0, viewRange * 0.68), length(p));
+    if (fade <= 0.0) return 0.0;
+    vec4 mask = texture(seaWakeTex, uv);
+    if (mask.a < 0.001) return 0.0;
+    float level = mask.b / mask.a + seaWakeHeight;
+    float sameWater = 1.0 - smoothstep(0.30, 0.65, abs(restY - level));
+    return clamp(mask.r * seaWakeArea.w * sameWater * fade, 0.0, 1.0);
+}
+";
+
         public const string Declarations = @"
 in vec2 seaSurfaceSlope;
 in float seaSurfaceRough; // (0.4.7) the slope variance of trains too short for the pixel, faded out of seaSurfaceSlope
 in vec2 seaFoamCrest;
+in float seaWakeSurface;
+" + WakeDeclarations + @"
 uniform vec4 seaStorm = vec4(0.0); // wind direction, bounded whitecap coverage, spume strength
 uniform vec3 seaFoamOrigin; // camera along/across wind minus drift, faster spume drift (periodic, CPU doubles)
 uniform vec3 seaEye;

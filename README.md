@@ -5,6 +5,15 @@ calm down with the wind of the past hours, and are the same on the server and ev
 It also owns the water shaders, so ship mods (Magelan, Hansa) ask Sea to keep waves out of their hulls instead of each
 patching the shaders.
 
+Version **0.4.7-pre.9** (30 October 2026, issue #29): client-side ship/swimmer wakes, splash rings and bow spray.
+Kelvin arms, bow foam, stern wash and a spreading foam trail are painted onto Sea's own displaced water, using the
+wind-whitecap lighting and dry-hull cut. Ships can declare waterline dimensions with `SetWakeHull`; otherwise Sea
+uses their registered hull clips or collision boxes. `WakeEnabled` and `WakeStrength` control the bounded effect;
+`.sea wakes off|default|0..2` tunes it locally. Shared wave samples and ship physics are unchanged.
+[Implementation, physics, limits and offline evidence](docs/wakes.md), SEA-D48; **in-game verification pending**.
+Feature reference/credit: Bobrik00's [Immersive Wakes 0.9.1](https://github.com/Bobrik00/ImmersiveWakes), a port of
+Goby56's Minecraft Wakes. Sea's implementation is original, under GPL-3.0; no upstream code/assets were copied.
+
 Version **0.4.7-pre.8** (30 October 2026, storm-wave work for issue #28): storms put their energy into long waves,
 with a Pierson–Moskowitz shape and peak wavelength 30 times gameplay significant height, while short-wave slope stays
 near the breeze's. `StormHeightScale` defaults to 1; 2.2 gives about 12-block hurricane seas with proportionally longer
@@ -254,6 +263,8 @@ Nothing about the wind or the waves is sent while you play, except a clock:
 |---|---|---|
 | `WaveScale` | 1 | multiplies wave heights, the chop too (0.3.7) |
 | `StormHeightScale` | 1 | 0–4, storm-only height multiplier, blended over wind strengths 0.4–0.8; 2.2 gives about 12-block Hs at 1.5. Wavelength scales with height; breeze/chop stay unchanged. Larger seas are opt-in and need ship/shore playtesting |
+| `WakeEnabled` | true | Visual wakes, rings and bow spray on clients; false disables all three. No server simulation or saved trails |
+| `WakeStrength` | 1 | Wake foam/spray strength, 0–2; 0 disables. Independent of glints, wind whitecaps and vanilla's foam graphics setting |
 | `SeaWindFrom` | 270 | without a wind provider: the compass bearing (degrees) the steady wind the sea follows blows from (0.4.0) |
 | `SeaWindStrength` | 0.3 | without a wind provider: that steady wind's strength, 0–1.5 (0 = a calm sea) (0.4.0) |
 | `CelestialReflections` | 1 | sun/moon trails; 0 restores vanilla highlights; range 0–2 |
@@ -268,6 +279,8 @@ has its own); an old file keeps them until the server writes it back without the
 Tuning by eye (0.4.3): on a client, `.sea night <0–4>`, `.sea sky <0–4>` and `.sea glint <0–4>` change these three
 strengths on that client at once, until you leave the world; `.sea night` alone shows the value, `.sea night default`
 and `.sea reset` go back to `sea.json`, which they never change.
+`.sea wakes off`, `.sea wakes 0..2` and `.sea wakes default` control wakes on this client until leaving the world;
+`.sea` reports the source/node/raster counts. `.sea reset` also resets the wake override.
 
 ## Dry hulls (for ship mods)
 
@@ -325,6 +338,8 @@ Sea.Wind w = sea.WindAt(x, z);        // w.X, w.Z: where the air goes; w.Strengt
 Sea.SeaState s = sea.SeaAt(x, z);     // Height (blocks), DirX/DirZ (where waves run), Period (s), Wavelength
 sea.Model?.At(x, z, totalHours);      // any place and game time (pure, thread-safe; calm without a provider)
 sea.AddWaterClipSource(src);          // client: an IWaterClipSource giving hull footprints each frame (width profile, tilt, calm ring)
+sea.SetWakeHull(entityId, 26, 7, 2.5, -0.2); // client: visual length/beam/draft/centre offset in blocks; bool accepted
+sea.RemoveWakeHull(entityId);         // on despawn; no entity/save/network/physics mutation
 
 // a wind provider (Earth): call on every side, any time, with the same pure, thread-safe functions (BCL types only,
 // so it can be bound by reflection without referencing Sea)

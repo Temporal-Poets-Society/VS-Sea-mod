@@ -83,13 +83,19 @@ namespace Sea
                     .WithArgs(parsers.OptionalWord("value"))
                     .HandleWith(args => Tune(sys, args[0] as string, "glint", c => c.GlintOverride, (c, v) => c.GlintOverride = v, c => c.GlintStrength))
                 .EndSubCommand()
+                .BeginSubCommand("wakes")
+                    .WithDescription("Visual wakes on this client: off, default, or strength 0-2; no ship physics change")
+                    .WithArgs(parsers.OptionalWord("value"))
+                    .HandleWith(args => TuneWakes(sys, args[0] as string))
+                .EndSubCommand()
                 .BeginSubCommand("reset")
-                    .WithDescription("Back to sea.json's night, sky and glint strengths")
+                    .WithDescription("Back to sea.json's night, sky, glint and wake strengths")
                     .HandleWith(args =>
                     {
                         var c = sys.Celestial;
                         if (c == null) return TextCommandResult.Error("Sea's sky presentation isn't running on this client.");
                         c.NightOverride = c.SkyOverride = c.GlintOverride = null;
+                        if (sys.Wakes != null) sys.Wakes.StrengthOverride = null;
                         return TextCommandResult.Success($"Back to sea.json: night {c.NightStrength:0.##}, sky {c.SkyStrength:0.##}, glint {c.GlintStrength:0.##}.");
                     })
                 .EndSubCommand();
@@ -111,6 +117,21 @@ namespace Sea
                 return TextCommandResult.Error($"Give a number from 0 to 4, or 'default': .sea {name} 1.5");
             set(c, Math.Clamp(v, 0, 4));
             return TextCommandResult.Success($"{name}: {now(c):0.##} on this client until you leave the world (sea.json unchanged). .sea shows the result.");
+        }
+
+        static TextCommandResult TuneWakes(SeaSystem sys, string value)
+        {
+            var w = sys.Wakes;
+            if (w == null) return TextCommandResult.Error("Sea's water presentation isn't running on this client.");
+            if (string.IsNullOrEmpty(value)) return TextCommandResult.Success(w.Status);
+            if (value == "default") w.StrengthOverride = null;
+            else if (value == "off") w.StrengthOverride = 0;
+            else {
+                if (!float.TryParse(value.Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float v) || !float.IsFinite(v))
+                    return TextCommandResult.Error("Give off, default, or a number from 0 to 2: .sea wakes 1");
+                w.StrengthOverride = Math.Clamp(v, 0, 2);
+            }
+            return TextCommandResult.Success($"Wakes: {w.Strength:0.##} on this client until you leave the world (sea.json unchanged).");
         }
 
         static string ClientReport(ICoreClientAPI capi, SeaSystem sys)
@@ -136,6 +157,7 @@ namespace Sea
             sb.Append($"\nDry hulls: water cut out {(Hooks.DryHullsInjected ? "in the shader" : "MISSING")}, {sys.DrawnDryHullCount} drawn this frame, {sys.DrySpaceSources} mod(s) with dry places; your eyes are {(sys.IsDry(eye.X, eye.Y, eye.Z) ? "in a dry place" : "not in a dry place")}; {DryParticles.Dropped} water specks, splashes and spray kept out of dry places so far.");
             sb.Append($"\nPatches in: {string.Join(", ", Hooks.Active)}.");
             sb.Append("\n" + sys.CelestialStatus);
+            sb.Append("\n" + (sys.Wakes?.Status ?? "Wakes unavailable."));
             return sb.ToString();
         }
 
