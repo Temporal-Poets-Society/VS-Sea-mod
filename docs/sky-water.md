@@ -65,7 +65,13 @@ reflection or a capture of clouds, planets, Milky Way, meteors or constellation 
 
 The added shader writes before the existing fog application; glints and the sky reflection raise alpha by their
 weight (the OIT pass shows rgb × alpha), as vanilla's highlight does. Water alpha, underwater effects, depth pass,
-foam and dry-hull discard remain owned by their existing paths. Added reflections require upward, sky-exposed
+contact foam and dry-hull discard remain owned by their existing paths. Since 0.4.7-pre.8 Sea adds **open-sea wind
+foam** separately, after reflections and before fog: crest patches, downwind streaks and surface spume (SEA-D46,
+[storm evidence](storm-waves.md)). It uses the water's existing light, raises alpha for OIT and leaves vanilla's
+depth/contact foam intact. It requires animated, upward, sky-exposed water above the camera's underwater threshold;
+oceanity suppresses it in sheltered/weak-wave water and dry-hull discard still runs first. It remains on with glints
+and sky reflection disabled and with vanilla's foam graphics option off, as Sea's waves do with waving-stuff off.
+It shares the celestial shader compile fallback, so that fallback also removes wind foam. Added reflections require upward, sky-exposed
 water and a camera above water. The eye ray comes from the inverse camera matrix, including third-person offsets.
 Directional sun shadows are retained; moon and star occlusion use the water's existing skylight exposure flag,
 not a new terrain ray trace. Weather attenuation is a local average, not exact occlusion by each visible cloud.
@@ -107,14 +113,17 @@ Tuning by eye (0.4.3): on a client, `.sea night <0–4>`, `.sea sky <0–4>` and
 strengths on that client at once, until you leave the world; `.sea night` alone shows the value, `.sea night default`
 and `.sea reset` go back to `sea.json`, which they never change.
 
-Values are limited to 0–2; invalid/negative values return to defaults. All three at 0 disable the added appearance.
+Values are limited to 0–2; invalid/negative values return to defaults. All three at 0 disable the celestial appearance;
+wind foam follows the wind and WaveScale independently.
 Zero values are explicitly serialized. Restart the server/client after config edits, or use the `.sea` tuning commands above.
 `.sea` reports shader activation, the moon's source, clear-sky factor, sun/moon altitudes, illuminated fraction, sky
 daylight, the three strengths in effect, ambient target and total days. A target is not proof of visible brightness or an active shader.
 
 ## Performance
 
-No new sky render passes or per-pixel wave loop. Wave gradients add at most 24 cosines per water vertex. Water
+No new sky render passes or per-pixel wave loop. Wave gradients add at most 24 cosines per water vertex. Since
+pre.8 the foam crest signal adds up to 24 sines in that same loop and five procedural value-noise samples per
+eligible water pixel; [storm evidence and remaining frame-time check](storm-waves.md). Water
 pixels add two smooth lobes and two reads of the game's own small sky textures (units 10 and 11); Wmap's distant sea
 adds a few arithmetic operations to the sky colour it already computes. (0.4.4) No textures, copies or CPU work of
 Sea's own remain: the star cube (≤ 8 MiB), the star atlas (≈ 1.33 MiB GPU + 2 MiB CPU) and its rebuilds (≈ 4.5 ms of

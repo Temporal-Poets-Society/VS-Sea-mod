@@ -54,10 +54,17 @@ namespace Sea
         public readonly double DirX, DirZ;
         /// <summary>Wave period in seconds.</summary>
         public readonly double Period;
+        // Production sea history supplies this independently of the optional storm-height multiplier. The public
+        // four-argument constructor stays ABI-compatible for ship mods and infers a shape from height as before.
+        internal readonly double SpectrumBlend;
 
         public SeaState(double height, double dirX, double dirZ, double period)
+            : this(height, dirX, dirZ, period, -1) { }
+
+        internal SeaState(double height, double dirX, double dirZ, double period, double spectrumBlend)
         {
             Height = height; DirX = dirX; DirZ = dirZ; Period = period;
+            SpectrumBlend = spectrumBlend;
         }
 
         /// <summary>Deep-water wavelength in blocks (1 block = 1 m).</summary>

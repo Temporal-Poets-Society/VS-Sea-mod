@@ -165,6 +165,7 @@ namespace SeaTests
             }
 
             Waves();
+            StormEvidence.Run(Check);
 
             Console.WriteLine("night sky presentation");
             {
@@ -241,8 +242,9 @@ namespace SeaTests
                     && NightSkyMath.MoonAmbientScale(1, 0.2f, 1, -0.2f, 1) == 1
                     && NightSkyMath.MoonAmbientScale(0.02f, 0.33f, 0.33f, 0.8f, 1, 0.2f) < 0.25f,
                     "local moon removes a false vanilla ambient moon (and clouds hide it); stronger external lighting and daylight are preserved");
-                string vf = File.ReadAllText(Path.Combine(Environment.GetEnvironmentVariable("APPDATA"), "Vintagestory/assets/game/shaders/chunkliquid.vsh"));
-                string ff = File.ReadAllText(Path.Combine(Environment.GetEnvironmentVariable("APPDATA"), "Vintagestory/assets/game/shaders/chunkliquid.fsh"));
+                string shaderRoot = Path.Combine(Environment.GetEnvironmentVariable("VINTAGE_STORY") ?? Path.Combine(Environment.GetEnvironmentVariable("APPDATA"), "Vintagestory"), "assets/game/shaders");
+                string vf = File.ReadAllText(Path.Combine(shaderRoot, "chunkliquid.vsh"));
+                string ff = File.ReadAllText(Path.Combine(shaderRoot, "chunkliquid.fsh"));
                 string cv = CelestialShader.Vertex(WaterShader.Inject(vf)), cf = CelestialShader.Fragment(ff);
                 Check(cv != null && cf != null && CelestialShader.Vertex(cv) == null && CelestialShader.Fragment(cf) == null, "celestial anchors apply once to installed water shader");
                 // (0.4.7-pre.5) the near water fades each train by Wmap's far-sea rule, keeping the faded slope as glint roughness;
@@ -274,7 +276,7 @@ namespace SeaTests
             }
 
             Console.WriteLine("water shader");
-            string shaders = Path.Combine(Environment.GetEnvironmentVariable("APPDATA") ?? "", "Vintagestory", "assets", "game", "shaders");
+            string shaders = Path.Combine(Environment.GetEnvironmentVariable("VINTAGE_STORY") ?? Path.Combine(Environment.GetEnvironmentVariable("APPDATA") ?? "", "Vintagestory"), "assets", "game", "shaders");
             foreach (string pass in WaterShader.Passes)
             {
                 string file = Path.Combine(shaders, pass + ".vsh");
@@ -784,11 +786,11 @@ namespace SeaTests
                 && strong != null && strong.Strength == WindModel.MaxStrength && strong.StartHours == 10,
                 "a fixed wind with NaN or infinite numbers is refused (the direction, the strength, the hours), a too strong one clamped");
 
-            var bad = new SeaConfig { WaveScale = float.PositiveInfinity, CelestialReflections = 8, SkyReflections = float.NaN, NightVisibility = -1, SeaWindFrom = float.NaN, SeaWindStrength = -1 }.Checked();
-            var bad2 = new SeaConfig { WaveScale = 0, SeaWindFrom = -90, SeaWindStrength = 9 }.Checked();
+            var bad = new SeaConfig { WaveScale = float.PositiveInfinity, StormHeightScale = float.NaN, CelestialReflections = 8, SkyReflections = float.NaN, NightVisibility = -1, SeaWindFrom = float.NaN, SeaWindStrength = -1 }.Checked();
+            var bad2 = new SeaConfig { WaveScale = 0, StormHeightScale = 99, SeaWindFrom = -90, SeaWindStrength = 9 }.Checked();
             var d = new SeaConfig();
             Check(bad.WaveScale == d.WaveScale && bad.CelestialReflections == 2 && bad.SkyReflections == 1 && bad.NightVisibility == 1
-                && bad.SeaWindFrom == d.SeaWindFrom && bad.SeaWindStrength == d.SeaWindStrength
+                && bad.SeaWindFrom == d.SeaWindFrom && bad.SeaWindStrength == d.SeaWindStrength && bad.StormHeightScale == 1 && bad2.StormHeightScale == 4
                 && bad2.WaveScale == 0 && bad2.SeaWindFrom == 270 && bad2.SeaWindStrength == (float)WindModel.MaxStrength,
                 "a config's negative, NaN or infinite numbers go back to the defaults (0 stays 0), the steady wind's bearing wraps and its strength is capped");
 
@@ -798,17 +800,22 @@ namespace SeaTests
                 var sent = new SeaParamsPacket
                 {
                     Key = 7, Circumference = 0, DaysPerYear = 108, HoursPerDay = 24,
-                    Config = new SeaConfig { WaveScale = 0, CelestialReflections = 0, SkyReflections = 0, NightVisibility = 0, SeaWindFrom = 0, SeaWindStrength = 0 }
+                    Config = new SeaConfig { WaveScale = 0, StormHeightScale = 0, CelestialReflections = 0, SkyReflections = 0, NightVisibility = 0, SeaWindFrom = 0, SeaWindStrength = 0 }
                 };
                 // (the game's own serializer, as its network channels use it)
                 var got = Vintagestory.API.Util.SerializerUtil.Deserialize<SeaParamsPacket>(Vintagestory.API.Util.SerializerUtil.Serialize(sent)).Config;
-                Check(got.WaveScale == 0 && got.CelestialReflections == 0 && got.SkyReflections == 0 && got.NightVisibility == 0 && got.SeaWindFrom == 0 && got.SeaWindStrength == 0,
+                Check(got.WaveScale == 0 && got.StormHeightScale == 0 && got.CelestialReflections == 0 && got.SkyReflections == 0 && got.NightVisibility == 0 && got.SeaWindFrom == 0 && got.SeaWindStrength == 0,
                     $"a config of zeros arrives as zeros (wave scale {got.WaveScale}, steady wind {got.SeaWindStrength} from {got.SeaWindFrom})");
+                sent.Config.StormHeightScale = 2.2f;
+                got = Vintagestory.API.Util.SerializerUtil.Deserialize<SeaParamsPacket>(Vintagestory.API.Util.SerializerUtil.Serialize(sent)).Config;
+                Check(got.StormHeightScale == 2.2f && new SeaConfig { StormHeightScale = -1 }.Checked().StormHeightScale == 1
+                    && new SeaConfig { StormHeightScale = float.PositiveInfinity }.Checked().StormHeightScale == 1,
+                    "storm height multiplier reaches clients unchanged; negative/non-finite values return to 1");
 
                 // (0.4.0) a 0.3 server's config (members 1-8 were Sea's weather, now retired) still reads: those are skipped
                 var old = new OldSeaConfig { WindModel = "Steady", PrevailingStrength = 2, Variability = 3, Gusts = 4, StormFrequency = 5, StormRadius = 6, StormSpeed = 7, SeasonShift = 8, WaveScale = 0.5f, CelestialReflections = 0 };
                 var read = Vintagestory.API.Util.SerializerUtil.Deserialize<SeaConfig>(Vintagestory.API.Util.SerializerUtil.Serialize(old));
-                Check(read.WaveScale == 0.5f && read.CelestialReflections == 0 && read.SeaWindFrom == d.SeaWindFrom && read.SeaWindStrength == d.SeaWindStrength,
+                Check(read.WaveScale == 0.5f && read.CelestialReflections == 0 && read.SeaWindFrom == d.SeaWindFrom && read.SeaWindStrength == d.SeaWindStrength && read.StormHeightScale == 1,
                     "a 0.3 config's retired weather members (1-8) are skipped; the rest reads as before");
             }
 
@@ -822,7 +829,7 @@ namespace SeaTests
             spec1.Amplitudes(new SeaState(0, 1, 0, 2.5), Wind.FromCompass(270, 1), amps);
             double chop1 = 0;
             foreach (var x in amps) chop1 = Math.Max(chop1, x);
-            Check(most == 0 && chop1 > 0.1, $"WaveScale 0: no waves at all, chop included ({most:0.000}; at 1 the chop is {chop1:0.00})");
+            Check(most == 0 && chop1 > 0.04, $"WaveScale 0: no waves at all, bounded chop included ({most:0.000}; at 1 the chop is {chop1:0.00})");
 
             // a hull with no outline left: nothing dry, and no exception
             bool threw = false, dry = false;

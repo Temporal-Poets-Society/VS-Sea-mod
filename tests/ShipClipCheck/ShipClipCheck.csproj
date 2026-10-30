@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Read-only integration probe: invokes Hansa's pure definition/frame/flood math; no client or world. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><LangVersion>12</LangVersion>
+    <RollForward>LatestMajor</RollForward><DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <UseAppHost>false</UseAppHost><NoWarn>$(NoWarn);CA1416</NoWarn>
+    <VintageStoryPath Condition="'$(VintageStoryPath)' == ''">$(VINTAGE_STORY)</VintageStoryPath>
+    <HansaRoot Condition="'$(HansaRoot)' == ''">$(HANSA_ROOT)</HansaRoot>
+    <HansaAssembly Condition="'$(HansaAssembly)' == ''">$(HansaRoot)/bin/Debug/mod/Hansa.dll</HansaAssembly>
+    <NetCoreRuntimeDir>$([System.IO.Directory]::GetDirectories('$(NetCoreRoot)shared\Microsoft.NETCore.App', '10.*')[0])</NetCoreRuntimeDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../SeaTests/StormEvidence.cs" Link="StormEvidence.cs" />
+    <Reference Include="$(NetCoreRuntimeDir)\System.*.dll" Exclude="$(NetCoreRuntimeDir)\System.Private.*.dll;$(NetCoreRuntimeDir)\System.IO.Compression.Native.dll" Private="false" />
+    <Reference Include="$(NetCoreRuntimeDir)\System.Private.CoreLib.dll" Private="false" />
+    <Reference Include="$(NetCoreRuntimeDir)\netstandard.dll" Private="false" /><Reference Include="$(NetCoreRuntimeDir)\mscorlib.dll" Private="false" />
+    <ProjectReference Include="../../Sea.csproj" />
+    <Reference Include="Hansa"><HintPath>$(HansaAssembly)</HintPath></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(VintageStoryPath)/Lib/Newtonsoft.Json.dll</HintPath></Reference>
+    <Reference Include="VintagestoryAPI"><HintPath>$(VintageStoryPath)/VintagestoryAPI.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

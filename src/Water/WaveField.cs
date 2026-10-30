@@ -9,18 +9,18 @@ namespace Sea
     /// how strong each train is, so when they change the waves grow and fade but never jump, and the surface at a
     /// place and time is the same on the server and every client (see <see cref="WavePlace"/> and <see cref="WaveClock"/>).
     ///
-    ///  - Swell: 12 wavelengths, half an octave apart (4 … 181 blocks), in 18 directions 20° apart. A sea state lights
-    ///    up the wavelengths from about 1.5× its peak wavelength down to a seventh of it (shorter ones smaller, same
-    ///    steepness), each split between the two directions next to where it runs, shorter ones spread up to ±40°.
-    ///  - Chop: 6.5 and 4.3 blocks, from the wind where you are.
+    ///  - Swell: 20 wavelengths, half an octave apart (4 … 2896 blocks), in 18 directions 20° apart. Breezes keep
+    ///    the original shape; storms blend to PM log-wavelength energy bands around Lp = 30 * gameplay Hs.
+    ///    Each splits between two directions; shorter waves spread up to ±40°.
+    ///  - Chop: the original 6.5 and 4.3 blocks, plus 9.7 in storms, bounded within the game-height spectrum.
     ///  - Deep-water speeds: long waves run fast, short ones slow.
     ///  - On a Cylinder World ring every train fits a whole number of waves around it, so the sea is seamless.
     /// </summary>
     public sealed class WaveSpectrum
     {
         public const int DirBins = 18;
-        public const int SwellBins = 12;
-        public static readonly double[] ChopLengths = { 6.5, 4.3 };
+        public const int SwellBins = 20;
+        public static readonly double[] ChopLengths = { 6.5, 4.3, 9.7 };
         const double DirStep = 2 * Math.PI / DirBins;
         const double G = 9.81;   // blocks/s² (1 block = 1 m)
 
@@ -46,7 +46,9 @@ namespace Sea
             grid = new double[Bins];
             for (int b = 0; b < Bins; b++)
             {
-                grid[b] = WorldShape.Mod(0.37 + b * 0.6180339887, 1);
+                // Appending long swell bins must not re-seed the two existing breeze chop trains.
+                int seedBin = b < SwellBins ? b : 12 + b - SwellBins;
+                grid[b] = WorldShape.Mod(0.37 + seedBin * 0.6180339887, 1);
                 double k = 2 * Math.PI / Length(b);
                 for (int d = 0; d < DirBins; d++)
                 {
@@ -58,7 +60,7 @@ namespace Sea
                     Kx[id] = kx;
                     Kz[id] = kz;
                     Omega[id] = Math.Sqrt(G * Math.Sqrt(kx * kx + kz * kz));
-                    Phase[id] = Noise.Unit(Noise.Hash(key, 0x5EA, b, d)) * 2 * Math.PI;
+                    Phase[id] = Noise.Unit(Noise.Hash(key, 0x5EA, seedBin, d)) * 2 * Math.PI;
                 }
             }
         }
@@ -87,6 +89,33 @@ namespace Sea
         /// <summary>A fixed side (-1..1) each swell bin is spread to, the shorter the wave the further.</summary>
         static double SpreadSide(int bin) => Math.Sin(bin * 2.39996 + 0.5);
 
+        /// <summary>Leave calm/breeze geometry intact; change the spectrum smoothly from strength .4 to .8.</summary>
+        public static double StormBlend(double strength)
+        {
+            double t = Math.Clamp((strength - 0.4) / 0.4, 0, 1);
+            return t * t * (3 - 2 * t);
+        }
+
+        /// <summary>Monahan & O'Muircheartaigh (1980), bounded appearance target, not a hurricane forecast.</summary>
+        public static double WhitecapCoverage(double strength)
+        {
+            double u = Math.Clamp(strength, 0, WindModel.MaxStrength) * Beaufort.MetersPerSecondPerUnit;
+            double onset = Math.Clamp((u - 5.5) / 5.3, 0, 1);
+            onset *= onset * (3 - 2 * onset);
+            return Math.Min(0.95, 3.84e-6 * Math.Pow(u, 3.41)) * onset;
+        }
+
+        // PM S(f) df on logarithmic wavelength bins: amplitude proportional to L exp(-5/8 (L/Lp)²).
+        // The very short tail is represented by bounded chop; taper it to fit the existing 24-train GPU budget.
+        static double DevelopedShape(double u)
+        {
+            if (u <= -3 || u >= 1.5) return 0;
+            double r = Math.Pow(2, u), w = r * Math.Exp(-0.625 * r * r);
+            if (u < -2.5) w *= Math.Pow(Math.Cos(Math.PI * (-2.5 - u)), 2);
+            if (u > 1) w *= Math.Pow(Math.Cos(Math.PI * (u - 1)), 2);
+            return w;
+        }
+
         /// <summary>
         /// How strong every train is for a sea state and the wind (dense, one entry per train, mostly zero). The swell's
         /// significant height (4σ) is the sea state's height.
@@ -94,13 +123,15 @@ namespace Sea
         public void Amplitudes(in SeaState sea, in Wind wind, double[] a)
         {
             Array.Clear(a, 0, a.Length);
-            double lp = Math.Clamp(sea.Wavelength, 10, 150);
+            double lp = Math.Clamp(sea.Wavelength, 10, 1600);
+            double storm = sea.SpectrumBlend >= 0 ? sea.SpectrumBlend : WindModel.StormForHeight(sea.Height, ChopScale);
             double theta0 = Math.Atan2(sea.DirZ, sea.DirX);
             Span<double> w = stackalloc double[SwellBins];
             double sum = 0;
             for (int m = 0; m < SwellBins; m++)
             {
-                w[m] = SwellShape(Math.Log2(Length(m) / lp));
+                double u = Math.Log2(Length(m) / lp);
+                w[m] = (1 - storm) * SwellShape(u) + storm * DevelopedShape(u);
                 sum += w[m] * w[m];
             }
             if (sum > 0 && sea.Height > 0)
@@ -116,10 +147,32 @@ namespace Sea
                 }
             }
             // chop from the wind right here
-            double ws = wind.Strength, chop = (0.03 + 0.12 * Math.Min(1.5, ws)) * ChopScale;
+            double ws = wind.Strength;
+            // Keep the storm's equilibrium texture near the breeze slope, independent of peak length/height.
+            double chopStorm = StormBlend(ws);
+            double chop = ((1 - chopStorm) * (0.03 + 0.12 * Math.Min(1.5, ws))
+                + chopStorm * 0.066) * ChopScale;
             double tc = ws > 1e-6 ? Math.Atan2(wind.Z, wind.X) : theta0;
             Split(SwellBins, tc, chop, a);
             Split(SwellBins + 1, tc - 35 * Math.PI / 180, chop * 0.6, a);
+            Split(SwellBins + 2, tc + 23 * Math.PI / 180, chop * 0.45 * chopStorm, a);
+            // Include short swell bins in the saturation budget, rather than allowing them to grow on top of
+            // the chop. This leaves breeze geometry exact and keeps the storm short-wave RMS slope ~0.065.
+            double shortVariance = 0;
+            const double shortK = 2 * Math.PI / 16;
+            for (int i = 0; i < TrainCount; i++)
+            {
+                double k2 = Kx[i] * Kx[i] + Kz[i] * Kz[i];
+                if (k2 > shortK * shortK) shortVariance += 0.5 * a[i] * a[i] * k2;
+            }
+            double limit = 0.065 * ChopScale;
+            double saturation = Math.Max(storm, chopStorm);
+            if (shortVariance > limit * limit)
+            {
+                double keep = 1 + saturation * (limit / Math.Sqrt(shortVariance) - 1);
+                for (int i = 0; i < TrainCount; i++)
+                    if (Kx[i] * Kx[i] + Kz[i] * Kz[i] > shortK * shortK) a[i] *= keep;
+            }
         }
 
         /// <summary>A wave running toward theta, shared between the bin's two nearest directions (keeping its energy).</summary>
@@ -330,7 +383,7 @@ namespace Sea
         /// <summary>The trains blended[order[0..c]] go to the shader's list (the strongest, when there are too many).</summary>
         void Keep(WaveSpectrum spec, int c)
         {
-            // more trains than the shader takes (only while the sea turns): keep the strongest, each less the strongest
+            // more trains than the shader takes (broad spectra or while the sea turns): keep the strongest, each less the strongest
             // one left out, so a train joins or leaves them at nothing as their order changes (0.3.7; cutting it off
             // made the surface jump by a few centimetres)
             double cut = 0;

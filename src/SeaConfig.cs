@@ -32,6 +32,10 @@ namespace Sea
         /// <summary>(0.4.0) Without a wind provider: the strength of that steady wind (0.3 medium breeze; 0 = a calm sea).</summary>
         [ProtoMember(14, IsRequired = true)] public float SeaWindStrength = 0.3f;
 
+        /// <summary>Storm-only height multiplier (0..4); 1 keeps existing heights, 2.2 gives about 12 blocks at
+        /// strength 1.5. Blends in over strength 0.4..0.8; clients receive the server's value.</summary>
+        [ProtoMember(15, IsRequired = true)] public float StormHeightScale = 1;
+
         /// <summary>
         /// (0.3.7) Numbers a hand-edited sea.json can't use (negative, NaN, infinite) back to their defaults.
         /// </summary>
@@ -40,6 +44,7 @@ namespace Sea
             var d = new SeaConfig();
             static float Ok(float v, float fallback) => float.IsFinite(v) && v >= 0 ? v : fallback;
             WaveScale = Ok(WaveScale, d.WaveScale);
+            StormHeightScale = System.Math.Clamp(Ok(StormHeightScale, d.StormHeightScale), 0, 4);
             CelestialReflections = System.Math.Clamp(Ok(CelestialReflections, d.CelestialReflections), 0, 2);
             SkyReflections = System.Math.Clamp(Ok(SkyReflections, d.SkyReflections), 0, 2);
             NightVisibility = System.Math.Clamp(Ok(NightVisibility, d.NightVisibility), 0, 2);

@@ -157,7 +157,8 @@ namespace Sea
         }
 
         /// <summary>Fully developed significant wave height (blocks) for a steady wind.</summary>
-        public double DevelopedHeight(double strength) => (0.1 + 2.4 * strength * strength) * Config.WaveScale;
+        public double DevelopedHeight(double strength) => (0.1 + 2.4 * strength * strength) * Config.WaveScale
+            * (1 + (Config.StormHeightScale - 1) * WaveSpectrum.StormBlend(strength));
 
         /// <summary>
         /// Waves at a place: they build up over a few hours of wind and die away more slowly (swell), and run the way
@@ -186,7 +187,7 @@ namespace Sea
         /// <summary>(0.4.2) The same, as worked out for wave sample `sample` (an admin's change counts from its sample on).</summary>
         public SeaState SeaAt(double x, double z, double hours, long sample)
         {
-            double fast = 0, slow = 0, dx = 0, dz = 0;
+            double fast = 0, slow = 0, baseFast = 0, baseSlow = 0, dx = 0, dz = 0;
             // (one look at what may change meanwhile, for all 16 hours: a change can't land half-way through them)
             WindOverride current = Override;
             WindOverride[] history = History;
@@ -198,13 +199,32 @@ namespace Sea
                 double wf = FastWeight[k], ws = SlowWeight[k];
                 fast += wf * h;
                 slow += ws * h;
+                double baseHeight = (0.1 + 2.4 * s * s) * Config.WaveScale;
+                baseFast += wf * baseHeight;
+                baseSlow += ws * baseHeight;
                 if (s > 1e-6) { dx += wf * h * w.X / s; dz += wf * h * w.Z / s; }
             }
             double height = Math.Max(fast / FastWeights, 0.75 * slow / SlowWeights);
             double dl = Math.Sqrt(dx * dx + dz * dz);
             if (dl < 1e-9) { dx = 1; dz = 0; dl = 1; }
-            double period = 2.5 + 3.2 * Math.Sqrt(height / Math.Max(0.1, Config.WaveScale));
-            return new SeaState(height, dx / dl, dz / dl, period);
+            double referenceHeight = Math.Max(baseFast / FastWeights, 0.75 * baseSlow / SlowWeights);
+            return new SeaState(height, dx / dl, dz / dl, PeriodForHeight(height, Config.WaveScale, referenceHeight),
+                StormForHeight(referenceHeight, Config.WaveScale));
+        }
+
+        internal static double StormForHeight(double height, double waveScale) =>
+            WaveSpectrum.StormBlend(Math.Sqrt(Math.Max(0, (height / Math.Max(0.1, waveScale) - 0.1) / 2.4)));
+
+        internal static double PeriodForHeight(double height, double waveScale, double referenceHeight = -1)
+        {
+            // Compress wavelength consistently with gameplay height: Lp/Hs = 30 in a built storm. Using the
+            // history's height retains swell after a lull and scales both dimensions when taller storms are chosen.
+            if (referenceHeight < 0) referenceHeight = height;
+            double normalizedHeight = referenceHeight / Math.Max(0.1, waveScale);
+            double legacyPeriod = 2.5 + 3.2 * Math.Sqrt(normalizedHeight);
+            double storm = StormForHeight(referenceHeight, waveScale);
+            double stormLength = 30 * height;
+            return Math.Sqrt((1 - storm) * legacyPeriod * legacyPeriod + storm * stormLength * 2 * Math.PI / 9.81);
         }
 
         /// <summary>

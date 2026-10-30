@@ -52,6 +52,9 @@ namespace Sea
         // (0.4.7) blocks per pixel per block of distance (the near water fades trains by it, as Wmap's far sea does), and
         // the open-sea wave factor at the camera (1 / the shader's divisor), which Wmap's far waves take
         float pixel, waveFactor = 0.2f;
+        float stormX, stormZ, foamCoverage, spume, foamAlong, foamAcross, foamDrift;
+        bool foamReady;
+        double foamCamX, foamCamZ, foamTime, foamAngle, foamAnchorAlong, foamAnchorAcross;
         readonly IShaderProgram[] uploadedTo = new IShaderProgram[4];
         readonly int[] uploadedFrame = new int[4];
         bool uploadFailed;
@@ -114,6 +117,37 @@ namespace Sea
                 wn = 1;
             }
             waveCount = LastWaveCount = wn;
+            var wind = place.Wind;
+            double ws = wind.Strength;
+            double angle = ws > 1e-6 ? Math.Atan2(wind.Z, wind.X) : foamAngle;
+            double dt = foamReady ? Math.Max(0, place.Time - foamTime) : 0;
+            if (!foamReady)
+            {
+                foamAngle = angle;
+                foamAnchorAlong = camX * Math.Cos(angle) + camZ * Math.Sin(angle) - place.Time * 0.8;
+                foamAnchorAcross = -camX * Math.Sin(angle) + camZ * Math.Cos(angle);
+            }
+            else
+            {
+                double turn = WorldShape.Mod(angle - foamAngle + Math.PI, 2 * Math.PI) - Math.PI;
+                foamAngle += turn * (1 - Math.Exp(-dt / 3));
+                // Integrate translation in doubles; turn the cosmetic foam frame about the camera, not the world's
+                // origin (a tiny gust otherwise shifts the pattern tens of blocks at large world coordinates).
+                foamAnchorAlong += (camX - foamCamX) * Math.Cos(foamAngle) + (camZ - foamCamZ) * Math.Sin(foamAngle) - dt * 0.8;
+                foamAnchorAcross += -(camX - foamCamX) * Math.Sin(foamAngle) + (camZ - foamCamZ) * Math.Cos(foamAngle);
+            }
+            foamReady = true; foamCamX = camX; foamCamZ = camZ; foamTime = place.Time;
+            stormX = (float)Math.Cos(foamAngle);
+            stormZ = (float)Math.Sin(foamAngle);
+            foamCoverage = wn > 0 && place.SignificantHeight > 1e-5
+                && capi.World.Player.Entity.Pos.Dimension == 0 ? (float)WaveSpectrum.WhitecapCoverage(ws) : 0;
+            spume = (float)Math.Clamp((ws - 0.9) / 0.6, 0, 1);
+            // All procedural scales are powers of two; wrapping at 65536 is continuous at each noise octave.
+            foamAnchorAlong = WorldShape.Mod(foamAnchorAlong, 65536);
+            foamAnchorAcross = WorldShape.Mod(foamAnchorAcross, 65536);
+            foamAlong = (float)foamAnchorAlong;
+            foamAcross = (float)foamAnchorAcross;
+            foamDrift = (float)WorldShape.Mod(-place.Time * 2.7, 65536);
             var proj = capi.Render.PerspectiveProjectionMat;
             int height = capi.Render.FrameHeight;
             pixel = proj != null && proj[5] > 0 && height > 0 ? (float)(2 / (proj[5] * height)) : 0;
@@ -289,6 +323,8 @@ namespace Sea
                 if (wn > 0) prog.Uniforms4("seaWave", wn, WaveUniform);
             }
             if (prog.HasUniform("seaPixel")) prog.Uniform("seaPixel", pixel);
+            if (prog.HasUniform("seaStorm")) prog.Uniform("seaStorm", stormX, stormZ, foamCoverage, spume);
+            if (prog.HasUniform("seaFoamOrigin")) prog.Uniform("seaFoamOrigin", foamAlong, foamAcross, foamDrift);
         }
 
         /// <summary>An error here would end the game (it's inside its drawing): Sea's water numbers stop instead, logged once.</summary>
@@ -316,6 +352,8 @@ namespace Sea
                 int clips = GL.GetUniformLocation(id, "seaClipCount"), waves = GL.GetUniformLocation(id, "seaWaveCount");
                 if (clips >= 0) GL.Uniform1(clips, 0);
                 if (waves >= 0) GL.Uniform1(waves, 0);
+                int storm = GL.GetUniformLocation(id, "seaStorm");
+                if (storm >= 0) GL.Uniform4(storm, 0f, 0f, 0f, 0f);
                 // (only once both went in: otherwise it's tried again at the next use)
                 switchedOff.Add(prog);
             }
@@ -363,6 +401,7 @@ namespace Sea
                     {
                         if (water) GL.Uniform1(GL.GetUniformLocation(id, "seaClipCount"), 0);
                         if (waves) GL.Uniform1(GL.GetUniformLocation(id, "seaWaveCount"), 0);
+                        if (prog.HasUniform("seaStorm")) GL.Uniform4(GL.GetUniformLocation(id, "seaStorm"), 0f, 0f, 0f, 0f);
                         if (sky) GL.Uniform2(GL.GetUniformLocation(id, "seaEffects"), 0f, 0f);
                         if (floor) GL.Uniform3(GL.GetUniformLocation(id, "seaNightFloor"), 0f, 0f, 0f);
                         if (prog.HasUniform("seaNightEnabled")) GL.Uniform1(GL.GetUniformLocation(id, "seaNightEnabled"), 0f);

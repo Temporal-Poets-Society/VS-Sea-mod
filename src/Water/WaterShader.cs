@@ -50,6 +50,7 @@ uniform vec4 seaClipC[8];
 uniform vec4 seaClipD[8];
 uniform vec4 seaClipP[32];
 out vec3 seaFragPos;
+float seaWaveCalm = 1.0; // also suppress wind foam where a non-dry hull calms the drawn surface
 
 vec4 seaWaves(bool notLava, vec4 wp, float div) {
 	if (!notLava || seaWaveCount == 0) return applyLiquidWarping(notLava, wp, div);
@@ -65,6 +66,7 @@ vec4 seaWaves(bool notLava, vec4 wp, float div) {
 
 " + HullOutline + @"
 vec4 seaWater(vec4 wp, vec3 rest) {
+	seaWaveCalm = 1.0;
 	for (int h = 0; h < seaClipCount; h++) {
 		if (seaClipD[h].w > 0.5) continue;
 		vec4 a = seaClipA[h];
@@ -81,7 +83,9 @@ vec4 seaWater(vec4 wp, vec3 rest) {
 		float calm = max(c.z, 0.01);
 		if (dist < calm && abs(rest.y - b.z) < 6.0) {
 			float level = b.z + c.x * fwd + c.w * side;
-			wp.y = level + (wp.y - level) * smoothstep(0.0, calm, dist);
+			float damping = smoothstep(0.0, calm, dist);
+			seaWaveCalm *= damping;
+			wp.y = level + (wp.y - level) * damping;
 			if (dist <= 0.0) wp.y = min(wp.y, b.z + c.x * fwd + c.y * side);
 		}
 	}

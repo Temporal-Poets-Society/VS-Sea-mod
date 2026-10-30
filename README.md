@@ -5,6 +5,16 @@ calm down with the wind of the past hours, and are the same on the server and ev
 It also owns the water shaders, so ship mods (Magelan, Hansa) ask Sea to keep waves out of their hulls instead of each
 patching the shaders.
 
+Version **0.4.7-pre.8** (30 October 2026, storm-wave work for issue #28): storms put their energy into long waves,
+with a Pierson–Moskowitz shape and peak wavelength 30 times gameplay significant height, while short-wave slope stays
+near the breeze's. `StormHeightScale` defaults to 1; 2.2 gives about 12-block hurricane seas with proportionally longer
+waves. The default 0.3 breeze keeps its geometry and phases. Wind foam starts faintly at force 4–5, with broken
+crests, downwind streaks and surface spume dense at force 10–12; vanilla's shore/contact foam stays in place.
+[Cause, physics references and before/after numbers](docs/storm-waves.md), SEA-D46. Offline build, spectrum and GPU
+checks passed; **not seen in game**, not installed. Wmap receives the longer wave trains; its far sea has no wind foam yet.
+Issue #30's hold water is investigated separately: a [Hansa clip-pivot correction is prepared](docs/hold-water.md)
+(SEA-D47); Hansa also draws genuine storm-admitted floodwater independently of Sea. Hansa remains unchanged here.
+
 Version **0.4.7-pre.7** (26 October 2026, `release/sea-0.4.7-pre.7.zip`, branch `fix/sunset-glint-flicker-2026-10-26`
 from `playtest/2026-10-26`, a play-test build; not merged), after issues 14 and 15 of the pre.6 play-test. **The glitter
 path reaches the horizon:** the near water's glints last until the game's water has faded (0.76 to 0.8 of the view
@@ -162,12 +172,15 @@ hour is 2 real minutes) the sea takes about 6 real minutes to get up.
 
 **What you see on the water:**
 
-- **Swell:** a library of wave trains, 12 wavelengths half an octave apart (4 to 181 blocks), each in 18 directions
-  20° apart, every one with its own fixed starting phase. The sea state lights up the wavelengths from about 1.5×
-  its peak down to a seventh of it (the shorter, the smaller), each shared between the two directions next to where
-  it runs, the shorter ones spread up to ±40°. Each runs at its deep-water speed, so long waves run fast (a storm
-  swell about 10 blocks/s) and short ones slower.
-- **Chop:** two short wavelengths (6.5 and 4.3 blocks) from the wind right where you are. They react within seconds.
+- **Swell:** a library of wave trains, 20 wavelengths half an octave apart (4 to 2896 blocks), each in 18 directions
+  20° apart, every one with its own fixed starting phase. Breezes keep their original spectrum. From strength 0.4 to
+  0.8 it blends to a Pierson–Moskowitz shape with peak parameter 30 × significant height: at 1.5, 165 blocks by default,
+  or 363 with `StormHeightScale: 2.2`. Directions split between two neighbours, shorter bands spread up to ±40°.
+  Each runs at its deep-water speed (strength 1 default peak about 11 blocks/s).
+- **Chop:** 6.5 and 4.3 blocks from the local wind, plus 9.7 in storms. Breeze chop stays as before; storm chop is
+  bounded at roughly the breeze's short-wave RMS slope, without growing with wind or fading to a mirror.
+- **Wind foam:** broken crests, irregular downwind streaks and fast surface spume. Faint around force 4–5, dense at
+  force 10–12, shaded by the water's light and fog. Sheltered water suppresses it; dry hulls keep their existing cut.
 - **Nothing jumps:** when the sea state or the wind changes, trains grow and fade (blended over a second); none of
   them ever changes its phase. Up to 24 trains run at once.
 - **The same for everyone:** the trains come from the world's wind key, their strengths from the sea state and wind
@@ -240,6 +253,7 @@ Nothing about the wind or the waves is sent while you play, except a clock:
 | Key | Default | Meaning |
 |---|---|---|
 | `WaveScale` | 1 | multiplies wave heights, the chop too (0.3.7) |
+| `StormHeightScale` | 1 | 0–4, storm-only height multiplier, blended over wind strengths 0.4–0.8; 2.2 gives about 12-block Hs at 1.5. Wavelength scales with height; breeze/chop stay unchanged. Larger seas are opt-in and need ship/shore playtesting |
 | `SeaWindFrom` | 270 | without a wind provider: the compass bearing (degrees) the steady wind the sea follows blows from (0.4.0) |
 | `SeaWindStrength` | 0.3 | without a wind provider: that steady wind's strength, 0–1.5 (0 = a calm sea) (0.4.0) |
 | `CelestialReflections` | 1 | sun/moon trails; 0 restores vanilla highlights; range 0–2 |

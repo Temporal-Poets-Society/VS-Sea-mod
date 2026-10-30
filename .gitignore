@@ -10,4 +10,5 @@ testserver/
 # editor files
 .vs/
 .vscode/
+.local/
 *.user

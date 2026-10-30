@@ -46,8 +46,8 @@ namespace Sea
             code = code.Replace(anchor, anchor + @"
     seaSurfaceSlope = vec2(0.0);
     seaSurfaceRough = 0.0;
-    // (only the glints and the sky reflection use it: not worked out while both are off)
-    if ((seaEffects.x > 0.0 || seaEffects.y > 0.0) && (waterFlagsIn & 1) == 1 && (waterFlagsIn & LiquidIsLavaBitMask) == 0) {
+    seaFoamCrest = vec2(0.0);
+    if ((seaEffects.x > 0.0 || seaEffects.y > 0.0 || seaStorm.z > 0.0) && (waterFlagsIn & 1) == 1 && (waterFlagsIn & LiquidIsLavaBitMask) == 0) {
         float div = ((waterFlagsIn & LiquidWeakWaveBitMask) > 0 ? 90.0 : 5.0)
             * max(0.2, 1.0 - float((waterFlagsIn >> 2) & 255) / 255.0);
         // (0.4.7) Blocks per pixel here, as Wmap's far sea measures it (length of fwidth of the position): the distance
@@ -56,6 +56,7 @@ namespace Sea
         float seaDist = length(seaFromEye);
         float seaGraze = max(abs(seaFromEye.y) / max(seaDist, 0.001), 0.01);
         float seaFootprint = seaPixel * seaDist * sqrt(1.0 + 1.0 / (seaGraze * seaGraze));
+        float crest = 0.0, variance = 0.0;
         for (int i = 0; i < seaWaveCount; i++) {
             vec4 w = seaWave[i];
             // A train shorter than about four pixels fades out (Wmap's wmapWaveNormal, the same rule), so the near water
@@ -65,11 +66,17 @@ namespace Sea
             float steep = w.w * k / div;
             seaSurfaceSlope += keep * w.w * w.xy * cos(dot(w.xy, (xyz + origin).xz) + w.z) / div;
             seaSurfaceRough += (1.0 - keep * keep) * 0.5 * steep * steep;
+            // Normalised long-wave height locates crests even with Sea's compressed storm heights. Do not
+            // threshold absolute steepness: that would remove all breakers when the peak becomes kilometres long.
+            float longWave = 1.0 - smoothstep(0.3, 0.6, k);
+            crest += longWave * keep * w.w * sin(dot(w.xy, (xyz + origin).xz) + w.z);
+            variance += 0.5 * longWave * longWave * w.w * w.w;
         }
+        seaFoamCrest = vec2(crest / max(sqrt(variance), 0.0001), seaWaveCalm * clamp((1.0 / div - 0.2) / 0.8, 0.0, 1.0));
     }");
             // (seaEffects and seaEye as the fragment stage declares them: one uniform of the program)
             return code.Insert(code.IndexOf("void main(", StringComparison.Ordinal),
-                "out vec2 seaSurfaceSlope;\nout float seaSurfaceRough;\nuniform vec2 seaEffects = vec2(0.0);\nuniform vec3 seaEye;\nuniform float seaPixel = 0.0;\n");
+                "out vec2 seaSurfaceSlope;\nout float seaSurfaceRough;\nout vec2 seaFoamCrest;\nuniform vec4 seaStorm = vec4(0.0);\nuniform vec2 seaEffects = vec2(0.0);\nuniform vec3 seaEye;\nuniform float seaPixel = 0.0;\n");
         }
 
         public static string Fragment(string code)
@@ -105,6 +112,18 @@ namespace Sea
         // reflectance is small; Fresnel only shades it.
         if (seaEffects.x > 0.0) texColor = seaGlints(texColor, ray, exposed * (0.55 + 0.45 * fres), clamp(pow(shadowBright, 4.0), 0.0, 1.0));
     }
+    // Sea owns open-sea wind foam; vanilla's depth/contact foam above is preserved. This sits outside the
+    // reflection switch and FOAMEFFECT, as the shared waves do outside WAVINGSTUFF. Lit by the water's own light.
+    if (!isLava && fragNormal.y > 0.9 && skyExposed > 0 && cameraUnderwater < 0.01 && seaStorm.z > 0.0) {
+        vec2 alongAcross = vec2(dot(fWorldPos.xz, seaStorm.xy), dot(fWorldPos.xz, vec2(-seaStorm.y, seaStorm.x)));
+        vec2 foamPos = alongAcross + seaFoamOrigin.xy;
+        float coverage = seaStorm.z * seaFoamCrest.y;
+        float foam = seaWindFoam(foamPos, seaFoamCrest.x, coverage, seaStorm.w);
+        float edge = 1.0 - smoothstep(viewDistance * 0.76, viewDistance * 0.80, length(fWorldPos.xz));
+        foam *= edge;
+        texColor.rgb = mix(texColor.rgb, vec3(0.88, 0.94, 0.92) * rgba.rgb * shadowBright, foam);
+        texColor.a = max(texColor.a, foam * 0.96);
+    }
     " + finish);
             return code.Insert(code.IndexOf("void main(", StringComparison.Ordinal), Declarations);
         }
@@ -112,6 +131,9 @@ namespace Sea
         public const string Declarations = @"
 in vec2 seaSurfaceSlope;
 in float seaSurfaceRough; // (0.4.7) the slope variance of trains too short for the pixel, faded out of seaSurfaceSlope
+in vec2 seaFoamCrest;
+uniform vec4 seaStorm = vec4(0.0); // wind direction, bounded whitecap coverage, spume strength
+uniform vec3 seaFoamOrigin; // camera along/across wind minus drift, faster spume drift (periodic, CPU doubles)
 uniform vec3 seaEye;
 uniform vec4 seaSun;
 uniform vec4 seaMoon;
@@ -124,6 +146,33 @@ uniform vec4 seaSunset = vec4(0.0); // (0.4.7) AstraTerra's sunset glow (SunsetS
 uniform sampler2D seaSkyTex;  // the game's sky colours (sky.png)
 uniform sampler2D seaGlowTex; // the game's sun glow (sunlight.png)
 float seaCelestial(float p, float width) { return exp(-max(0.0, 1.0-p) / width); }
+// Periodic value noise avoids a camera-attached pattern and precision loss far from the world origin.
+float seaFoamHash(vec2 p) {
+    p = mod(p, 4096.0);
+    return fract(sin(dot(p, vec2(12.71, 31.17))) * 43758.5453);
+}
+float seaFoamNoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(seaFoamHash(i), seaFoamHash(i + vec2(1,0)), f.x),
+        mix(seaFoamHash(i + vec2(0,1)), seaFoamHash(i + vec2(1,1)), f.x), f.y);
+}
+float seaWindFoam(vec2 p, float crest, float coverage, float spume) {
+    // Long, ragged streaks downwind; no repeating pair of crossing sine grids. Powers of two keep the
+    // noise's 4096-block wrapping continuous. Fine texture fades to its mean below a pixel.
+    float streak = 0.7 * seaFoamNoise(p * vec2(0.0625, 0.5))
+        + 0.3 * seaFoamNoise(p * vec2(0.125, 1.0) + vec2(37,91));
+    float aa = max(fwidth(streak), 0.025);
+    float trails = min(1.0, 20.0 * coverage) * smoothstep(0.88 - 0.8 * coverage - aa, 0.88 - 0.8 * coverage + aa, streak);
+    float broken = seaFoamNoise(p * 0.25 + vec2(13,71));
+    float breaking = smoothstep(0.65, 1.65, crest) * smoothstep(0.35, 0.75, broken);
+    breaking *= min(1.0, 8.0 * coverage);
+    float grain = seaFoamNoise(p * 2.0);
+    grain = mix(grain, 0.5, smoothstep(0.25, 1.0, length(fwidth(p * 2.0))));
+    float blown = seaFoamNoise(vec2(p.x + seaFoamOrigin.z, p.y) * vec2(0.25, 2.0));
+    float spray = min(1.0, 8.0 * coverage) * spume * smoothstep(0.1, 1.4, crest) * smoothstep(0.45, 0.7, blown);
+    return clamp(max(trails, breaking) * (0.72 + 0.28 * grain) + spray * 0.35, 0.0, 1.0);
+}
 // (0.4.7) AstraTerra's sunset glow for a direction v and the sun (its SunsetScatter.Shape, the same numbers): a halo round
 // the sun and a band along the horizon, strongest beneath it.
 float seaSunsetShape(vec3 v, vec3 sun) {

@@ -138,8 +138,11 @@ namespace Sea
             if (m != null) return m.SeaAt(x, z, hours);
             // no model yet: a sea fully built for the wind right away
             var w = WindAt(x, z, hours);
-            double s = w.Strength, hgt = (0.1 + 2.4 * s * s) * Config.WaveScale;
-            return new SeaState(hgt, s > 1e-6 ? w.X / s : 1, s > 1e-6 ? w.Z / s : 0, 2.5 + 3.2 * Math.Sqrt(hgt));
+            double s = w.Strength;
+            double referenceHeight = (0.1 + 2.4 * s * s) * Config.WaveScale;
+            double height = referenceHeight * (1 + (Config.StormHeightScale - 1) * WaveSpectrum.StormBlend(s));
+            return new SeaState(height, s > 1e-6 ? w.X / s : 1, s > 1e-6 ? w.Z / s : 0,
+                WindModel.PeriodForHeight(height, Config.WaveScale, referenceHeight), WindModel.StormForHeight(referenceHeight, Config.WaveScale));
         }
 
         // ---------------------------------------------------------------- wind provider
@@ -752,7 +755,8 @@ namespace Sea
         long sentKey;
 
         static bool SameConfig(SeaConfig a, SeaConfig b) =>
-            a.WaveScale == b.WaveScale && a.SeaWindFrom == b.SeaWindFrom && a.SeaWindStrength == b.SeaWindStrength;
+            a.WaveScale == b.WaveScale && a.SeaWindFrom == b.SeaWindFrom && a.SeaWindStrength == b.SeaWindStrength
+            && a.StormHeightScale == b.StormHeightScale;
 
         /// <summary>(0.4.2) The fixed wind in force now, or null.</summary>
         public WindOverride FixedWindNow => Model?.FixedAt(Hours);

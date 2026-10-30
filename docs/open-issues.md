@@ -50,10 +50,21 @@ self-test. None of these runs a client, so these 0.4.2 paths have no automated c
 - **Every wave place samples both ends again when a new anchor arrives** (every 5 s, and on each `/time set`). Since
   the shared corners (SEA-D39) the provider isn't asked again for hours it already answered, but the place still
   blends both ends anew.
-- **`WavePlace.Sample` blends 4 × 252 amplitudes per call** even when the place hasn't moved and the time is in the
+- **`WavePlace.Sample` blends 4 × 414 amplitudes (pre.8; formerly 252) per call** even when the place hasn't moved and the time is in the
   same second; caching by (u, v, f) would skip it for stationary samplers called several times a frame.
 
 ## Earlier, still open
+
+- Issue #30 / SEA-D47: [caravel hold-water investigation](hold-water.md) reproduces a thin boundary gap caused by
+  Hansa's clip pivot (232 bottom-mesh vertices at −12° pitch/−35° heel; proposed Hansa registration correction removes
+  every miss). Hansa's independent floodwater mesh is also triggered by storm downflooding with closed hatches.
+  Hansa patch is prepared but not applied; live vessel water/shader state is needed to attribute the pictured sheet.
+  Sea's CPU/GPU clip agrees for the actual caravel profile; its bounds were not widened to suppress genuine flooding.
+
+- Issue #28 / SEA-D46: pre.8 corrects the storm spectrum and adds near-water wind foam; offline evidence and the
+  remaining [storm playtest matrix](storm-waves.md) are recorded. Wmap receives the longer waves but has no wind-foam
+  consumer: inspect the near/far handoff, and add it in Wmap if the smooth far band is visible. Surface spume is not
+  airborne spray. No client appearance, ship handling or frame-time acceptance yet.
 
 - The stern dry-outline failure reported by the ship test history (see `overview/ROADMAP.md`); 0.3.6's frame fix may
   bear on it, unverified.
