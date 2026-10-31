@@ -112,7 +112,9 @@ notes on what Sea did are kept as the record for that port.
   InnerSize, the next corner +1), and `ChunkTesselator` blends them across the chunk (`BiLerp`, cast to a byte). A
   vertex whose neighbours aren't the same liquid gets 0.
 - The server has the same map (`IBlockAccessor.GetMapRegion(rx, rz).OceanMap`), so `SeaSystem.WaveFactorAt` gives
-  both sides the same factor. No ocean map (or not loaded) means 0.2, as the flags would be 0.
+  both sides the same factor. Since pre.11 it first inverts the horizontal wave map, then reads oceanity at the
+  original mesh coordinate, matching where the tesselator packed it. No ocean map (or not loaded) means 0.2,
+  as the flags would be 0. Packed shore-neighbour flags and one-block triangulation remain existing approximations.
 
 ## Latitude, seasons, calendar
 
@@ -140,20 +142,24 @@ notes on what Sea did are kept as the record for that port.
 - **Vanilla's warp:** both water passes call
   `applyLiquidWarping((waterFlagsIn & LiquidIsLavaBitMask) == 0, worldPos, div)` for animated liquids.
   - `div` is 5 × max(0.2, 1 − oceanity), or 90 for "weak wave" liquids.
-  - Sea replaces that one call with `seaWaves(...)`, which sums its wave trains and divides by `div` like vanilla.
+  - Sea replaces that one call with `seaWaves(...)`. Since pre.11 it adds bounded Gerstner horizontal orbits and
+    divides the vertical sum by `div` like vanilla. The horizontal map is independent of `div`, preserving the
+    existing CPU `HeightAt * WaveFactorAt` API. `HeightAt` inverts that map at world X/Z (SEA-D50).
     It falls back to vanilla's function for lava and when no waves are uploaded.
   - The second call in chunkliquid (not animated but weak waves, divisor 90) stays vanilla's.
 - **Waves regardless of the setting:** vanilla's warp only runs with the "waving stuff" graphics option on
   (`#if WAVINGSTUFF == 1`). Sea's waves run either way.
 - **`applyPerceptionWarping`** (the drunk effect) is defined outside that `#if`, and Sea still calls it.
 - **Through 0.3.7 normals weren't changed.** Since 0.3.8-pre.1, celestial reflection shading interpolates the analytic
-  gradient of Sea's waves. Packed normals still select top/side faces and vanilla foam/lighting behavior.
+  gradient of Sea's waves. Pre.11 uses the inverse horizontal Jacobian to express the gradient in world coordinates.
+  Packed normals still select top/side faces and vanilla foam/lighting behavior.
 - **Phases:** `worldPos` is camera-relative, so each wave's phase is uploaded for the camera position (computed in
   doubles on the CPU relative to an anchor near the player). The shader only works with small numbers.
-- **Hull clip:** it uses the unwarped position (`xyz + origin`) to find the footprint and to calm the waves around it.
+- **Hull clip:** since pre.11 it uses displaced X/Z to find the footprint and calm the waves around it; original Y
+  still selects the water level. The fragment dry cut already uses the fully displaced position.
   The clip's height is a plane (height at the hull's origin, rise per block along the keel and across it) measured
   level from the origin, so a pitching, rolling hull clips along its own tilted waterline.
-- **Uniform arrays:** `seaWave[24]`, `seaClipA/B/C[8]`, `seaClipP[32]`, all vec4.
+- **Uniform arrays:** `seaWave[24]`, `seaClipA/B/C[8]`, `seaClipP[32]`, all vec4. Pre.11 also uploads `seaWaveShape`.
 
 ## Splashes in dry places
 

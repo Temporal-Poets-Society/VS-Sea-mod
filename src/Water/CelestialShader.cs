@@ -57,26 +57,9 @@ namespace Sea
         float seaDist = length(seaFromEye);
         float seaGraze = max(abs(seaFromEye.y) / max(seaDist, 0.001), 0.01);
         float seaFootprint = seaPixel * seaDist * sqrt(1.0 + 1.0 / (seaGraze * seaGraze));
-        float crest = 0.0, variance = 0.0, fall = 0.0, fallVariance = 0.0;
-        for (int i = 0; i < seaWaveCount; i++) {
-            vec4 w = seaWave[i];
-            // A train shorter than about four pixels fades out (Wmap's wmapWaveNormal, the same rule), so the near water
-            // meets the far sea without a step; the slope it would have given is kept as roughness for the glints.
-            float k = length(w.xy);
-            float keep = 1.0 - smoothstep(0.25, 0.75, k * seaFootprint);
-            float steep = w.w * k / div;
-            seaSurfaceSlope += keep * w.w * w.xy * cos(dot(w.xy, (xyz + origin).xz) + w.z) / div;
-            seaSurfaceRough += (1.0 - keep * keep) * 0.5 * steep * steep;
-            // Normalised long-wave height locates crests even with Sea's compressed storm heights. Do not
-            // threshold absolute steepness: that would remove all breakers when the peak becomes kilometres long.
-            float longWave = 1.0 - smoothstep(0.3, 0.6, k);
-            crest += longWave * keep * w.w * sin(dot(w.xy, (xyz + origin).xz) + w.z);
-            variance += 0.5 * longWave * longWave * w.w * w.w;
-            float omega = sqrt(9.81 * k);
-            fall += longWave * keep * w.w * omega * cos(dot(w.xy, (xyz + origin).xz) + w.z);
-            fallVariance += 0.5 * longWave * longWave * w.w * w.w * omega * omega;
-        }
-        seaFoamCrest = vec3(crest / max(sqrt(variance), 0.0001), seaWaveCalm * clamp((1.0 / div - 0.2) / 0.8, 0.0, 1.0), fall / max(sqrt(fallVariance),0.0001));
+        seaDifferential((xyz+origin).xz, 1.0/div, seaFootprint, seaSurfaceSlope, seaSurfaceRough, seaFoamCrest);
+        seaSurfaceSlope *= seaWaveCalm;
+        seaFoamCrest.y *= seaWaveCalm;
     }");
             // (seaEffects and seaEye as the fragment stage declares them: one uniform of the program)
             return code.Insert(code.IndexOf("void main(", StringComparison.Ordinal),
@@ -120,8 +103,8 @@ namespace Sea
     // reflection switch and FOAMEFFECT, as the shared waves do outside WAVINGSTUFF. Lit by the water's own light.
     if (!isLava && fragNormal.y > 0.9 && cameraUnderwater < 0.01 && (seaStorm.z > 0.0 || seaWakeArea.w > 0.0)) {
         vec2 foamPos = seaFoamCoordinates(fWorldPos.xz, seaStorm.xy, seaFoamOrigin.xy);
-        float coverage = skyExposed > 0 ? seaStorm.z * seaFoamCrest.y : 0.0;
-        float foam = coverage > 0.0 ? seaWindFoam(foamPos, seaFoamCrest.x, coverage, seaStorm.w, seaFoamCrest.z) : 0.0;
+        float coverage = skyExposed > 0 ? seaStorm.z : 0.0;
+        float foam = coverage > 0.0 ? seaWindFoam(foamPos, seaFoamCrest, coverage) : 0.0;
         float edge = 1.0 - smoothstep(viewDistance * 0.76, viewDistance * 0.80, length(fWorldPos.xz));
         foam *= edge;
         // Wakes share the wind-foam lighting/alpha path. The original liquid height rejects stacked ponds;
@@ -194,47 +177,28 @@ float seaFoamCells(vec2 p, float lace) {
     float film = smoothstep(radius-aa, radius+aa, d);
     return mix(film, mean, smoothstep(0.3, 1.2, footprint));
 }
-float seaCrestFoam(vec2 p, float crest, float coverage) {
+float seaCrestFoam(vec2 p, vec3 crest, float coverage) {
     // Two independent masks break a crest into short islands; neither becomes an all-white threshold at high wind.
     float islands = seaFoamNoise(p * 0.5 + vec2(13,71));
     float holes = seaFoamNoise(p * 1.0 + vec2(91,27));
-    float patches = smoothstep(0.52,0.76,islands) * smoothstep(0.22,0.5,holes);
-    return smoothstep(0.8,1.65,crest) * patches * min(1.0,24.0*coverage);
+    // More of the eligible breaking tops whiten as local wind rises; coverage never bypasses the crest gate.
+    float density = sqrt(clamp(coverage,0.0,1.0));
+    float patches = smoothstep(mix(0.72,0.40,density),mix(0.88,0.70,density),islands) * smoothstep(0.22,0.5,holes);
+    // Compression measures actual crest sharpening, scaled by the local liquid height factor. Sheltered
+    // water (factor .2) cannot reach .22 even at the global no-loop bound (.65*.2=.13).
+    float breaking = smoothstep(0.22,0.40,crest.y) * smoothstep(0.8,1.65,crest.x);
+    // Only a short shoulder behind a passing crest remains; this is a phase-age proxy, not saved foam.
+    float tail = 1.0-smoothstep(0.35,1.8,max(crest.z,0.0));
+    return breaking * tail * patches * min(1.0,24.0*coverage);
 }
-float seaWindRow(vec2 p, float gale) {
-    float cross = p.y + 0.7 * seaFoamNoise(p * vec2(0.0625,0.125) + vec2(37,91));
-    float row = cross * 0.25; // irregular windrows roughly four metres apart
-    float centre = 0.25 + 0.5 * seaFoamHash(vec2(floor(row),29));
-    float aa = max(fwidth(row),0.002);
-    float width = mix(0.018,0.08,gale) * (0.55+0.45*seaFoamNoise(p*vec2(0.5,1.0)+vec2(67,17)));
-    float ridge = 1.0 - smoothstep(width-aa,width+aa,abs(fract(row)-centre));
-    float gaps = smoothstep(0.25,0.55,seaFoamNoise(vec2(p.x*0.125,floor(row)) + vec2(11,53)));
-    float torn = smoothstep(0.2,0.6,seaFoamNoise(p*vec2(0.5,1.0)+vec2(107,43)));
-    return ridge * gaps * torn;
-}
-float seaWindStreaks(vec2 p, float strength) {
-    // Beaufort 8 onset (17 m/s, Sea unit = 25 m/s). Width is bounded independently of coverage.
-    float gale = smoothstep(0.68,1.04,strength);
-    if (gale <= 0.0) return 0.0;
-    float rows = seaWindRow(p,gale);
-    // Strong storms add finer interleaved rows, not a threshold that floods the whole image with white.
-    rows = max(rows, smoothstep(1.04,1.5,strength) * seaWindRow(p+vec2(53,2),gale));
-    return gale * rows;
-}
-float seaWindFoam(vec2 p, float crest, float coverage, float strength, float fall) {
+float seaWindFoam(vec2 p, vec3 crest, float coverage) {
     if (coverage <= 0.0) return 0.0;
     float breaking = seaCrestFoam(p,crest,coverage);
-    float streaks = seaWindStreaks(p,strength);
-    float spume = smoothstep(0.96,1.5,strength);
-    float blown = seaFoamNoise(vec2(p.x+seaFoamOrigin.z,p.y) * vec2(0.125,1.0));
-    float spray = spume * coverage * 0.3 * smoothstep(0.72,0.88,blown);
-    float mask = max(breaking,streaks*0.95) + spray;
-    if (mask < 0.0001) return 0.0;
+    if (breaking < 0.0001) return 0.0;
     // Actual holes, not pre.9's grain multiplier with an opaque 0.72 floor.
-    // A receding crest's film opens into lace; windrows represent older foam. Fall is normalised -dh/dt,
-    // computed in the existing vertex wave loop; it is a visual phase proxy, not persistent foam simulation.
-    float lace = max(smoothstep(-0.3,0.9,fall),streaks > breaking ? 0.7 : 0.0);
-    return clamp(mask * seaFoamCells(p,lace) * (0.55+0.45*seaFoamNoise(p*2.0)),0.0,1.0);
+    // A receding crest's film opens into lace. The independent downwind and surface-spume layers are removed.
+    float lace = smoothstep(-0.3,0.9,crest.z);
+    return clamp(breaking * seaFoamCells(p,lace) * (0.55+0.45*seaFoamNoise(p*2.0)),0.0,1.0);
 }
 float seaWakeTexture(vec2 world, float fresh) {
     // Centre before jittering cellular coordinates: adding tiny jitter to an 8192-block anchor lost precision.
@@ -248,11 +212,11 @@ float seaWakeTexture(vec2 world, float fresh) {
         public const string Declarations = @"
 in vec2 seaSurfaceSlope;
 in float seaSurfaceRough; // (0.4.7) the slope variance of trains too short for the pixel, faded out of seaSurfaceSlope
-in vec3 seaFoamCrest; // normalised long height, exposure, normalised falling velocity
+in vec3 seaFoamCrest; // normalised long height, local crest compression, normalised falling velocity
 in float seaWakeSurface;
 " + WakeDeclarations + @"
-uniform vec4 seaStorm = vec4(0.0); // wind TOWARD direction xz, bounded whitecap input, actual local wind strength
-uniform vec3 seaFoamOrigin; // camera along/across wind minus drift, faster spume drift (periodic, CPU doubles)
+uniform vec4 seaStorm = vec4(0.0); // wind TOWARD direction xz, bounded whitecap input, reserved
+uniform vec3 seaFoamOrigin; // camera along/across wind minus small drift (periodic, CPU doubles); z reserved
 uniform vec3 seaEye;
 uniform vec4 seaSun;
 uniform vec4 seaMoon;

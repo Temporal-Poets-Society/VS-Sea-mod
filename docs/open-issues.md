@@ -6,6 +6,11 @@ and the README's 0.4.2 note. Severity is the reviewers' estimate; nothing here h
 
 ## Not verified at all
 
+Pre.11 issue #37: [Gerstner geometry and breaking-only foam](crest-shape.md), SEA-D50, removes the pre.10
+windrow layer. Offline/GPU inverse-surface, normal, shelter and dry-cut checks pass; side/low-angle comparisons
+are generated under `obj/crests37/`. Coastal vertex edges, ship motion/hold clipping, actual sunset appearance,
+frame time and the near/far join still need in-game review. Shoaling remains a proposal requiring shared depth.
+
 Pre.10 issue #35: [wind axes, ribbon causes, cellular/lace changes and GPU comparisons](foam-direction.md) are
 recorded with SEA-D49. The supplied image does not establish actual Earth wind strength or the individual
 toward-camera ribbon's source. Capture `.sea` and `.sea foam wind|wakes|off|all` at the same camera to identify it.

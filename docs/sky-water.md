@@ -1,5 +1,11 @@
 # Celestial water and night visibility — 0.4.4
 
+**0.4.7-pre.11 (31 October 2026), issue #37:** [Gerstner crest geometry](crest-shape.md), SEA-D50, supersedes
+pre.10's windrows. The downwind and independent surface-spume layers are deleted. Wind foam requires a locally
+compressed high crest and fades on its trailing shoulder. Sheltered factor 0.2 cannot trigger it. Normals use the
+horizontal Jacobian of the same shaped surface ships invert. Wakes retain their own age/texture and all foam
+continues through the same light/alpha/fog and displaced-position dry-cut path. Vanilla owns contact/depth foam.
+
 **0.4.7-pre.10 (31 October 2026), issue #35:** [foam direction/morphology audit](foam-direction.md), SEA-D49.
 Wind whitecaps are finite crest patches; thin, broken windrows begin around force 8 and follow the wind-toward
 vector. Cellular holes/lace replace the smooth grain floor. Wake film uses world coordinates and its own freshness
@@ -73,8 +79,8 @@ reflection or a capture of clouds, planets, Milky Way, meteors or constellation 
 The added shader writes before the existing fog application; glints and the sky reflection raise alpha by their
 weight (the OIT pass shows rgb × alpha), as vanilla's highlight does. Water alpha, underwater effects, depth pass,
 contact foam and dry-hull discard remain owned by their existing paths. Since 0.4.7-pre.8 Sea adds **open-sea wind
-foam** separately, after reflections and before fog: crest patches, downwind streaks and surface spume (SEA-D46,
-[storm evidence](storm-waves.md)). It uses the water's existing light, raises alpha for OIT and leaves vanilla's
+foam** separately, after reflections and before fog. Pre.11 keeps only breaking-crest patches and removes the
+downwind/spume overlays (SEA-D50, [crest geometry](crest-shape.md)). It uses the water's existing light, raises alpha for OIT and leaves vanilla's
 depth/contact foam intact. It requires animated, upward, sky-exposed water above the camera's underwater threshold;
 oceanity suppresses it in sheltered/weak-wave water and dry-hull discard still runs first. It remains on with glints
 and sky reflection disabled and with vanilla's foam graphics option off, as Sea's waves do with waving-stuff off.

@@ -1,5 +1,9 @@
 # Foam direction and texture — issue #35, SEA-D49
 
+**Superseded in part by pre.11 / SEA-D50:** [issue #37](crest-shape.md) deletes the downwind and independent
+surface-spume layers and adds actual Gerstner crest geometry plus a local compression requirement for wind foam.
+The wind-axis/provider audit and wake-age/texture findings below still apply; windrow tests/renders are historical.
+
 Sea 0.4.7-pre.10, based on accepted/installed pre.9 `b47b9f4`. This corrects foam morphology and makes its source
 diagnosable. Wave heights, phases, CPU/ship samples, hull clipping and the accepted 250,000-sample wake raster cap
 remain unchanged. No Vintage Story client was launched, install performed or sibling project changed.

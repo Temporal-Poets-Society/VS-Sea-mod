@@ -168,6 +168,7 @@ namespace SeaTests
             StormEvidence.Run(Check);
             WakeChecks.Run(Check);
             FoamChecks.Run(Check);
+            CrestChecks.Run(Check);
 
             Console.WriteLine("night sky presentation");
             {
@@ -251,7 +252,7 @@ namespace SeaTests
                 Check(cv != null && cf != null && CelestialShader.Vertex(cv) == null && CelestialShader.Fragment(cf) == null, "celestial anchors apply once to installed water shader");
                 // (0.4.7-pre.5) the near water fades each train by Wmap's far-sea rule, keeping the faded slope as glint roughness;
                 // its sky reflection has the game's flat fog and the eye's height, and AstraTerra's sunset glow
-                Check(cv.Contains("1.0 - smoothstep(0.25, 0.75, k * seaFootprint)") && cv.Contains("seaSurfaceRough +=") && cf.Contains("in float seaSurfaceRough;")
+                Check(cv.Contains("1.0-smoothstep(0.25,0.75,k*footprint)") && cv.Contains("rough +=") && cf.Contains("in float seaSurfaceRough;")
                     && cf.Contains("1.0 - 1.0 / exp((skyPos.y - fogFrom - bias) * flatFogDensity)") && cf.Contains("0.25 * seaAboveSea")
                     && cf.Contains("seaSunsetShape(d, seaSun.xyz)") && cf.Contains("glint *= width / spread;"),
                     "near water: trains fade by the far sea's footprint rule; the sky reflection has flat fog, the eye's height and the sunset glow");

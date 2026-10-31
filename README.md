@@ -5,7 +5,14 @@ calm down with the wind of the past hours, and are the same on the server and ev
 It also owns the water shaders, so ship mods (Magelan, Hansa) ask Sea to keep waves out of their hulls instead of each
 patching the shaders.
 
-Version **0.4.7-pre.10** (31 October 2026, issue #35): broken crest patches, thin windrows from about Beaufort 8,
+Version **0.4.7-pre.11** (31 October 2026, issue #37): bounded Gerstner horizontal orbits sharpen wave crests and
+broaden troughs. Ships invert the same surface at world X/Z; the spectrum, heights, periods and short texture
+amplitudes remain unchanged. Downwind foam rows and independent surface spume are removed. Wind foam occurs only
+in short patches on compressed crest tops, fading into lace behind them; sheltered water cannot trigger it.
+[Geometry, physics references, CPU/GPU agreement and before/after GPU views](docs/crest-shape.md), SEA-D50.
+No client launched; coast edges, ship motion and the near/far join need an in-game look.
+
+Version **0.4.7-pre.10** (31 October 2026, issue #35; windrows superseded by pre.11): broken crest patches, thin windrows from about Beaufort 8,
 and porous bubble/lace foam replace pre.9's smooth white ribbons. Windrows follow the wind's **travel** direction;
 wake texture follows its own world-space trail and ages independently. `.sea` now reports the exact current local
 foam wind/coverage input (Earth overrides the fallback `SeaWindStrength`); `.sea foam all|wind|wakes|off` isolates
@@ -196,8 +203,12 @@ hour is 2 real minutes) the sea takes about 6 real minutes to get up.
   Each runs at its deep-water speed (strength 1 default peak about 11 blocks/s).
 - **Chop:** 6.5 and 4.3 blocks from the local wind, plus 9.7 in storms. Breeze chop stays as before; storm chop is
   bounded at roughly the breeze's short-wave RMS slope, without growing with wind or fading to a mirror.
-- **Wind foam:** broken crests, irregular downwind streaks and fast surface spume. Faint around force 4–5, dense at
-  force 10–12, shaded by the water's light and fog. Sheltered water suppresses it; dry hulls keep their existing cut.
+- **Crest shape:** Gerstner horizontal displacement concentrates vertices at crests, leaving broader troughs.
+  The current spectrum supplies steepness, globally bounded against loops. Ship height queries invert the horizontal
+  map, including the existing sheltered-height multiplier. Calm/default amplitudes and periods stay unchanged.
+- **Wind foam:** short, porous breaking-crest patches, opening into lace and fading behind the crest. Local wind
+  controls their density, but cannot whiten an uncompressed or sheltered surface. No downwind stripe/spume layer.
+  Foam uses the water's light and fog; dry hulls keep their existing cut and vanilla keeps contact/depth foam.
 - **Nothing jumps:** when the sea state or the wind changes, trains grow and fade (blended over a second); none of
   them ever changes its phase. Up to 24 trains run at once.
 - **The same for everyone:** the trains come from the world's wind key, their strengths from the sea state and wind
@@ -291,7 +302,7 @@ and `.sea reset` go back to `sea.json`, which they never change.
 `.sea` reports the source/node/raster counts. `.sea reset` also resets the wake override.
 `.sea foam all|wind|wakes|off` isolates Sea foam layers while retaining the same histories; vanilla contact foam
 and reflections remain visible. `.sea`/`.sea foam` report **Foam wind**, its wind-from/toward bearings, Beaufort
-force, whitecap input and windrow ramp. With Earth as provider, read those values rather than `SeaWindStrength`.
+force, whitecap input and the breaking-crest requirement. With Earth as provider, read those values rather than `SeaWindStrength`.
 
 ## Dry hulls (for ship mods)
 
@@ -367,6 +378,7 @@ sea.SampleWaves(place, x, z);         // each tick or frame: the trains running 
                                       // everyone there, wherever they came from)
 place.HeightAt(x, z);                 // the open-sea surface (Count, Kx, Kz, Omega, Phase, Amp: the trains themselves)
 sea.WaveFactorAt(x, z);               // 1 on the open sea .. 0.2 sheltered (multiply heights by it, as the shader does)
+                                     // pre.11: looks up shelter at the inverse mesh coordinate, including across gradients
 sea.WaveHeightAt(x, z);               // both sides: the surface there now, sheltered water included
 sea.WaveTime;                         // seconds on the shared wave clock
 

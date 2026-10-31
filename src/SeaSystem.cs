@@ -337,8 +337,23 @@ namespace Sea
         /// <summary>
         /// How much of the open-sea waves reaches this place: 1 on the open ocean, down to a fifth in sheltered water
         /// (lakes, inland), the same divisor the water shader applies there (from the world's ocean map).
+        /// With horizontal waves, reads the map at the inverse mesh coordinate, where the shader's flag was packed.
         /// </summary>
         public double WaveFactorAt(double x, double z)
+        {
+            try
+            {
+                // Oceanity belongs to the original mesh vertex, not the horizontally displaced position.
+                // Preserve HeightAt(world) * WaveFactorAt(world) for existing ship mods across shelter gradients.
+                (double X,double Z) q;
+                if(api.Side==EnumAppSide.Client) q=CameraWaves.ParameterAt(x,z);
+                else { lock(probes) q=ProbeAt(x,z).ParameterAt(x,z); }
+                return MeshWaveFactorAt(q.X,q.Z);
+            }
+            catch(Exception) { return 0.2; }
+        }
+
+        double MeshWaveFactorAt(double x,double z)
         {
             try
             {
@@ -366,32 +381,33 @@ namespace Sea
         /// </summary>
         public double WaveHeightAt(double x, double z)
         {
-            double h;
-            if (api.Side == EnumAppSide.Client) h = CameraWaves.HeightAt(x, z);
-            else
+            if(api.Side==EnumAppSide.Client) return ShelteredHeight(CameraWaves,x,z);
+            lock(probes) return ShelteredHeight(ProbeAt(x,z),x,z);
+        }
+
+        double ShelteredHeight(WavePlace place,double x,double z)
+        {
+            var q=place.ParameterAt(x,z);
+            return place.SurfaceAt(q.X,q.Z,MeshWaveFactorAt(q.X,q.Z)).Y;
+        }
+
+        // Caller holds probes' lock. Keep the same bounded per-cell cache for heights and inverse shelter lookups.
+        WavePlace ProbeAt(double x,double z)
+        {
+            var key=((long)Math.Floor(x/WavePlace.GridCell),(long)Math.Floor(z/WavePlace.GridCell));
+            if(!probes.TryGetValue(key,out var probe))
             {
-                // (0.4.2) a probe per grid cell asked about lately, so ships far apart don't make one probe start over at
-                // every call; and one caller at a time (ships may ask from other threads)
-                var key = ((long)Math.Floor(x / WavePlace.GridCell), (long)Math.Floor(z / WavePlace.GridCell));
-                lock (probes)
+                if(probes.Count>=MaxProbes)
                 {
-                    if (!probes.TryGetValue(key, out var probe))
-                    {
-                        if (probes.Count >= MaxProbes)
-                        {
-                            var oldest = key;
-                            long used = long.MaxValue;
-                            foreach (var kv in probes) if (kv.Value.Used < used) { used = kv.Value.Used; oldest = kv.Key; }
-                            probes.Remove(oldest);
-                        }
-                        probes[key] = probe = new Probe();
-                    }
-                    probe.Used = ++probeUses;
-                    SampleWaves(probe.Place, x, z);
-                    h = probe.Place.HeightAt(x, z);
+                    var oldest=key;long used=long.MaxValue;
+                    foreach(var kv in probes) if(kv.Value.Used<used) {used=kv.Value.Used;oldest=kv.Key;}
+                    probes.Remove(oldest);
                 }
+                probes[key]=probe=new Probe();
             }
-            return h * WaveFactorAt(x, z);
+            probe.Used=++probeUses;
+            SampleWaves(probe.Place,x,z);
+            return probe.Place;
         }
 
         sealed class Probe { public readonly WavePlace Place = new(); public long Used; }

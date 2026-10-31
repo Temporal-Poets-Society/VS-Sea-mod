@@ -40,9 +40,52 @@ namespace Sea
         // seaClipC = (waterline rise per block toward the bow, … toward starboard, calm zone, calm level's rise per block toward starboard)
         // seaClipD = (dry outline's inset from the footprint, dry depth below the waterline, dry height above it, 1 if dry)
         // seaClipP: 16 half-widths per hull from stern to bow (4 vec4 each)
-        const string Declarations = @"
+        // Shared verbatim with the offline GPU geometry checks. HeightAt inverts this map on the CPU.
+        public const string Geometry = @"
 uniform int seaWaveCount = 0;
 uniform vec4 seaWave[24];
+uniform float seaWaveShape = 0.0;
+float seaShapeWeight(float k) { return 0.15+0.85/(1.0+k*k/0.09); }
+vec3 seaSurface(vec2 q, float factor) {
+    vec3 p = vec3(q.x,0.0,q.y);
+    for (int i=0; i<seaWaveCount; i++) {
+        vec4 w=seaWave[i];
+        float k=length(w.xy), phase=dot(w.xy,q)+w.z;
+        p.y += w.w*sin(phase)*factor;
+        if (k>0.0000001) p.xz += seaWaveShape*seaShapeWeight(k)*w.w*w.xy/k*cos(phase);
+    }
+    return p;
+}
+// Parametric derivatives: Eulerian height gradient = transpose(inverse(J)) * dY/dq.
+// Compression is 1 - the smallest horizontal eigenvalue: zero/negative in broad troughs.
+void seaDifferential(vec2 q, float factor, float footprint, out vec2 slope, out float rough,
+    out vec3 crest) {
+    mat2 jac=mat2(1.0); vec2 gradient=vec2(0.0);
+    float height=0.0, variance=0.0, fall=0.0, fallVariance=0.0;
+    rough=0.0;
+    for(int i=0;i<seaWaveCount;i++) {
+        vec4 w=seaWave[i]; float k=length(w.xy);
+        if(k<0.0000001) continue;
+        float phase=dot(w.xy,q)+w.z, sn=sin(phase), cs=cos(phase);
+        float keep=1.0-smoothstep(0.25,0.75,k*footprint);
+        vec2 direction=w.xy/k;
+        jac -= seaWaveShape*seaShapeWeight(k)*w.w*k*sn*keep*outerProduct(direction,direction);
+        gradient += keep*w.w*w.xy*cs*factor;
+        rough += (1.0-keep*keep)*0.5*pow(w.w*k*factor,2.0);
+        float longWave=1.0-smoothstep(0.3,0.6,k);
+        height += longWave*keep*w.w*sn;
+        variance += 0.5*pow(longWave*w.w,2.0);
+        float omega=sqrt(9.81*k);
+        fall += longWave*keep*w.w*omega*cs;
+        fallVariance += 0.5*pow(longWave*w.w*omega,2.0);
+    }
+    slope=inverse(jac)*gradient;
+    float least=0.5*(jac[0][0]+jac[1][1]-length(vec2(jac[0][0]-jac[1][1],2.0*jac[0][1])));
+    crest=vec3(height/max(sqrt(variance),0.0001),max(0.0,1.0-least)*factor,fall/max(sqrt(fallVariance),0.0001));
+}
+";
+
+        const string Declarations = Geometry + @"
 uniform int seaClipCount = 0;
 uniform vec4 seaClipA[8];
 uniform vec4 seaClipB[8];
@@ -54,12 +97,9 @@ float seaWaveCalm = 1.0; // also suppress wind foam where a non-dry hull calms t
 
 vec4 seaWaves(bool notLava, vec4 wp, float div) {
 	if (!notLava || seaWaveCount == 0) return applyLiquidWarping(notLava, wp, div);
-	float y = 0.0;
-	for (int i = 0; i < seaWaveCount; i++) {
-		vec4 w = seaWave[i];
-		y += w.w * sin(dot(w.xy, wp.xz) + w.z);
-	}
-	wp.y += y / div;
+    vec3 p = seaSurface(wp.xz, 1.0/div);
+    wp.xz = p.xz;
+    wp.y += p.y;
 	wp.xyz = applyPerceptionWarping(wp.xyz);
 	return wp;
 }
@@ -73,7 +113,7 @@ vec4 seaWater(vec4 wp, vec3 rest) {
 		vec4 b = seaClipB[h];
 		vec4 c = seaClipC[h];
 		if (b.x <= 0.0) continue;
-		vec2 d = rest.xz - a.xy;
+		vec2 d = wp.xz - a.xy;
 		float fwd = d.x * a.w + d.y * a.z;
 		float side = d.y * a.w - d.x * a.z;
 		float along = fwd - b.w;

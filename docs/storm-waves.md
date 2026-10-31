@@ -1,5 +1,9 @@
 # Storm waves — issue #28, SEA-D46 (30 October 2026)
 
+**Pre.11 note (SEA-D50, issue #37):** [bounded Gerstner geometry and breaking-only foam](crest-shape.md)
+now shape the same retained spectrum. `HeightAt` inverts horizontal displacement; the vertical-only sampler
+description below and downwind/spume layers describe earlier releases. Spectrum/height-scale tables remain valid.
+
 **Pre.10 note (SEA-D49, issue #35):** the wave-spectrum evidence below is unchanged. Its foam equation/old mask
 renders are historical; [the new foam audit](foam-direction.md) replaces the smooth ribbon morphology, distinguishes
 empirical input from actual rendered coverage, and supplies current four-strength GPU renders under `obj/foam35/`.

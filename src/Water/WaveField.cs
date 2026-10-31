@@ -197,6 +197,25 @@ namespace Sea
     {
         public const double SampleSeconds = 1;
         public const int MaxWaves = 24;
+        // Gerstner horizontal Jacobian stays positive: sum(Q_i A |k|) <= 0.65 < 1.
+        // Also a contraction bound for the inverse world-position sample. Finch, GPU Gems ch. 1.
+        public const double MaxCompression = 0.65;
+        public const int InverseIterations = 24;
+        /// <summary>Concentrate horizontal crest shaping in the swell; keep the equilibrium chop as texture.</summary>
+        public static double ShapeWeight(double k) => 0.15 + 0.85 / (1 + k*k/0.09);
+        /// <summary>Orbit multiplier, before ShapeWeight. The current spectrum supplies steepness; never loops.</summary>
+        public double Shape
+        {
+            get
+            {
+                double sum = 0;
+                for (int i = 0; i < Count; i++) {
+                    double k=Math.Sqrt(Kx[i]*Kx[i]+Kz[i]*Kz[i]);
+                    sum += Math.Abs(Amp[i])*k*ShapeWeight(k);
+                }
+                return Math.Min(4.0, MaxCompression / Math.Max(sum, 1e-12));
+            }
+        }
 
         WaveSpectrum spectrum;
         double[] prev, next, blended;
@@ -440,9 +459,51 @@ namespace Sea
 
         public double HeightAt(double x, double z, double t)
         {
-            double y = 0;
-            for (int i = 0; i < Count; i++) y += Amp[i] * Math.Sin(Kx[i] * x + Kz[i] * z - Omega[i] * t + Phase[i]);
+            var q=ParameterAt(x,z,t);
+            double y=0;
+            for(int i=0;i<Count;i++) y+=Amp[i]*Math.Sin(Kx[i]*q.X+Kz[i]*q.Z-Omega[i]*t+Phase[i]);
             return y;
+        }
+
+        /// <summary>Undisplaced mesh coordinate at world X/Z. Shelter is packed at this coordinate by the game.</summary>
+        public (double X,double Z) ParameterAt(double x,double z) => ParameterAt(x,z,Time);
+
+        public (double X,double Z) ParameterAt(double x,double z,double t)
+        {
+            // Invert X = q + sum(Q A direction cos(theta(q))). A height at q is NOT a height at world X.
+            // Horizontal orbits deliberately do not depend on the liquid's vertical divisor: legacy callers that
+            // multiply HeightAt by WaveFactorAt still sample precisely the shader's sheltered surface.
+            double qx = x, qz = z, shape = Shape;
+            for (int j = 0; j < InverseIterations; j++)
+            {
+                Displacement(qx, qz, t, shape, out double dx, out double dz);
+                double nx=x-dx, nz=z-dz;
+                bool converged=Math.Abs(nx-qx)+Math.Abs(nz-qz)<1e-7;
+                qx=nx; qz=nz;
+                if(converged) break;
+            }
+            return (qx,qz);
+        }
+
+        void Displacement(double qx, double qz, double t, double shape, out double dx, out double dz)
+        {
+            dx = dz = 0;
+            for (int i = 0; i < Count; i++)
+            {
+                double k = Math.Sqrt(Kx[i]*Kx[i]+Kz[i]*Kz[i]);
+                if (k < 1e-12) continue;
+                double d = shape * ShapeWeight(k) * Amp[i] / k * Math.Cos(Kx[i]*qx+Kz[i]*qz-Omega[i]*t+Phase[i]);
+                dx += Kx[i]*d; dz += Kz[i]*d;
+            }
+        }
+
+        /// <summary>Parametric surface point, as the vertex shader draws it. Mainly useful for diagnostics.</summary>
+        public (double X, double Y, double Z) SurfaceAt(double qx, double qz, double factor = 1)
+        {
+            Displacement(qx,qz,Time,Shape,out double dx,out double dz);
+            double y=0;
+            for(int i=0;i<Count;i++) y+=Amp[i]*Math.Sin(Kx[i]*qx+Kz[i]*qz-Omega[i]*Time+Phase[i]);
+            return (qx+dx,y*factor,qz+dz);
         }
 
         /// <summary>Significant height (4σ) of what's running here now.</summary>
@@ -473,11 +534,25 @@ namespace Sea
             return n;
         }
 
-        /// <summary>The height the shader computes from those uniforms, for a point (rx, rz) relative to the camera.</summary>
+        /// <summary>The shader's surface height at camera-relative world X/Z (inverse map, evaluated in doubles).
+        /// The GPU vertex shader itself evaluates the forward parametric map; tests check both directions.</summary>
         public static double ShaderHeight(float[] u, int n, double rx, double rz)
         {
+            double sum = 0;
+            for (int i=0;i<n;i++) {double k=Math.Sqrt(u[i*4]*u[i*4]+u[i*4+1]*u[i*4+1]);sum+=Math.Abs(u[i*4+3])*k*ShapeWeight(k);}
+            double shape=Math.Min(4.0,MaxCompression/Math.Max(sum,1e-12)), qx=rx,qz=rz;
+            for(int j=0;j<InverseIterations;j++) {
+                double dx=0,dz=0;
+                for(int i=0;i<n;i++) {
+                    double k=Math.Sqrt(u[i*4]*u[i*4]+u[i*4+1]*u[i*4+1]);
+                    if(k<1e-12)continue;
+                    double d=shape*ShapeWeight(k)*u[i*4+3]/k*Math.Cos(u[i*4]*qx+u[i*4+1]*qz+u[i*4+2]);
+                    dx+=u[i*4]*d;dz+=u[i*4+1]*d;
+                }
+                qx=rx-dx;qz=rz-dz;
+            }
             double y = 0;
-            for (int i = 0; i < n; i++) y += u[i * 4 + 3] * Math.Sin(u[i * 4] * rx + u[i * 4 + 1] * rz + u[i * 4 + 2]);
+            for (int i = 0; i < n; i++) y += u[i * 4 + 3] * Math.Sin(u[i * 4] * qx + u[i * 4 + 1] * qz + u[i * 4 + 2]);
             return y;
         }
     }

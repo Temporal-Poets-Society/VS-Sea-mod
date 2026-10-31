@@ -66,7 +66,7 @@ namespace ShaderCheck
                     {
                         // Sea's uniforms must survive the driver's optimiser, or its uploads would miss
                         var missing = new List<string>();
-                        foreach (string u in new[] { "seaClipCount", "seaClipA", "seaClipB", "seaClipC", "seaClipD", "seaClipP", "seaDryE", "seaDryP", "seaWaveCount", "seaWave" })
+                        foreach (string u in new[] { "seaClipCount", "seaClipA", "seaClipB", "seaClipC", "seaClipD", "seaClipP", "seaDryE", "seaDryP", "seaWaveCount", "seaWave", "seaWaveShape" })
                             if (GL.GetUniformLocation(prog, u) < 0 && GL.GetUniformLocation(prog, u + "[0]") < 0) missing.Add(u);
                         Check(missing.Count == 0, pass + ": Sea's uniforms are live" + (missing.Count > 0 ? " (missing " + string.Join(", ", missing) + ")" : ""));
                         GL.DeleteProgram(prog);
