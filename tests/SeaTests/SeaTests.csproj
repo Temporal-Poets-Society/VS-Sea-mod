@@ -46,6 +46,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\worldconfig.json" Link="worldconfig.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\assets\game\lang\en.json" Link="assets\game\lang\en.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\game\lang\sea-worldconfig-en.json" Link="assets\game\lang\sea-worldconfig-en.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

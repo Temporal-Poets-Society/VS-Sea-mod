@@ -66,7 +66,7 @@ namespace SeaTests
                 "wrong attribute types keep the existing settings");
 
             using var declaration = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "worldconfig.json")));
-            using var english = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "assets", "game", "lang", "en.json")));
+            using var english = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "assets", "game", "lang", "sea-worldconfig-en.json")));
             var root = declaration.RootElement;
             var attrs = root.GetProperty("worldConfigAttributes").EnumerateArray().ToArray();
             check(root.GetProperty("playStyles").GetArrayLength() == 0 && attrs.Length == 2
