@@ -5,6 +5,15 @@ calm down with the wind of the past hours, and are the same on the server and ev
 It also owns the water shaders, so ship mods (Magelan, Hansa) ask Sea to keep waves out of their hulls instead of each
 patching the shaders.
 
+Version **0.4.7-pre.12** (31 October 2026): the **Earth** world-settings tab offers storm wave height
+(`seaStormHeight`: 1, 1.5 or 2.2; default 1) and ship/swimmer wakes (`seaWakes`: default on).
+New worlds save these choices; worlds without either key keep the corresponding `StormHeightScale` / `WakeEnabled`
+value from `ModConfig/sea.json`, including custom values. The server resolves them and sends its effective config
+through the existing sync; world choices never overwrite `sea.json`. Both can be changed after creation with
+`/worldconfig seaStormHeight 1.5` or `/worldconfig seaWakes false`; restart the world/server to apply.
+Earth is not required, and Sea adds no play style. SEA-D51. Offline coverage added; coordinator build/tests pending.
+No game client launched or installation changed.
+
 Version **0.4.7-pre.11** (31 October 2026, issue #37): bounded Gerstner horizontal orbits sharpen wave crests and
 broaden troughs. Ships invert the same surface at world X/Z; the spectrum, heights, periods and short texture
 amplitudes remain unchanged. Downwind foam rows and independent surface spume are removed. Wind foam occurs only

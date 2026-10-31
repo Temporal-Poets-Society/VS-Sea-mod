@@ -1,4 +1,5 @@
 using ProtoBuf;
+using Vintagestory.API.Datastructures;
 
 namespace Sea
 {
@@ -39,6 +40,25 @@ namespace Sea
         /// <summary>Client-only cosmetic wakes; never change the shared wave samples or ship physics.</summary>
         [ProtoMember(16, IsRequired = true)] public bool WakeEnabled = true;
         [ProtoMember(17, IsRequired = true)] public float WakeStrength = 1;
+
+        /// <summary>
+        /// The loaded world's choices over the checked sea.json defaults. Work on a copy so world choices are
+        /// never written into the server-wide config. Missing or invalid values keep the existing setting.
+        /// </summary>
+        public SeaConfig ForWorld(ITreeAttribute world)
+        {
+            var effective = (SeaConfig)MemberwiseClone();
+            // Match the dropdown's strings explicitly: independent of the server's number culture.
+            effective.StormHeightScale = world?.GetString("seaStormHeight") switch
+            {
+                "1" => 1,
+                "1.5" => 1.5f,
+                "2.2" => 2.2f,
+                _ => StormHeightScale
+            };
+            effective.WakeEnabled = world?.GetBool("seaWakes", WakeEnabled) ?? WakeEnabled;
+            return effective;
+        }
 
         /// <summary>
         /// (0.3.7) Numbers a hand-edited sea.json can't use (negative, NaN, infinite) back to their defaults.

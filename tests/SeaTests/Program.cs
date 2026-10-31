@@ -169,6 +169,7 @@ namespace SeaTests
             WakeChecks.Run(Check);
             FoamChecks.Run(Check);
             CrestChecks.Run(Check);
+            WorldOptionsChecks.Run(Check);
 
             Console.WriteLine("night sky presentation");
             {

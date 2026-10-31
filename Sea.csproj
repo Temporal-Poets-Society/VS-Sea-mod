@@ -46,6 +46,8 @@
 
   <ItemGroup>
     <None Include="modinfo.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="worldconfig.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="assets\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Release build also produces a ready-to-install zip in .\release, named with the version from modinfo.json

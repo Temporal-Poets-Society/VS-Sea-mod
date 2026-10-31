@@ -535,6 +535,9 @@ namespace Sea
 
         void BuildServerModel()
         {
+            // World configuration is available now; sea.json was stored before these per-world overrides.
+            // The effective Config goes to the model and through the existing SeaParamsPacket to every client.
+            Config = Config.ForWorld(sapi.World.Config);
             RegionSize = sapi.World.BlockAccessor.RegionSize;
             var cal = sapi.World.Calendar;
             ReadRing(out double ringStart, out double circumference);
