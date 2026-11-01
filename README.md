@@ -1,5 +1,9 @@
 # Sea — waves that follow the wind, the same sea for everyone (Vintage Story 1.22)
 
+**0.5.2:** the water's moon glint and sun colour follow **Astra Terra for Earth** again. The fork's mod ID is
+`astraearth`, and 0.5.1 only connected to a mod named `astraterra`, so Earth worlds got vanilla's moon on the water.
+Sea now accepts either ID (same assembly and types). No other change.
+
 **0.5.1 — development release for Earth:** ship/swimmer wakes, splash rings and Sea's bow-spray effect are
 removed from this release, including their renderer, shader path, commands and world/config controls. Breaking-wave
 crest foam remains. Older wake settings are ignored. The previous 0.5.0 snapshot is preserved.

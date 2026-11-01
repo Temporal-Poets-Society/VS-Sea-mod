@@ -14,11 +14,13 @@ public class Proxy : DispatchProxy
     public static object Logger, ModLoader;
     /// <summary>Whether this world has AstraTerra (the mod loader's answer; its Mod itself isn't made here).</summary>
     public static bool AstraEnabled;
+    /// <summary>The mod ID this world has AstraTerra under: the original or the Earth fork (astraearth, 0.5.2).</summary>
+    public static string AstraId = "astraterra";
     protected override object Invoke(MethodInfo method, object[] args)
     {
         if (method.Name == "get_Logger") return Logger;
         if (method.Name == "get_ModLoader") return ModLoader;
-        if (method.Name == "IsModEnabled") return AstraEnabled && (string)args[0] == "astraterra";
+        if (method.Name == "IsModEnabled") return AstraEnabled && (string)args[0] == AstraId;
         if (method.DeclaringType == typeof(ILogger) && args?.Length > 0) Console.WriteLine("  log  " + args[0]);
         return method.ReturnType == typeof(void) ? null : method.ReturnType.IsValueType ? Activator.CreateInstance(method.ReturnType) : null;
     }
@@ -76,6 +78,17 @@ static class Program
         typeof(CelestialRenderer).GetMethod("InitializeAstra", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(renderer, null);
         bool failed = (bool)typeof(CelestialRenderer).GetField("astraFailed", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(renderer);
         Check(!failed, "Sea's actual optional adapter initializes against the extracted installed AstraTerra 0.15.0 DLL");
+        // (0.5.2) Astra Terra for Earth: the same assembly under the fork's mod ID
+        {
+            Proxy.AstraId = "astraearth";
+            var fork = RuntimeHelpers.GetUninitializedObject(typeof(CelestialRenderer));
+            typeof(CelestialRenderer).GetField("api", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(fork, client);
+            typeof(CelestialRenderer).GetMethod("InitializeAstra", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(fork, null);
+            Check((bool)typeof(CelestialRenderer).GetField("astraPresent", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(fork)
+                && !(bool)typeof(CelestialRenderer).GetField("astraFailed", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(fork),
+                "the adapter also initializes when the world has AstraTerra under the Earth fork's mod ID astraearth");
+            Proxy.AstraId = "astraterra";
+        }
         if (!failed)
         {
             var days = at.GetType("AstraTerra.Astronomy.LocalMoonTime").GetMethod("MoonTotalDays");

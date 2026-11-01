@@ -105,8 +105,10 @@ namespace Sea
             astraPresent = false;
             customSun = null; sunThroughAir = null; sunsetGlow = null;
             astraSunFailed = false;
-            if (!api.ModLoader.IsModEnabled("astraterra")) return;
-            var asm = api.ModLoader.GetMod("astraterra")?.Systems?.FirstOrDefault()?.GetType().Assembly
+            // Astra Terra for Earth (modid astraearth, 0.15.0-dev.25) is the same AstraTerra assembly under the Earth fork's ID
+            string astraId = api.ModLoader.IsModEnabled("astraearth") ? "astraearth" : api.ModLoader.IsModEnabled("astraterra") ? "astraterra" : null;
+            if (astraId == null) return;
+            var asm = api.ModLoader.GetMod(astraId)?.Systems?.FirstOrDefault()?.GetType().Assembly
                 ?? AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "AstraTerra");
             if (asm == null) return;
             astraPresent = true;
