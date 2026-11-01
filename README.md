@@ -1,9 +1,29 @@
 # Sea — waves that follow the wind, the same sea for everyone (Vintage Story 1.22)
 
+**0.5.1 — development release for Earth:** ship/swimmer wakes, splash rings and Sea's bow-spray effect are
+removed from this release, including their renderer, shader path, commands and world/config controls. Breaking-wave
+crest foam remains. Older wake settings are ignored. The previous 0.5.0 snapshot is preserved.
+
+Sea was developed primarily for [Earth](https://mods.vintagestory.at/earth). Following discussion with
+[hoblin](https://mods.vintagestory.at/show/user/99CD92DD551C516918AE), the plan is to merge
+[Rough Seas](https://mods.vintagestory.at/roughseas) with Sea. That work is planned; this release is the current
+separate Sea implementation for Earth and also works without Earth.
+[Publication description](docs/moddb-description.html), [release record](docs/release-0.5.1.md).
+
+**0.4.7-pre.15:** vanilla rafts/sailboats follow Sea without Ships. The sailboat automatically braces its yard
+and cloth to the wind, with useful drive at 45° off the wind and a 40° no-go cone. Mounted underwater fog follows
+the actual waves. Water overtopping the gunwale accumulates, reduces buoyancy and can sink the sailboat; sneak +
+right-click with an empty bucket to bail. Ships dev.23 fits its rowing-boat water cut to the actual hull.
+[Behavior and verification](docs/boat-waves.md). Graphical-client appearance and sailing balance await playtesting.
+
 Vanilla's waves are the same random bumps everywhere. Sea gives the world waves that travel downwind, build up and
 calm down with the wind of the past hours, and are the same on the server and every client, so ships can ride them.
 It also owns the water shaders, so ship mods (Magelan, Hansa) ask Sea to keep waves out of their hulls instead of each
 patching the shaders.
+
+## Historical development builds
+
+The wake features and controls in pre.9–pre.12 below were removed in 0.5.1.
 
 Version **0.4.7-pre.12** (31 October 2026): the **Earth** world-settings tab offers storm wave height
 (`seaStormHeight`: 1, 1.5 or 2.2; default 1) and ship/swimmer wakes (`seaWakes`: default on).
@@ -291,8 +311,6 @@ Nothing about the wind or the waves is sent while you play, except a clock:
 |---|---|---|
 | `WaveScale` | 1 | multiplies wave heights, the chop too (0.3.7) |
 | `StormHeightScale` | 1 | 0–4, storm-only height multiplier, blended over wind strengths 0.4–0.8; 2.2 gives about 12-block Hs at 1.5. Wavelength scales with height; breeze/chop stay unchanged. Larger seas are opt-in and need ship/shore playtesting |
-| `WakeEnabled` | true | Visual wakes, rings and bow spray on clients; false disables all three. No server simulation or saved trails |
-| `WakeStrength` | 1 | Wake foam/spray strength, 0–2; 0 disables. Independent of glints, wind whitecaps and vanilla's foam graphics setting |
 | `SeaWindFrom` | 270 | without a wind provider: the compass bearing (degrees) the steady wind the sea follows blows from (0.4.0) |
 | `SeaWindStrength` | 0.3 | without a wind provider: that steady wind's strength, 0–1.5 (0 = a calm sea) (0.4.0) |
 | `CelestialReflections` | 1 | sun/moon trails; 0 restores vanilla highlights; range 0–2 |
@@ -307,11 +325,8 @@ has its own); an old file keeps them until the server writes it back without the
 Tuning by eye (0.4.3): on a client, `.sea night <0–4>`, `.sea sky <0–4>` and `.sea glint <0–4>` change these three
 strengths on that client at once, until you leave the world; `.sea night` alone shows the value, `.sea night default`
 and `.sea reset` go back to `sea.json`, which they never change.
-`.sea wakes off`, `.sea wakes 0..2` and `.sea wakes default` control wakes on this client until leaving the world;
-`.sea` reports the source/node/raster counts. `.sea reset` also resets the wake override.
-`.sea foam all|wind|wakes|off` isolates Sea foam layers while retaining the same histories; vanilla contact foam
-and reflections remain visible. `.sea`/`.sea foam` report **Foam wind**, its wind-from/toward bearings, Beaufort
-force, whitecap input and the breaking-crest requirement. With Earth as provider, read those values rather than `SeaWindStrength`.
+`.sea foam all|wind|off` shows or hides breaking-wave crest foam locally. Vanilla contact foam retains its own
+settings. The removed wake commands cannot enable wakes.
 
 ## Dry hulls (for ship mods)
 
@@ -369,8 +384,7 @@ Sea.Wind w = sea.WindAt(x, z);        // w.X, w.Z: where the air goes; w.Strengt
 Sea.SeaState s = sea.SeaAt(x, z);     // Height (blocks), DirX/DirZ (where waves run), Period (s), Wavelength
 sea.Model?.At(x, z, totalHours);      // any place and game time (pure, thread-safe; calm without a provider)
 sea.AddWaterClipSource(src);          // client: an IWaterClipSource giving hull footprints each frame (width profile, tilt, calm ring)
-sea.SetWakeHull(entityId, 26, 7, 2.5, -0.2); // client: visual length/beam/draft/centre offset in blocks; bool accepted
-sea.RemoveWakeHull(entityId);         // on despawn; no entity/save/network/physics mutation
+// Retired in 0.5.1: SetWakeHull returns false; RemoveWakeHull is a compatibility no-op.
 
 // a wind provider (Earth): call on every side, any time, with the same pure, thread-safe functions (BCL types only,
 // so it can be bound by reflection without referencing Sea)

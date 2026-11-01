@@ -23,14 +23,17 @@ notes on what Sea did are kept as the record for that port.
   own API:
   - `DefaultShaderUniforms`: `WindSpeed = CurrentSurfaceWindSpeedClient.X`,
     `WaterWaveIntensity = 0.75 + X * 0.9`, and the wind wave counters.
-  - `ModSystemAmbientParticles`, `BlockFruitTreePart`, `BlockBamboo` (its sign) and `EntityBoat` speed.
+  - `ModSystemAmbientParticles`, `BlockFruitTreePart`, `BlockBamboo` (its sign) and `EntityBoat` rocking.
   - Body temperature uses `Length()`.
 - **`GlobalConstants.CurrentWindSpeedClient` / `CurrentSurfaceWindSpeedClient`:**
   - `WeatherSystemClient.OnRenderFrame` smooths `GetWindSpeedAt` at the player (and at the rain map height) toward
     the lookup at rate dt.
   - It adds a small Z wobble (× X).
-- **Vanilla's sailboat** (`EntityBoat`) takes a sail angle from `atan2(CurrentWindSpeedClient.X, .Z)`, i.e. it
-  assumes wind along +X.
+- **Vanilla's sailboat** (`EntityBoat`) uses wind for rocking and, when configured, the weather-vane animation
+  (`atan2(CurrentWindSpeedClient.X, .Z)`). Its native `SeatsToMotion` sail thrust is `dt * sailPosition * 1.5`,
+  independent of wind direction and strength. The native sailboat asset disables the weather-vane setting.
+  **Sea pre.13** now scales that sail thrust by `WindAt` and replaces independent rocking with sampled waves;
+  see [the boat integration](boat-waves.md).
 - **The wind sound** (`WeatherSimulationSound`) reads the region's `weatherData.curWindSpeed.X`, not the event:
   - `WeatherSimulationRegion.TickEvery25ms` moves it toward `GetWindSpeed(seaLevel)` by at most 0.001 per tick.
   - Sea postfixes `WeatherSimulationRegion.GetWindSpeed` (region centre = (regionX + 0.5) × RegionSize), so the

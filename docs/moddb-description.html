@@ -1,0 +1,56 @@
+<p><strong>A moving sea for journeys across Earth.</strong></p>
+
+<p>Sea was developed primarily for <strong><a href="https://mods.vintagestory.at/earth">Earth</a></strong>: to give its oceans travelling waves, rough storm water, believable reflections and boats that move with the surface. Earth provides the climate, weather and changing winds; Sea turns those winds into the water you sail on.</p>
+
+<p><strong>Current release: 0.5.1 — development version.</strong> Sea also works without Earth. Wakes have been removed from this release while their appearance is reconsidered; breaking-wave crest foam remains.</p>
+
+<h2>Waves and storm seas</h2>
+<ul>
+  <li><strong>Waves follow the wind:</strong> the sea builds over hours of wind and settles gradually afterwards. Long swell and short chop move together, rather than repeating the same bumps everywhere.</li>
+  <li><strong>Sharper crests and broader troughs:</strong> horizontal and vertical wave movement shape rough water, with broken foam patches where crests compress and break.</li>
+  <li><strong>Adjustable storms:</strong> stronger winds produce larger, longer waves. Choose the storm-wave height that suits your world.</li>
+  <li><strong>One shared sea:</strong> server-synchronised timing and wave samples let compatible boats and ship mods follow the same surface that players see.</li>
+  <li><strong>Smaller inland waves:</strong> wave strength follows the world's ocean map. Detailed shelter behind individual islands and inside bays is still planned.</li>
+</ul>
+
+<h2>Vanilla rafts and sailboats</h2>
+<p>Sea makes the vanilla raft and sailboat rise, pitch and roll with the waves, including their seats and interaction targets. These features work with Sea alone; Ships is not required.</p>
+<p>With Sea installed, the vanilla sailboat is driven by wind direction and strength. Its yard and sail automatically turn with the wind, and it can make progress on either tack from about <strong>45° off the wind</strong>. Sailing directly into the wind does not work. The normal furled, half-sail and full-sail controls remain; furl the sail to row.</p>
+<p><strong>Storms can swamp the vanilla sailboat.</strong> Water coming over the gunwale accumulates aboard, reduces buoyancy and can eventually sink it. This happens whether the boat is occupied or unattended. Water aboard is saved with the boat, and its level is visible inside the hull.</p>
+<p><strong>To bail:</strong> sneak and right-click the hull with an empty bucket. Each use throws water overboard, with a short cooldown; the bucket remains empty. The boat's information text shows how much water is aboard. Bail it dry before picking it up.</p>
+<p>Mounted underwater effects and breathing follow the displaced waves, so riding below the flat water level in a trough does not by itself put a dry rider underwater. A crest that actually covers you, or floodwater inside the boat, still counts as water.</p>
+
+<h2>Water, light and larger ships</h2>
+<p>Sea adds sky reflections, sunlight glitter and moonlight trails shaped by the waves, plus adjustable outdoor night visibility. Optional integration with <a href="https://mods.vintagestory.at/astraearth">Astra Terra for Earth</a> and <a href="https://mods.vintagestory.at/wmap">World Map</a> helps the near water, sky and distant sea agree.</p>
+<p><a href="https://mods.vintagestory.at/ships">Ships</a> uses Sea's wave and dry-hull services for its vessels. Its rowing boat follows the native-boat wave adapter and has a water cut fitted to its wooden hull. Larger ships retain their own sailing, damage and flooding mechanics. Ships remains an early release with substantial further development planned.</p>
+
+<h2>Earth and the planned Rough Seas merge</h2>
+<p>Following discussions with <a href="https://mods.vintagestory.at/show/user/99CD92DD551C516918AE">hoblin</a>, the plan is to <strong>merge <a href="https://mods.vintagestory.at/roughseas">Rough Seas</a> with Sea</strong>. That is future work. For now, Sea is being released in its current form primarily for Earth; the merged implementation is not included in this release.</p>
+<p>Earth will continue to own its climate, wind and weather. Sea supplies waves and water rendering. The current separate Sea and Rough Seas implementations are not supported together.</p>
+
+<h2>Installation</h2>
+<p>For <strong>Vintage Story 1.22</strong>. Install the same Sea version on the server and every client. In singleplayer, put the ZIP in your Mods folder without extracting it. Fully close the game before replacing an older Sea package.</p>
+<p><strong>Earth is optional for Sea, and Sea is strongly recommended but optional for Earth.</strong> With Earth installed, the sea follows Earth's changing winds. Without a wind provider, vanilla weather continues normally and the waves use a configurable steady wind. An administrator can also set a fixed wind for testing.</p>
+<p>Sea does not add an Earth play style or generate terrain. To create an Earth world, follow <a href="https://mods.vintagestory.at/earth">Earth's installation instructions</a>, including its required companions and data parts.</p>
+
+<h2>Settings and commands</h2>
+<p>The <strong>Earth</strong> tab in world settings offers <strong>Storm wave height</strong>: 1, 1.5 or 2.2, with 1 as the default. Advanced settings are in <code>VintagestoryData/ModConfig/sea.json</code>, including overall wave scale, fallback sea wind, reflections and night visibility. Restart the world or server after changing these saved settings.</p>
+<ul>
+  <li><code>/sea</code> reports the wind and waves at your location; <code>.sea</code> shows client diagnostics.</li>
+  <li><code>.sea night</code>, <code>.sea sky</code> and <code>.sea glint</code>, followed by a number from 0 to 4, adjust the view for the current session. Use <code>default</code> or <code>.sea reset</code> to return to the configured values.</li>
+  <li><code>.sea foam all</code> or <code>.sea foam off</code> shows or hides breaking-wave foam locally.</li>
+  <li><code>/sea setwind &lt;from&gt; &lt;strength&gt; [hours] [built]</code> fixes the wind for testing; <code>/sea clearwind</code> returns control to the weather. These commands require server-control permission.</li>
+</ul>
+<p><strong>Wakes are not included.</strong> The removed ship/swimmer trails, splash rings and Sea bow spray have no enable switch in this version. Old wake settings are ignored.</p>
+
+<h2>Development and feedback</h2>
+<p>Sea is under active development. Full graphical-client appearance, sailing balance, coastal edges and multiplayer combinations need continued testing. Other water-shader replacements can conflict with Sea.</p>
+<p>When reporting a problem, include the game and Sea versions, other installed mods, the wind and conditions, client/server logs, and a screenshot or short reproduction.</p>
+
+<h2>Contact and development</h2>
+<p><strong>You can contact me on Discord: ifeelveryunlucky.</strong></p>
+<p><strong>Anyone who would like to join forces on development is welcome.</strong> Get in touch if you would like to contribute.</p>
+
+<h2>AI use and licence</h2>
+<p><strong>AI disclaimer:</strong> AI tools are used in development. The ideas and design are mine, and I put extensive work into testing, refining and improving the mod.</p>
+<p>Licensed under GPL-3.0.</p>

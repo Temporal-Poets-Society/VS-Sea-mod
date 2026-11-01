@@ -82,8 +82,10 @@ namespace ShaderCheck
                             int cp = Build("celestial water, dry cut " + dry, cv, cf, defs);
                             if (cp != 0)
                             {
-                                foreach (string u in new[] { "seaSun", "seaMoon", "seaEffects", "seaSky", "seaSkyTex", "seaGlowTex", "seaWeather", "seaEye", "seaStorm", "seaFoamOrigin", "seaWakeTex", "seaWakeArea", "seaWakeHeight", "seaWakeOrigin" })
+                                foreach (string u in new[] { "seaSun", "seaMoon", "seaEffects", "seaSky", "seaSkyTex", "seaGlowTex", "seaWeather", "seaEye", "seaStorm", "seaFoamOrigin" })
                                     Check(GL.GetUniformLocation(cp, u) >= 0, "celestial uniform live: " + u);
+                                foreach (string u in new[] { "seaWakeTex", "seaWakeArea", "seaWakeHeight", "seaWakeOrigin" })
+                                    Check(GL.GetUniformLocation(cp, u) < 0, "removed wake uniform absent: " + u);
                                 GL.DeleteProgram(cp);
                             }
                         }
@@ -138,7 +140,6 @@ namespace ShaderCheck
             SkyReflection();
             FarGlintMatchesNear();
             FoamGpu();
-            WakeGpu();
 
             Console.WriteLine(failures == 0 ? "ALL OK" : $"{failures} FAILED");
             return failures == 0 ? 0 : 1;
@@ -417,9 +418,19 @@ void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); outColor=vec4(seaLo
             caravel.Flooded = true;
             caravel.FloodY = -2.2;
             DryCutMatches("caravel: legitimate floodwater remains below flood plane", caravel);
+            foreach (string name in new[] { "rowboat", "sailboat" })
+            {
+                var small = System.Text.Json.JsonSerializer.Deserialize<WaterClipBox>(
+                    File.ReadAllText("tests/fixtures/" + name + "-dry-clip.json"), new System.Text.Json.JsonSerializerOptions { IncludeFields = true });
+                DryCutMatches(name + ": fitted hull, level", small, 6);
+                small.Yaw = .7; small.SlopeAlong = .22f; small.SlopeAcross = -.35f;
+                DryCutMatches(name + ": fitted hull, pitched and rolled", small, 6);
+                small.Flooded = true; small.FloodY = small.WaterY - .1;
+                DryCutMatches(name + ": floodwater stays visible", small, 6);
+            }
         }
 
-        static void DryCutMatches(string what, WaterClipBox clip)
+        static void DryCutMatches(string what, WaterClipBox clip, double radius = 20)
         {
             const int N = 128;
             const string vsh = @"#version 330 core
@@ -475,14 +486,15 @@ void main() {
                 GL.Uniform4(GL.GetUniformLocation(prog, "seaDryE"), 1, new[] { clip.DryLevel0, clip.DryLevelStep, clip.HalfLength - clip.DryInset, clip.DryRake });
                 GL.Uniform4(GL.GetUniformLocation(prog, "seaDryP"), clip.DryProfile.Length / 4, clip.DryProfile);
             }
-            double x0 = clip.X - 20, z0 = clip.Z - 20, x1 = clip.X + 20, z1 = clip.Z + 20;
+            double x0 = clip.X - radius, z0 = clip.Z - radius, x1 = clip.X + radius, z1 = clip.Z + radius;
             GL.Uniform4(GL.GetUniformLocation(prog, "area"), (float)x0, (float)z0, (float)x1, (float)z1);
 
             var pixels = new byte[N * N];
             int dry = 0, mismatched = 0, nearEdge = 0, shown = 0;
             var unflooded = clip;
             unflooded.Flooded = false;
-            foreach (double y in new[] { clip.WaterY - 3.0, clip.WaterY - 1.1, clip.WaterY, clip.WaterY + 0.7, clip.WaterY + 2.2, clip.WaterY + 3.9, clip.WaterY - 3.4, clip.WaterY + 4.2 })
+            foreach (double y in radius < 10 ? new[] { clip.WaterY - .7, clip.WaterY - .4, clip.WaterY - .2, clip.WaterY, clip.WaterY + .2, clip.WaterY + .4, clip.WaterY + .7, clip.WaterY + 1.2 }
+                : new[] { clip.WaterY - 3.0, clip.WaterY - 1.1, clip.WaterY, clip.WaterY + 0.7, clip.WaterY + 2.2, clip.WaterY + 3.9, clip.WaterY - 3.4, clip.WaterY + 4.2 })
             {
                 GL.Uniform1(GL.GetUniformLocation(prog, "fragY"), (float)y);
                 GL.ClearColor(0, 0, 0, 0);

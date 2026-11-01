@@ -19,7 +19,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="src\**\*.cs" />
+    <Compile Include="src\**\*.cs" Exclude="src\Water\WakeField.cs;src\Water\WakeRenderer.cs" />
   </ItemGroup>
 
   <!-- Compile against the game's own .NET runtime (10.x) so the game DLLs' references line up. -->
@@ -37,6 +37,7 @@
   <ItemGroup>
     <Reference Include="VintagestoryAPI"><HintPath>$(VintageStoryPath)\VintagestoryAPI.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="VSEssentials"><HintPath>$(VintageStoryPath)\Mods\VSEssentials.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VSSurvivalMod"><HintPath>$(VintageStoryPath)\Mods\VSSurvivalMod.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Newtonsoft.Json"><HintPath>$(VintageStoryPath)\Lib\Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="protobuf-net"><HintPath>$(VintageStoryPath)\Lib\protobuf-net.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="0Harmony"><HintPath>$(VintageStoryPath)\Lib\0Harmony.dll</HintPath><Private>false</Private></Reference>

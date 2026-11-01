@@ -1,0 +1,1 @@
+{"type":"code","modid":"seaboatprobe","name":"Sea boat integration checks (test only)","version":"1.0.0","side":"Universal","dependencies":{"game":"1.22.0","sea":"0.4.7-pre.13"}}

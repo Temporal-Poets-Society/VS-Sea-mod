@@ -1,0 +1,52 @@
+SEA — MOD DB PUBLISHING INFORMATION
+Updated 31 October 2026 for Sea 0.5.1 (development release).
+Local publication preparation only; no Mod DB upload or publication performed.
+
+FORM FIELDS
+Name: Sea
+Version: 0.5.1
+Author: Andris
+Mod ID / URL alias: sea
+Side: Both; install the same release on server and clients.
+Game: Vintage Story 1.22 (manifest minimum 1.22.0).
+Suggested tags: Sea, Graphics, Immersion, Travel & Exploration.
+Summary (71 characters; limit 100):
+Waves, storm seas and wind-driven boats, developed primarily for Earth.
+
+DESCRIPTION
+Use docs/moddb-description.html in the Mod DB editor's HTML/source view.
+The copy now explains Earth as the primary purpose, vanilla boat wave following, automatic sail trim,
+close-hauled propulsion, storm flooding/sinking/bailing, and the planned Rough Seas merge discussed
+with hoblin. It presents the merge as future work, not an included implementation.
+Earth: https://mods.vintagestory.at/earth
+Rough Seas: https://mods.vintagestory.at/roughseas
+hoblin: https://mods.vintagestory.at/show/user/99CD92DD551C516918AE
+The discussion itself is author-reported; it is not independently asserted as public agreement.
+
+UPLOAD CANDIDATE
+C:\VS mods\Sea\release\sea-0.5.1.zip
+SHA-256: fd3a08a177254d167abfe5de3b8d00b46895fb52ddbd4f7fabe149c2b1c3801b
+Source worktree: C:\VS mods\Sea\.claude\worktrees\codex-world-options
+Keep the older sea-0.5.0.zip snapshot; it includes the removed wakes and is superseded for publication.
+
+RELEASE NOTE
+Development release 0.5.1: removed ship/swimmer wakes, the wake atlas, splash rings and Sea bow spray,
+including their shaders, live commands and world/config controls. Breaking-wave crest foam stays.
+Old wake world/config/packet values are ignored. Companion SetWakeHull declarations safely return false.
+Also includes the preceding native boat waves, wind-driven sails with automatic yard/cloth trim,
+and saved storm overtopping, bailing and native sinking. A dry mounted rider in a trough retains air.
+
+LINK FIELDS
+Source: https://github.com/andrisberzins-1/VS-Sea-mod
+Issues: https://github.com/andrisberzins-1/VS-Sea-mod/issues
+Repository visibility/issue access has not been reverified; do not advertise inaccessible links.
+Licence: GPL-3.0.
+
+IMAGES
+Use current in-game captures: open water, storm crests, a sailboat on a tack, sunset/moonlit reflections.
+Do not use wake images to advertise 0.5.1. Existing logo assets remain in docs/publishing-assets.
+
+VERIFICATION
+See overview/verification/sea-release-0.5.1.json for exact package and regression records.
+Full graphical-client/multiplayer acceptance remains pending. Installed game packages were not replaced
+by this publication-preparation action.

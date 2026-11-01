@@ -61,6 +61,20 @@ namespace Sea
         /// <summary>The patches both sides need: creatures breathing (server), splashes (both).</summary>
         static void ApplyBoth(Harmony harmony)
         {
+            Try("vanilla sailboat flooding", () => {
+                harmony.Patch(AccessTools.Method(typeof(EntityBoat), nameof(EntityBoat.Initialize)), postfix: new HarmonyMethod(typeof(NativeBoats), nameof(NativeBoats.Initialized)));
+                harmony.Patch(AccessTools.Method(typeof(EntityBoat), nameof(EntityBoat.OnEntityDespawn)), postfix: new HarmonyMethod(typeof(NativeBoats), nameof(NativeBoats.Despawned)));
+                harmony.Patch(AccessTools.Method(typeof(EntityBoat), nameof(EntityBoat.OnGameTick)), postfix: new HarmonyMethod(typeof(NativeBoats), nameof(NativeBoats.Tick)));
+                harmony.Patch(AccessTools.PropertyGetter(typeof(EntityBoat), nameof(EntityBoat.MaterialDensity)), postfix: new HarmonyMethod(typeof(NativeBoats), nameof(NativeBoats.Density)));
+                harmony.Patch(AccessTools.PropertyGetter(typeof(EntityBoat), nameof(EntityBoat.SwimmingOffsetY)), postfix: new HarmonyMethod(typeof(NativeBoats), nameof(NativeBoats.Draft)));
+                harmony.Patch(AccessTools.Method(typeof(EntityBoat), nameof(EntityBoat.OnInteract)), prefix: new HarmonyMethod(typeof(NativeBoats), nameof(NativeBoats.Bail)));
+                harmony.Patch(AccessTools.Method(typeof(EntityBoat), nameof(EntityBoat.GetInfoText)), postfix: new HarmonyMethod(typeof(NativeBoats), nameof(NativeBoats.Info)));
+                harmony.Patch(AccessTools.Method(typeof(EntityBoat), "tryPickup"), prefix: new HarmonyMethod(typeof(NativeBoats), nameof(NativeBoats.Pickup)));
+            });
+            Try("boat seats ride waves", () => harmony.Patch(AccessTools.PropertyGetter(typeof(EntityRideableSeat), nameof(EntityRideableSeat.SeatPosition)),
+                postfix: new HarmonyMethod(typeof(BoatWaves), nameof(BoatWaves.SeatPosition))));
+            Try("sailboat sails by wind", () => harmony.Patch(AccessTools.Method(typeof(EntityBoat), nameof(EntityBoat.SeatsToMotion)),
+                postfix: new HarmonyMethod(typeof(BoatWaves), nameof(BoatWaves.SailMotion))));
             Try("breathing in dry places", () => harmony.Patch(AccessTools.Method(typeof(EntityBehaviorBreathe), nameof(EntityBehaviorBreathe.Check)),
                 postfix: new HarmonyMethod(typeof(Hooks), nameof(BreathePostfix))));
             Try("no splashing in dry places", () =>
@@ -75,8 +89,15 @@ namespace Sea
         /// <summary>The client's patches: the water shaders and their uniforms, the camera in dry places, water particles.</summary>
         static void ApplyClient(Harmony harmony)
         {
-            Try("wake splash contacts", () => harmony.Patch(AccessTools.Method(typeof(Entity), nameof(Entity.OnCollideWithLiquid)),
-                postfix: new HarmonyMethod(typeof(Hooks), nameof(WakeContactPostfix))));
+            Try("vanilla sailboat dry volume", () => harmony.Patch(AccessTools.Method(typeof(EntityBehaviorHideWaterSurface), nameof(EntityBehaviorHideWaterSurface.OnRenderFrame)),
+                prefix: new HarmonyMethod(typeof(NativeBoats), nameof(NativeBoats.NativeMask))));
+            Try("boats ride waves", () => harmony.Patch(AccessTools.Method(typeof(EntityBoat), nameof(EntityBoat.OnRenderFrame)),
+                prefix: new HarmonyMethod(typeof(BoatWaves), nameof(BoatWaves.BeforeRenderBoat)),
+                postfix: new HarmonyMethod(typeof(BoatWaves), nameof(BoatWaves.RenderBoat))));
+            Try("boat hulls heave", () => harmony.Patch(AccessTools.Method(typeof(EntityShapeRenderer), nameof(EntityShapeRenderer.loadModelMatrix)),
+                postfix: new HarmonyMethod(typeof(BoatWaves), nameof(BoatWaves.ModelMatrix))));
+            Try("boat interactions ride waves", () => harmony.Patch(AccessTools.Method(typeof(EntityBehaviorSelectionBoxes), "applyBoxTransform"),
+                prefix: new HarmonyMethod(typeof(BoatWaves), nameof(BoatWaves.SelectionTransform))));
             Try("water shader", () =>
             {
                 var registry = AccessTools.TypeByName("Vintagestory.Client.NoObf.ShaderRegistry");
@@ -282,16 +303,20 @@ namespace Sea
         /// <summary>Eyes in a dry hull aren't under water: no fog, tint, muffled sound or underwater ambience.</summary>
         static void EyesInWaterDepthPostfix(object __instance, ref float __result)
         {
-            if (__result <= 0) return;
             var eye = CameraEye(__instance);
-            if (eye != null && ClientInWorld() && SeaSystem.For(EnumAppSide.Client)?.IsDry(eye.X, eye.Y, eye.Z) == true) __result = 0;
+            if (eye == null || !ClientInWorld()) return;
+            var sea = SeaSystem.For(EnumAppSide.Client);
+            if (sea?.Boats?.CameraDepth(eye, out float depth) == true) __result = depth;
+            else if (sea?.IsDry(eye.X, eye.Y, eye.Z) == true) __result = 0;
         }
 
         static void EyesInWaterColorShiftPostfix(object __instance, ref int __result)
         {
-            if (__result <= 0) return;
             var eye = CameraEye(__instance);
-            if (eye != null && ClientInWorld() && SeaSystem.For(EnumAppSide.Client)?.IsDry(eye.X, eye.Y, eye.Z) == true) __result = 0;
+            if (eye == null || !ClientInWorld()) return;
+            var sea = SeaSystem.For(EnumAppSide.Client);
+            if (sea?.Boats?.CameraDepth(eye, out float depth) == true) __result = (int)Math.Clamp(depth * 600, 0, 100);
+            else if (sea?.IsDry(eye.X, eye.Y, eye.Z) == true) __result = 0;
         }
 
         /// <summary>
@@ -300,9 +325,13 @@ namespace Sea
         /// </summary>
         static void BreathePostfix(EntityBehaviorBreathe __instance)
         {
-            if (__instance.HasAir) return;
             var e = __instance.entity;
             if (e?.World == null || e.World.Side != EnumAppSide.Server) return;
+            if (e is EntityPlayer player)
+            {
+                var mode = e.World.PlayerByUid(player.PlayerUID)?.WorldData.CurrentGameMode;
+                if (mode == EnumGameMode.Creative || mode == EnumGameMode.Spectator) return;
+            }
             var sys = SeaSystem.For(EnumAppSide.Server);
             if (sys == null || sys.DrySpaceSources == 0) return;
             var pos = e.Pos;
@@ -311,13 +340,9 @@ namespace Sea
             double eyeX = pos.X + (e.LocalEyePos?.X ?? 0), eyeZ = pos.Z + (e.LocalEyePos?.Z ?? 0);
             var block = e.World.BlockAccessor.GetBlock(new BlockPos((int)Math.Floor(eyeX), (int)Math.Floor(eyeY), (int)Math.Floor(eyeZ), pos.Dimension), BlockLayersAccess.MostSolid);
             if (block != null && block.Id != 0 && !block.IsLiquid()) return;   // something solid at the eyes: vanilla's call stands
-            if (sys.IsDry(eyeX, eyeY, eyeZ)) __instance.HasAir = true;
-        }
-
-        /// <summary>Retain client entry impacts between the visual wake observer's polls.</summary>
-        static void WakeContactPostfix(Entity __instance)
-        {
-            if (__instance?.World?.Side == EnumAppSide.Client) SeaSystem.For(EnumAppSide.Client)?.Wakes?.Contact(__instance);
+            if (e is EntityAgent rider && sys.Boats?.EyeDepth(rider, new Vec3d(eyeX, eyeY, eyeZ), out float depth) == true)
+                __instance.HasAir = depth <= 0;
+            else if (!__instance.HasAir && sys.IsDry(eyeX, eyeY, eyeZ)) __instance.HasAir = true;
         }
 
         /// <summary>

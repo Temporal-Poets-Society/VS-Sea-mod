@@ -125,8 +125,6 @@ void main(){
     if(testMode==3)foam=seaWindFoam(q,vec3(2.0,0.5,0.0),testCoverage);
     if(testMode==4)foam=seaWindFoam(q,vec3(2.0,0.0,0.0),testCoverage);
     if(testMode==5)foam=seaWindFoam(q,vec3(2.0,0.5,2.0),testCoverage);
-    if(testMode==6)foam=seaWakeTexture(q,1.0);
-    if(testMode==7)foam=seaWakeTexture(q,0.0);
     color=vec4(foam,crest.x,crest.y,1);
 }";
             int prog=Build("issue 37: crest-only production foam",full,fragment,new Dictionary<string,int>());if(prog==0)return;
@@ -157,7 +155,6 @@ void main(){
             var cells=Draw(mode:1,span:8);var lace=Draw(mode:2,span:8);
             Check(Area(cells,.01f)<.95 && Area(lace,.01f)<Area(cells,.01f)-.1,"GPU: actual bubble holes grow into lace");
             var small=Draw(mode:2,span:512);Check(Area(small,.45f)==1 && Area(small,.5f)==0,"GPU: subpixel bubbles filter to mean");
-            Check(Mean(Draw(mode:6,span:8))>Mean(Draw(mode:7,span:8)),"GPU: wake foam keeps its independent real-age texture");
             Check(Mean(Draw(0))==0,"GPU: no wind, no wind foam");
             File.WriteAllLines("obj/crests37/foam.csv",table);GL.DeleteProgram(prog);
         }

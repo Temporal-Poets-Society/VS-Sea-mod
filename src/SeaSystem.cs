@@ -42,31 +42,19 @@ namespace Sea
         IServerNetworkChannel serverChannel;
         SeaParamsPacket sentParams;
         WaterRenderer waterRenderer;
+        internal NativeBoats Boats;
+        BoatFloodRenderer boatFloodRenderer;
         CelestialRenderer celestialRenderer;
         public string CelestialStatus => celestialRenderer?.Status ?? "Celestial presentation unavailable.";
         /// <summary>The client's sky and night presentation (null on the server, or before the world is ready).</summary>
         public CelestialRenderer Celestial => celestialRenderer;
-        /// <summary>Client-only wake presentation (null on the server).</summary>
-        public WakeRenderer Wakes => waterRenderer?.Wakes;
-        /// <summary>Client-only diagnostic isolation; does not delete wake histories or change waves.</summary>
+        /// <summary>Client-only diagnostic switch for breaking-wave foam.</summary>
         public FoamView FoamView;
         public string FoamStatus => waterRenderer?.FoamStatus ?? "Foam input unavailable.";
 
-        readonly System.Collections.Generic.Dictionary<long, WakeHull> wakeHulls = new();
-        readonly object wakeSync = new();
-        /// <summary>Declare an entity's visual waterline dimensions in blocks, on the client. No physics or network
-        /// state. Call after spawning, remove on despawn; at most 512 declarations. False means invalid/server/full.</summary>
-        public bool SetWakeHull(long entityId, double length, double beam, double draft, double centreOffset = 0)
-        {
-            var hull = new WakeHull(length, beam, draft, centreOffset);
-            if (capi == null || !hull.Valid) return false;
-            lock (wakeSync) {
-                if (!wakeHulls.ContainsKey(entityId) && wakeHulls.Count >= 512) return false;
-                wakeHulls[entityId] = hull; return true;
-            }
-        }
-        public void RemoveWakeHull(long entityId) { lock (wakeSync) wakeHulls.Remove(entityId); }
-        internal bool TryWakeHull(long id, out WakeHull hull) { lock (wakeSync) return wakeHulls.TryGetValue(id, out hull); }
+        /// <summary>Retired wake declaration API; retained for compiled companions. Wakes are unavailable.</summary>
+        public bool SetWakeHull(long entityId, double length, double beam, double draft, double centreOffset = 0) => false;
+        public void RemoveWakeHull(long entityId) { }
 
         public SeaConfig Config = new();
         /// <summary>The wind model; null until the world is ready (server) or the server's parameters arrived (client).</summary>
@@ -104,12 +92,12 @@ namespace Sea
 
         public override void Dispose()
         {
-            lock (wakeSync) wakeHulls.Clear();
             if (api == null) return;
             if (api.Side == EnumAppSide.Server && serverInstance == this) serverInstance = null;
             if (api.Side == EnumAppSide.Client && clientInstance == this) clientInstance = null;
             if (capi != null)
             {
+                if (boatFloodRenderer != null) { capi.Event.UnregisterRenderer(boatFloodRenderer, EnumRenderStage.Opaque); boatFloodRenderer.Dispose(); }
                 if (waterRenderer != null)
                 {
                     capi.Event.UnregisterRenderer(waterRenderer, EnumRenderStage.Before);
@@ -501,6 +489,7 @@ namespace Sea
         {
             sapi = api;
             serverInstance = this;
+            Boats = new NativeBoats(this, api);
             try { Config = (api.LoadModConfig<SeaConfig>(ConfigFile) ?? new SeaConfig()).Checked(); }
             catch (Exception e) { Mod.Logger.Error("Bad ModConfig/{0}, using defaults: {1}", ConfigFile, e.Message); Config = new SeaConfig(); }
             api.StoreModConfig(Config, ConfigFile);
@@ -713,6 +702,9 @@ namespace Sea
         {
             capi = api;
             clientInstance = this;
+            Boats = new NativeBoats(this, api);
+            boatFloodRenderer = new BoatFloodRenderer(api, Boats);
+            api.Event.RegisterRenderer(boatFloodRenderer, EnumRenderStage.Opaque, "sea-boat-flood");
             api.Network.GetChannel(ChannelName)
                 .SetMessageHandler<SeaParamsPacket>(OnParams)
                 .SetMessageHandler<SeaClockPacket>(p =>

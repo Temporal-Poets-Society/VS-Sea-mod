@@ -19,9 +19,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
-    <Compile Include="WakeGpu.cs" />
     <Compile Include="FoamGpu.cs" />
-    <Compile Include="..\..\src\Water\WakeField.cs" Link="Water\WakeField.cs" />
     <Compile Include="..\..\src\Water\WaterShader.cs" Link="Water\WaterShader.cs" />
     <Compile Include="..\..\src\Water\CelestialShader.cs" Link="Water\CelestialShader.cs" />
     <Compile Include="..\..\src\Water\WaveField.cs" Link="Water\WaveField.cs" />
@@ -33,6 +31,7 @@
     <Reference Include="$(NetCoreRuntimeDir)\System.Private.CoreLib.dll" Private="false" />
     <Reference Include="$(NetCoreRuntimeDir)\netstandard.dll" Private="false" />
     <Reference Include="$(NetCoreRuntimeDir)\mscorlib.dll" Private="false" />
+    <Reference Include="VintagestoryAPI"><HintPath>$(VintageStoryPath)\VintagestoryAPI.dll</HintPath></Reference>
     <Reference Include="protobuf-net"><HintPath>$(VintageStoryPath)\Lib\protobuf-net.dll</HintPath></Reference>
     <Reference Include="OpenTK.Core"><HintPath>$(VintageStoryPath)\Lib\OpenTK.Core.dll</HintPath></Reference>
     <Reference Include="OpenTK.Graphics"><HintPath>$(VintageStoryPath)\Lib\OpenTK.Graphics.dll</HintPath></Reference>

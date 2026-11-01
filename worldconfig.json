@@ -6,15 +6,16 @@
       "code": "seaStormHeight",
       "dataType": "DropDown",
       "default": "1",
-      "values": ["1", "1.5", "2.2"],
-      "names": ["1", "1.5", "2.2"],
-      "onlyDuringWorldCreate": false
-    },
-    {
-      "category": "earth",
-      "code": "seaWakes",
-      "dataType": "Bool",
-      "default": "true",
+      "values": [
+        "1",
+        "1.5",
+        "2.2"
+      ],
+      "names": [
+        "1",
+        "1.5",
+        "2.2"
+      ],
       "onlyDuringWorldCreate": false
     }
   ]

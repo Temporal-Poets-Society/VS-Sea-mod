@@ -37,9 +37,7 @@ namespace Sea
         /// strength 1.5. Blends in over strength 0.4..0.8; clients receive the server's value.</summary>
         [ProtoMember(15, IsRequired = true)] public float StormHeightScale = 1;
 
-        /// <summary>Client-only cosmetic wakes; never change the shared wave samples or ship physics.</summary>
-        [ProtoMember(16, IsRequired = true)] public bool WakeEnabled = true;
-        [ProtoMember(17, IsRequired = true)] public float WakeStrength = 1;
+        // Protobuf members 16 and 17 were cosmetic wakes. Retired in 0.5.1; never reuse.
 
         /// <summary>
         /// The loaded world's choices over the checked sea.json defaults. Work on a copy so world choices are
@@ -56,7 +54,6 @@ namespace Sea
                 "2.2" => 2.2f,
                 _ => StormHeightScale
             };
-            effective.WakeEnabled = world?.GetBool("seaWakes", WakeEnabled) ?? WakeEnabled;
             return effective;
         }
 
@@ -69,7 +66,6 @@ namespace Sea
             static float Ok(float v, float fallback) => float.IsFinite(v) && v >= 0 ? v : fallback;
             WaveScale = Ok(WaveScale, d.WaveScale);
             StormHeightScale = System.Math.Clamp(Ok(StormHeightScale, d.StormHeightScale), 0, 4);
-            WakeStrength = System.Math.Clamp(Ok(WakeStrength, d.WakeStrength), 0, 2);
             CelestialReflections = System.Math.Clamp(Ok(CelestialReflections, d.CelestialReflections), 0, 2);
             SkyReflections = System.Math.Clamp(Ok(SkyReflections, d.SkyReflections), 0, 2);
             NightVisibility = System.Math.Clamp(Ok(NightVisibility, d.NightVisibility), 0, 2);

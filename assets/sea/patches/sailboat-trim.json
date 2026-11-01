@@ -1,0 +1,151 @@
+[
+  {
+    "file": "game:shapes/entity/nonliving/boat/sailed.json",
+    "op": "add",
+    "path": "/elements/0/children/3/children/0/children/0/children/0/children/0/children/0/children/0/children/0/rotationOrigin",
+    "value": [
+      2,
+      0,
+      2
+    ],
+    "side": "client"
+  },
+  {
+    "file": "game:shapes/entity/nonliving/boat/sailed.json",
+    "op": "add",
+    "path": "/elements/0/children/3/children/0/children/0/children/0/children/0/children/0/children/0/children/2/rotationOrigin",
+    "value": [
+      2,
+      0,
+      2
+    ],
+    "side": "client"
+  },
+  {
+    "file": "game:shapes/entity/nonliving/boat/sailed.json",
+    "op": "add",
+    "path": "/elements/0/children/3/children/0/children/0/children/0/children/0/children/0/children/0/children/4/rotationOrigin",
+    "value": [
+      2,
+      0,
+      2
+    ],
+    "side": "client"
+  },
+  {
+    "file": "game:shapes/entity/nonliving/boat/sailed.json",
+    "op": "add",
+    "path": "/elements/0/children/3/children/0/children/0/children/0/children/0/children/0/children/0/children/5/rotationOrigin",
+    "value": [
+      2,
+      0,
+      2
+    ],
+    "side": "client"
+  },
+  {
+    "file": "game:shapes/entity/nonliving/boat/sailed.json",
+    "op": "add",
+    "path": "/animations/-",
+    "value": {
+      "name": "Sea sail trim",
+      "code": "seasailtrim",
+      "quantityframes": 3,
+      "onActivityStopped": "Stop",
+      "onAnimationEnd": "Hold",
+      "keyframes": [
+        {
+          "frame": 0,
+          "elements": {
+            "SparORIGIN": {
+              "rotationX": 0,
+              "rotationY": -65,
+              "rotationZ": 0
+            },
+            "SailUnfurled": {
+              "rotationX": 0,
+              "rotationY": -65,
+              "rotationZ": 0
+            },
+            "SailHalf": {
+              "rotationX": 0,
+              "rotationY": -65,
+              "rotationZ": 0
+            },
+            "SailFurled": {
+              "rotationX": 0,
+              "rotationY": -65,
+              "rotationZ": 0
+            }
+          }
+        },
+        {
+          "frame": 1,
+          "elements": {
+            "SparORIGIN": {
+              "rotationX": 0,
+              "rotationY": 0,
+              "rotationZ": 0
+            },
+            "SailUnfurled": {
+              "rotationX": 0,
+              "rotationY": 0,
+              "rotationZ": 0
+            },
+            "SailHalf": {
+              "rotationX": 0,
+              "rotationY": 0,
+              "rotationZ": 0
+            },
+            "SailFurled": {
+              "rotationX": 0,
+              "rotationY": 0,
+              "rotationZ": 0
+            }
+          }
+        },
+        {
+          "frame": 2,
+          "elements": {
+            "SparORIGIN": {
+              "rotationX": 0,
+              "rotationY": 65,
+              "rotationZ": 0
+            },
+            "SailUnfurled": {
+              "rotationX": 0,
+              "rotationY": 65,
+              "rotationZ": 0
+            },
+            "SailHalf": {
+              "rotationX": 0,
+              "rotationY": 65,
+              "rotationZ": 0
+            },
+            "SailFurled": {
+              "rotationX": 0,
+              "rotationY": 65,
+              "rotationZ": 0
+            }
+          }
+        }
+      ]
+    },
+    "side": "client"
+  },
+  {
+    "file": "game:entities/nonliving/boat-sailed.json",
+    "op": "add",
+    "path": "/client/animations/-",
+    "value": {
+      "code": "seasailtrim",
+      "animation": "seasailtrim",
+      "animationSpeed": 0,
+      "weight": 1,
+      "blendMode": "AddAverage",
+      "easeInSpeed": 100,
+      "easeOutSpeed": 100
+    },
+    "side": "client"
+  }
+]

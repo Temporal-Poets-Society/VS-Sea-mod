@@ -7,3 +7,10 @@ Source asset revision and reproduction are recorded in `../../docs/hold-water.md
 
 The fixture checks Sea's CPU/GPU identity for the actual supplied bounds. It does not establish the water state
 of a live ship or justify hiding Hansa's independently rendered floodwater.
+
+## Native small boats — pre.14
+
+`rowboat-dry-clip.json` and `sailboat-dry-clip.json` freeze the fitted production 4 × 32 profiles for GPU comparisons.
+Their source assets retain SHA-256 model provenance. The rowboat geometric audit is `overview/verification/rowboat-hull-fit.json`;
+its 328 native renderer boundary checks are separate from GPU/CPU identity checks. The sailboat uses the native game
+shape; only sail-trim JSON patches alter the rig at runtime. Neither fixture is a loadable replacement model.

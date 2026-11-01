@@ -4,9 +4,5 @@
   "worldattribute-seaStormHeight-desc": "Storm wave height and wavelength multiplier. 1 keeps current heights; 2.2 gives about 12-block hurricane seas. Changes apply after restarting the world or server.",
   "worldconfig-seaStormHeight-1": "1 (current heights)",
   "worldconfig-seaStormHeight-1.5": "1.5 (higher storm waves)",
-  "worldconfig-seaStormHeight-2.2": "2.2 (about 12-block hurricane seas)",
-  "worldattribute-seaWakes": "Ship and swimmer wakes",
-  "worldattribute-seaWakes-desc": "Show ship and swimmer wakes, splash rings and bow spray. Does not affect ship physics. Changes apply after restarting the world or server.",
-  "worldconfig-seaWakes-true": "On",
-  "worldconfig-seaWakes-false": "Off"
+  "worldconfig-seaStormHeight-2.2": "2.2 (about 12-block hurricane seas)"
 }
