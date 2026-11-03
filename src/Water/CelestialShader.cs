@@ -56,7 +56,7 @@ namespace Sea
         float seaDist = length(seaFromEye);
         float seaGraze = max(abs(seaFromEye.y) / max(seaDist, 0.001), 0.01);
         float seaFootprint = seaPixel * seaDist * sqrt(1.0 + 1.0 / (seaGraze * seaGraze));
-        seaDifferential((xyz+origin).xz, 1.0/div, seaFootprint, seaSurfaceSlope, seaSurfaceRough, seaFoamCrest);
+        seaDifferential((xyz+origin).xz, seaOpenWater(div)/div, seaFootprint, seaSurfaceSlope, seaSurfaceRough, seaFoamCrest);
         seaSurfaceSlope *= seaWaveCalm;
         seaFoamCrest.y *= seaWaveCalm;
     }");

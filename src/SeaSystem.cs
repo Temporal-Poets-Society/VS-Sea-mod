@@ -323,8 +323,9 @@ namespace Sea
         }
 
         /// <summary>
-        /// How much of the open-sea waves reaches this place: 1 on the open ocean, down to a fifth in sheltered water
-        /// (lakes, inland), the same divisor the water shader applies there (from the world's ocean map).
+        /// How much of the open-sea waves reaches this place: 1 on the open ocean, down to a fifth in sheltered water, the same
+        /// divisor the water shader applies there (from the world's ocean map). 0.5.3: none on inland water (oceanity 0:
+        /// rivers, rapids, lakes), rising to the full sheltered share by oceanity 0.25 (WaterShader's seaOpenWater).
         /// With horizontal waves, reads the map at the inverse mesh coordinate, where the shader's flag was packed.
         /// </summary>
         public double WaveFactorAt(double x, double z)
@@ -355,7 +356,8 @@ namespace Sea
                 float tl = om.GetIntLerpedCorrectly(mx, mz), tr = om.GetIntLerpedCorrectly(mx + 1, mz);
                 float bl = om.GetIntLerpedCorrectly(mx, mz + 1), br = om.GetIntLerpedCorrectly(mx + 1, mz + 1);
                 double oceanity = (byte)GameMath.BiLerp(tl, tr, bl, br, (float)((x - cx * 32) / 32), (float)((z - cz * 32) / 32)) / 255.0;
-                return 1 / (5 * Math.Max(0.2, 1 - oceanity));
+                double div = 5 * Math.Max(0.2, 1 - oceanity), t = Math.Clamp((1 - div / 5) / 0.25, 0, 1);
+                return t * t * (3 - 2 * t) / div;
             }
             catch (Exception)
             {

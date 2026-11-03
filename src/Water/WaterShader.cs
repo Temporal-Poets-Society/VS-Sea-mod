@@ -46,6 +46,9 @@ uniform int seaWaveCount = 0;
 uniform vec4 seaWave[24];
 uniform float seaWaveShape = 0.0;
 float seaShapeWeight(float k) { return 0.15+0.85/(1.0+k*k/0.09); }
+// (0.5.3) How much of the sea's swell reaches water with this wave divisor: none on inland water (oceanity 0: rivers, lakes,
+// rapids), all from oceanity 0.25 (the coast's bays and estuaries in between). Vanilla's divisor is 5 * max(0.2, 1 - oceanity).
+float seaOpenWater(float div) { return smoothstep(0.0, 0.25, 1.0 - div / 5.0); }
 vec3 seaSurface(vec2 q, float factor) {
     vec3 p = vec3(q.x,0.0,q.y);
     for (int i=0; i<seaWaveCount; i++) {
@@ -96,12 +99,15 @@ out vec3 seaFragPos;
 float seaWaveCalm = 1.0; // also suppress wind foam where a non-dry hull calms the drawn surface
 
 vec4 seaWaves(bool notLava, vec4 wp, float div) {
-	if (!notLava || seaWaveCount == 0) return applyLiquidWarping(notLava, wp, div);
+	float open = notLava && seaWaveCount > 0 ? seaOpenWater(div) : 0.0;
+	if (open <= 0.0) return applyLiquidWarping(notLava, wp, div);
     vec3 p = seaSurface(wp.xz, 1.0/div);
-    wp.xz = p.xz;
-    wp.y += p.y;
-	wp.xyz = applyPerceptionWarping(wp.xyz);
-	return wp;
+    vec4 sw = wp;
+    sw.xz = p.xz;
+    sw.y += p.y;
+	sw.xyz = applyPerceptionWarping(sw.xyz);
+	// between inland and open water, vanilla's ripples fade into the swell (a function of the corner, so faces stay joined)
+	return open >= 1.0 ? sw : mix(applyLiquidWarping(notLava, wp, div), sw, open);
 }
 
 " + HullOutline + @"

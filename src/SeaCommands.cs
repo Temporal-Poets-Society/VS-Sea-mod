@@ -143,7 +143,7 @@ namespace Sea
             var t = cw.Sea;
             sb.Append($"\nSea state here: {t.Height:0.00} blocks toward the {Compass.Name(t.ToDegrees)}, {t.Wavelength:0} blocks long, every {t.Period:0.0} s (builds up over game hours).");
             var ep = capi.World.Player.Entity;
-            sb.Append($"\nDrawn waves: {cw.SignificantHeight:0.00} blocks from {cw.Count} wave trains ({sys.DrawnWaveCount} in the shader), here × {sys.WaveFactorAt(ep.Pos.X, ep.Pos.Z):0.00} (open sea 1, sheltered 0.2).");
+            sb.Append($"\nDrawn waves: {cw.SignificantHeight:0.00} blocks from {cw.Count} wave trains ({sys.DrawnWaveCount} in the shader), here × {sys.WaveFactorAt(ep.Pos.X, ep.Pos.Z):0.00} (open sea 1, sheltered 0.2, inland 0).");
             sb.Append($"\nWave clock: {sys.WaveTime:0.0} s, {(sys.WaveClockSynced ? $"{sys.WaveClockError * 1000:+0;-0} ms from the server's" : "not heard from the server yet")}.");
             sb.Append($"\nWater shader: Sea code {(WaterRenderer.Injected ? "in" : "MISSING")}, Sea waves {(WaterRenderer.WavesInjected ? "in" : "MISSING (vanilla waves)")}, hulls kept dry this frame: {sys.DrawnHullCount}.");
             var eye = capi.World.Player.Entity.CameraPos.AddCopy(capi.World.Player.Entity.LocalEyePos);

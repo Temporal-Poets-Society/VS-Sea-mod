@@ -252,7 +252,7 @@ namespace Sea
             Check(p1.Count > 0 && Math.Abs(h1 - h2) < 1e-12,
                 $"everyone asking about the same place and time gets the same waves, wherever they came from ({p1.Count} trains, {h1:0.000}, off by {Math.Abs(h1 - h2):e1})");
             double f = sys.WaveFactorAt(x, z);
-            Check(f >= 0.2 - 1e-9 && f <= 1 + 1e-9, $"sheltered water scales the waves like the shader does ({f:0.00} at spawn)");
+            Check(f >= 0 && f <= 1 + 1e-9, $"sheltered water scales the waves like the shader does ({f:0.00} at spawn; 0 inland)");
             double wh = sys.WaveHeightAt(x, z);
             Check(!double.IsNaN(wh) && Math.Abs(wh) < 6, $"wave height at spawn {wh:0.00}");
             if (m.Shape.Wraps)
