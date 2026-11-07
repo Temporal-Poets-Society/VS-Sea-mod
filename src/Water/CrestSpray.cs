@@ -117,6 +117,7 @@ namespace Sea
                 int m = Math.Min(left, 4 + (int)(16 * white * Math.Min(1, (ws - 0.7) / 0.6 + 0.3)));
                 float gust = (float)(ws * 6);   // (vanilla wind units: 1 is about 25 m/s)
                 drift.MinQuantity = m; drift.AddQuantity = m / 2f;
+                drift.MinSize = spray.MinSize * 0.7f; drift.MaxSize = spray.MinSize * 1.4f;
                 drift.MinPos.Set(x - 1.2 * Math.Abs(uz) - 0.2, y + 0.2, z - 1.2 * Math.Abs(ux) - 0.2);
                 drift.AddPos.Set(2.4 * Math.Abs(uz) + 0.4, 0.3, 2.4 * Math.Abs(ux) + 0.4);
                 drift.MinVelocity.Set((float)(ux * c) + wx * gust * 0.6f, 0.3f, (float)(uz * c) + wz * gust * 0.6f);
