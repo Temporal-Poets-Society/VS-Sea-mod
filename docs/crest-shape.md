@@ -152,3 +152,6 @@ appearance have not been measured in game. No added shoaling/refraction or airbo
 
 Changes are left uncommitted; `obj/COMMIT_MESSAGE.txt` is the coordinator's message. Outside-worktree suite inventory
 and ROADMAP #37 updates belong to the coordinator under the task's write restriction.
+
+**0.6.0-pre.1:** the shoaling left open here now exists over a deterministic coast map (SEA-D58): near beaches the
+surf trains steepen into a breaker shape on top of these Gerstner crests, and breaking surf throws spray.

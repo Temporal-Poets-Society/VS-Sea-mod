@@ -1,5 +1,20 @@
 # Sea — waves that follow the wind, the same sea for everyone (Vintage Story 1.22)
 
+**0.6.0-pre.1 (development, not released, not tested in game):**
+- **Waves on beaches.** Sea reads the depth under the water near coasts from the blocks and works out how long a wave
+  takes to reach the shore from each column. Over shallow water the swell turns until its crests run along the beach,
+  grows as the water shallows, is held to a height the depth allows (significant height at most 0.6 × depth) and
+  steepens into breakers with a peaked crest and a steep shoreward face. Breaking surf draws whitewater and throws
+  spray. Boats, ships and the open contracts ride the same surface the shader draws. Config `Surf` (on).
+- **Longshore current.** Waves breaking at an angle drive water along the beach (Komar 1979). Sea works it out and
+  publishes it (`seastate.current`, `.sea coast`), but nothing is moved by it yet.
+- **Open sea contracts** ([spec](docs/open-sea-contracts.md)): Sea publishes `seacontracts:seastate`, `surface` and
+  `hulls` in `api.ObjectCache` with .NET base types only, so other mods (Rough Seas' boats among them) can read the
+  waves, pose a boat on them and have water cut from hulls without referencing `Sea.dll`. It follows a published
+  `weather` owner. The typed API stays.
+- **Every shader name Sea injects starts with `sea_`** (no clash with Rough Seas' `seaWaves`). Wmap 0.5's far programs
+  keep the old names, which Sea still sets.
+
 **0.5.2:** the water's moon glint and sun colour follow **Astra Terra for Earth** again. The fork's mod ID is
 `astraearth`, and 0.5.1 only connected to a mod named `astraterra`, so Earth worlds got vanilla's moon on the water.
 Sea now accepts either ID (same assembly and types). No other change.
@@ -300,6 +315,8 @@ Nothing about the wind or the waves is sent while you play, except a clock:
   does the same for the old one.
 - `/sea storms` is gone (0.4.0): storms are Earth's.
 
+- `.sea coast` (client, 0.6.0): the coast where you stand: depth, wave travel time from the shore, breaking,
+  whitewater, the longshore current, and how far the coast map has got.
 - `.sea` (client, with a dot): what Sea is doing on your own client.
   - where the wind comes from (the provider's name, and any of its answers Sea refused)
   - the wind it sees, and what vanilla sees
@@ -319,6 +336,7 @@ Nothing about the wind or the waves is sent while you play, except a clock:
 | `SeaWindStrength` | 0.3 | without a wind provider: that steady wind's strength, 0–1.5 (0 = a calm sea) (0.4.0) |
 | `CelestialReflections` | 1 | sun/moon trails; 0 restores vanilla highlights; range 0–2 |
 | `SkyReflections` | 1 | the sky reflected by Fresnel, near and on Wmap's distant sea (0.4.4; no star reflections); 1 physical; 0 disables; range 0–2 |
+| `Surf` | true | (0.6.0) waves feel the sea floor near coasts: they turn toward the beach, steepen, break (whitewater, spray) and drive a longshore current. Off on a Cylinder World ring |
 | `NightVisibility` | 1 | outdoor ambient night floor, real twilight and local-moon correction on the client's rendering ([night light](docs/night-light.md)); 1 = clear moonless 0.10, high full moon 0.40 (0.4.7-night; 0.4.4–0.4.7-pre: 0.15 / 0.45, now 1.5); 0 keeps the game's own night and twilight; range 0–2 |
 
 A negative, NaN or infinite number goes back to its default when the server loads the file (0.3.7); `SeaWindFrom` may
@@ -425,6 +443,15 @@ clip.InDryHull(x, y, z);              // the shader's own test, in C#
 
 Reference `Sea.dll` without copying it (`Private="false"`) and add `"sea"` to your modinfo dependencies.
 
+(0.6.0) Coasts: `place.HeightAt` near a beach includes the surf (`SampleWaves` sets `WavePlace.Coast`);
+`place.SurfAt(x, z)` gives breaking, whitewater and depth; `sea.CoastAt(x, z)` the coast's depth, travel time and
+direction; `sea.CurrentAt(place, x, z)` the longshore current in m/s.
+
+**Without referencing Sea.dll** (0.6.0): the open contracts in `api.ObjectCache`: `seacontracts:seastate` (`at`,
+`shelter`, `current`, `surf`), `seacontracts:surface` (`seconds`, `trains`, `height`, and `pose` with Rough Seas'
+`PoseOf` meaning) and `seacontracts:hulls` (`register` hull records, `registerDry`, `isDry`). See
+[docs/open-sea-contracts.md](docs/open-sea-contracts.md).
+
 ## Build and test
 
 Quit the game completely before swapping the zip in your Mods folder: a world loaded again from the main menu
@@ -457,7 +484,10 @@ Earth, Terra Prety and other world generators: `docs/compatibility.md`.
 ## Not yet
 
 - **What the 0.4.2 review left open** (by design, deferred, or not yet play-tested): [docs/open-issues.md](docs/open-issues.md).
-- **Waves don't know about coasts.** Only the ocean map shelters them (lakes and inland water get a fifth); a bay or
-  the lee of an island on the open sea gets the whole sea.
+- **Coasts, what 0.6.0 leaves out.** The lee of an island or a headland is not sheltered beyond the ocean map
+  (waves bend toward shallow water but don't diffract round land); no rip currents; water doesn't run up the sand
+  (swash); the longshore current doesn't move boats or bend the waves riding it yet. A tile of the coast map is not
+  redone when blocks change under it (a dug channel, a pier) until it is forgotten. Ships' own motion integrates the
+  open sea's trains, so a ship in the surf rocks to the swell, not the breakers.
 
 For isolated comparisons, use `tools/New-CelestialTestProfile.ps1`; see [the procedure](docs/sky-water.md#reproducible-in-game-comparison-pending). It creates a fresh data directory without overwriting packages or saves. The older shell self-test resets its testserver save/log folders, so use the fresh-profile workflow to retain those snapshots. For another Release build, choose a new version or a fresh explicit `-p:PackageFile=C:\path\to\a-new-unique.zip`.
