@@ -43,6 +43,8 @@ A producer claims a role in `Start`/`StartServerSide`/`StartClientSide` (the mai
 
 `api.ObjectCache` is part of the game API (`ICoreAPI.ObjectCache`, `Dictionary<string, object>`), shared by every mod on a side.
 
+A producer that lost a role to a higher priority (say a priority-50 default on a client, before the world's owner withdrew at join) gets it back only if it checks again: producers re-check their roles on joining a world and whenever another producer's entry goes away (Sea re-checks every few seconds).
+
 **R3. Units and axes.** 1 block = 1 m. +X is east, +Z south, +Y up. Directions are vectors pointing **toward** where something goes. Wind in the new contracts is in **m/s**. Vanilla's wind unit (1.0 = 25 m/s) appears only on vanilla's own channel and in Sea's existing `SetWindProvider`.
 
 **R4. Time.** Weather functions take **total game hours** (the calendar), so they can answer the past: wave growth needs at least the 72 hours before the asked hour. Surface functions take the **surface owner's wave seconds**, read from the contract (`surface.seconds`). Consumers never build their own wave clock.
@@ -80,6 +82,8 @@ Vanilla fills only `X` of `GetWindSpeedAt` with a strength. Rough Seas fills `X`
 **Contract:** whoever has `writesVanilla` writes the vector: X east, Z south, length = strength.
 
 Vanilla code that reads `X` as the strength (`DefaultShaderUniforms.Update`, `EntityBoat.OnRenderFrame`) must then be handed the vector's length for the call. Rough Seas already patches both. Exactly one mod may apply that patch, or the second one takes the length of a length. The first mod to apply it sets `api.ObjectCache["seacontracts:vanillawind-vector"]` to its mod ID; any other mod sees the key and skips its own patch.
+
+Vanilla also reads `X` as a strength in two cosmetic places: leaf fall (`BlockFruitTreePart`) and the calm-air checks of `ModSystemAmbientParticles`. They are not in the guarded patch (Earth's `1895a7f` leaves them); with a vector they see only its east part. A later version may add them.
 
 ## 6. Sea state (`seacontracts:seastate`)
 

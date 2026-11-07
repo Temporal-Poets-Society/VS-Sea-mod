@@ -62,7 +62,7 @@ namespace Sea
             Claim("seastate", SeaStateRole());
             Claim("surface", SurfaceRole());
             Claim("hulls", HullsRole());
-            try { weatherListener = api.Event.RegisterGameTickListener(_ => FollowWeather(), 1000); }
+            try { weatherListener = api.Event.RegisterGameTickListener(_ => { FollowWeather(); Reclaim(); }, 1000); }
             catch (Exception e) { log.Warning("[sea] contracts: can't watch for a weather owner: {0}", e.Message); }
         }
 
@@ -101,6 +101,21 @@ namespace Sea
             }
             published.Add(role);
             return true;
+        }
+
+        /// <summary>
+        /// Each second: a role Sea gave way to (another mod's entry at the same or a higher priority) that has since been
+        /// withdrawn, say by a world's owner on joining a world it doesn't run, is Sea's again.
+        /// </summary>
+        void Reclaim()
+        {
+            foreach (var role in new[] { "seastate", "surface", "hulls" })
+            {
+                lock (api.ObjectCache) if (api.ObjectCache.ContainsKey(Prefix + role)) continue;
+                published.Remove(role);
+                if (Claim(role, role == "seastate" ? SeaStateRole() : role == "surface" ? SurfaceRole() : HullsRole()))
+                    log.Notification("[sea] contracts: {0} was withdrawn; Sea publishes its own again", Prefix + role);
+            }
         }
 
         /// <summary>A role's entry on this side, or null.</summary>
