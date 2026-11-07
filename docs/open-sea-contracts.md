@@ -1,6 +1,6 @@
 # Open sea contracts
 
-**Status: proposal, 7 November 2026, not agreed with hoblin. Our side partly implemented (unreleased, not tested in game):** Sea 0.6.0-pre.1 on branch `claude/open-contracts` publishes `seastate`, `surface` and `hulls` and follows a published `weather` owner; Ships on branch `claude/sea-contracts` (`31d1668`, `aa1c411`, `73a4367`) reads its waves through its own trains type, with the contracts as its fallback (wind, sea state, `pose`), rides the surf and drifts with the current; it still needs Sea.dll. Earth publishes the `weather` role on branch `claude/weather-contract` (`1895a7f`, offline-tested, not merged). Lines saying "today" describe Sea 0.5.2; section 12 marks what the branches did.
+**Status: proposal, 7 November 2026, not agreed with hoblin. Our side partly implemented (unreleased, not tested in game):** Sea 0.6.0-pre.1 on branch `claude/open-contracts` publishes `seastate`, `surface` and `hulls` and follows a published `weather` owner; Ships on branch `claude/sea-contracts` (`31d1668`, `aa1c411`, `73a4367`, `0946ceb`) reads its waves through its own trains type, with the contracts as its fallback (wind, sea state, `pose`), rides the surf and drifts with the current; since `0946ceb` it no longer needs Sea.dll: a bridge DLL in its package, loaded only when Sea is installed, holds the Sea-typed code. Earth publishes the `weather` role on branch `claude/weather-contract` (`1895a7f`, offline-tested, not merged). Lines saying "today" describe Sea 0.5.2; section 12 marks what the branches did.
 
 **Agreed direction (the author):** Earth owns weather (31 October). Sea keeps its own wave surface and its hull water cut, Ships keeps its own wave motion (`ShipMotion`), and our side becomes more open so that other mods can use it (7 November). Rough Seas' drawn surface is not adopted as the canonical one.
 
@@ -201,7 +201,7 @@ His metres per block come from the world's `polarEquatorDistance`; on an Earth w
 3. Keep calling `SetWindProvider` for older Sea builds.
 
 **Ships**
-1. Read the waves through a trains adapter (section 9). *Done on `claude/sea-contracts` (`31d1668`): Sea's typed API when Sea is loaded, the contracts otherwise; the `pose` fallback is not done, and `EntityShip` still needs `Sea.dll` to load.*
+1. Read the waves through a trains adapter (section 9). *Done on `claude/sea-contracts` (`31d1668`): Sea's typed API when Sea is loaded, the contracts otherwise; the `pose` fallback followed in `aa1c411`, and `0946ceb` moved the Sea-typed code into a bridge loaded only with Sea, so Ships loads without `Sea.dll`.*
 2. Keep registering hulls through Sea's typed API (it has the detailed outline).
 3. Read wind and sea state through the contracts, so a Ships build can run where another mod owns them.
 
