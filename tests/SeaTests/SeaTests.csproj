@@ -23,6 +23,8 @@
     <Compile Include="CrestChecks.cs" />
     <Compile Include="WorldOptionsChecks.cs" />
     <Compile Include="BoatChecks.cs" />
+    <Compile Include="ContractChecks.cs" />
+    <Compile Include="..\..\src\Contracts\ContractMath.cs" Link="Contracts\ContractMath.cs" />
     <Compile Include="..\..\src\Boats\BoatWaveMath.cs" Link="Boats\BoatWaveMath.cs" />
     <Compile Include="..\..\src\Water\FoamMath.cs" Link="Water\FoamMath.cs" />
     <Compile Include="..\..\src\Wind\*.cs" Link="Wind\%(Filename).cs" />

@@ -86,12 +86,25 @@ namespace Sea
             // the client's patches only by the client (or a dedicated server, which has none): see Hooks
             clientHooks = api.Side == EnumAppSide.Client || (api as ICoreServerAPI)?.Server.IsDedicated == true;
             Hooks.Apply(Mod.Logger, clientHooks);
+            contracts = new SeaContracts(this, api, Mod.Logger);
+            contracts.Publish();
         }
 
         bool clientHooks;
+        SeaContracts contracts;
+
+        /// <summary>(0.6.0) Sea's open contracts on this side (docs/open-sea-contracts.md), or null before Start.</summary>
+        public SeaContracts Contracts => contracts;
+
+        // (0.6.0) for the open contracts: the same answers as the API above, at any game hour or wave time
+        internal SeaState SeaAtHours(double x, double z, double hours) => SeaAt(x, z, hours);
+        internal Wind WindAtHours(double x, double z, double hours) => WindAt(x, z, hours);
+        internal long ContractRevision => System.Threading.Interlocked.Read(ref revision) + sampleHours.Version;
+        internal ICoreAPI Api => api;
 
         public override void Dispose()
         {
+            contracts?.Dispose();
             if (api == null) return;
             if (api.Side == EnumAppSide.Server && serverInstance == this) serverInstance = null;
             if (api.Side == EnumAppSide.Client && clientInstance == this) clientInstance = null;

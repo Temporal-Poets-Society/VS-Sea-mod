@@ -170,6 +170,7 @@ namespace SeaTests
             CrestChecks.Run(Check);
             WorldOptionsChecks.Run(Check);
             BoatChecks.Run(Check);
+            ContractChecks.Run(Check);
 
             Console.WriteLine("night sky presentation");
             {
