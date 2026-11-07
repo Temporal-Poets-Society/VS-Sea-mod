@@ -1,6 +1,6 @@
 # Sea — waves that follow the wind, the same sea for everyone (Vintage Story 1.22)
 
-**0.6.0-pre.1 (development, not released, not tested in game):**
+**0.6.0-pre.1 (development, not released; checked in game on one client, 7 November 2026; [wiki](https://github.com/Temporal-Poets-Society/VS-Sea-mod/wiki)):**
 - **Waves on beaches.** Sea reads the depth under the water near coasts from the blocks and works out how long a wave
   takes to reach the shore from each column. Over shallow water the swell turns until its crests run along the beach,
   grows as the water shallows, is held to a height the depth allows (significant height at most 0.6 × depth) and
