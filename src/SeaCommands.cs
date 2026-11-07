@@ -225,6 +225,7 @@ namespace Sea
             sb.Append($"\nPatches in: {string.Join(", ", Hooks.Active)}.");
             sb.Append("\n" + sys.CelestialStatus);
             sb.Append("\n" + sys.FoamStatus);
+            if (sys.CrestSpray != null) sb.Append($" Crest spray: {sys.CrestSpray.LastSpawned} particles last tick.");
             return sb.ToString();
         }
 

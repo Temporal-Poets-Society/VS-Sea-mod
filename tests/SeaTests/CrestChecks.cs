@@ -41,6 +41,39 @@ namespace SeaTests
             check(worst<0.001,$"all 24 custom crests aligned at the .65 compression cap: inverse error {worst:E3} blocks");
             check(!CelestialShader.FoamDeclarations.Contains("sea_WindRow") && !CelestialShader.FoamDeclarations.Contains("sea_WindStreaks"),
                 "downwind layer functions removed from the shared production/GPU foam source");
+
+            // (0.6.0) open-sea crest spray: the CPU crest measure is the drawn surface's own compression, and its gate the shader's
+            Console.WriteLine("crest spray: the shader's whitecap crests on the CPU");
+            var storm=new WavePlace();
+            storm.Update(spec,300.25,new WindModel(new WorldShape(),new SeaConfig{SeaWindFrom=270,SeaWindStrength=1.5f}).SeaAt(50000,50000,3000),Wind.FromCompass(270,1.5));
+            double worstJ=0;int whitecaps=0,points=0;
+            for(int n=0;n<400;n++) {
+                double x=50000+n*1.37,z=50000+n*0.61;
+                var crest=storm.CrestAt(x,z);
+                var q=storm.ParameterAt(x,z);double h=1e-4;
+                var px=storm.SurfaceAt(q.X+h,q.Z,1);var mx=storm.SurfaceAt(q.X-h,q.Z,1);
+                var pz=storm.SurfaceAt(q.X,q.Z+h,1);var mz=storm.SurfaceAt(q.X,q.Z-h,1);
+                double j00=(px.X-mx.X)/(2*h),j10=(px.Z-mx.Z)/(2*h),j01=(pz.X-mz.X)/(2*h),j11=(pz.Z-mz.Z)/(2*h);
+                double least=0.5*(j00+j11-Math.Sqrt((j00-j11)*(j00-j11)+(j01+j10)*(j01+j10)));
+                worstJ=Math.Max(worstJ,Math.Abs(Math.Max(0,1-least)-crest.Compression));
+                if(WavePlace.Whitecap(crest.Height,crest.Compression)>=0.2)whitecaps++;
+                points++;
+            }
+            check(worstJ<1e-5,$"crest compression = 1 - least eigenvalue of the drawn surface's Jacobian: {points} storm points, max error {worstJ:E2}");
+            check(whitecaps>0&&whitecaps<points/2,$"force 12: {whitecaps} of {points} places are whitecap crests (some, not most)");
+            var calm=new WavePlace();
+            calm.Update(spec,300.25,new WindModel(new WorldShape(),new SeaConfig{SeaWindFrom=270,SeaWindStrength=0.1f}).SeaAt(50000,50000,3000),Wind.FromCompass(270,0.1));
+            int calmCaps=0;for(int n=0;n<400;n++){var c=calm.CrestAt(50000+n*1.37,50000+n*0.61);if(WavePlace.Whitecap(c.Height,c.Compression)>=0.2)calmCaps++;}
+            check(calmCaps==0||WaveSpectrum.WhitecapCoverage(0.1)<0.002,$"force 2: no spray (whitecap crests {calmCaps}, coverage {WaveSpectrum.WhitecapCoverage(0.1):F4} below the spray's 0.002)");
+            double SprayShare(double f) {
+                var pl=new WavePlace();pl.Update(spec,300.25,new WindModel(new WorldShape(),new SeaConfig{SeaWindFrom=270,SeaWindStrength=(float)f}).SeaAt(50000,50000,3000),Wind.FromCompass(270,f));
+                int s=0;for(int n=0;n<1000;n++){var c=pl.CrestAt(50000+n*1.37,50000+n*0.61);if(WavePlace.SprayCrest(c.Height,c.Compression)>=0.2)s++;}
+                return s/1000.0;
+            }
+            double s4=SprayShare(0.3),s8=SprayShare(0.7),s12=SprayShare(1.5);
+            check(s4<0.03&&s8>0.05&&s12>0.05&&s12<0.2,$"spray crests: {100*s4:F1}% of the sea at force 4, {100*s8:F1}% at 8, {100*s12:F1}% at 12 (whitecap coverage then sets how many throw it: {WaveSpectrum.WhitecapCoverage(0.3):F3}, {WaveSpectrum.WhitecapCoverage(0.7):F3}, {WaveSpectrum.WhitecapCoverage(1.5):F3})");
+            check(CelestialShader.FoamDeclarations.Contains("smoothstep(0.22,0.40,crest.y) * smoothstep(0.8,1.65,crest.x)"),
+                "the spray's crest gate is the shader's (sea_CrestFoam's thresholds unchanged)");
         }
     }
 }

@@ -308,6 +308,7 @@ namespace Sea
         CoastField coast;
         CoastLookup coastLookup;
         SurfSpray surfSpray;
+        CrestSpray crestSpray;
         SwashRenderer swash;
 
         /// <summary>(0.6.0) Client: water running up the beaches (null on a server).</summary>
@@ -315,6 +316,8 @@ namespace Sea
 
         /// <summary>(0.6.0) Client: the surf spray (null on a server).</summary>
         public SurfSpray Spray => surfSpray;
+        /// <summary>(0.6.0) Client: spray off the open sea's breaking crests.</summary>
+        public CrestSpray CrestSpray => crestSpray;
 
         /// <summary>(0.6.0) The coast's depths and shore travel times near what's watched (null before Start).</summary>
         public CoastField Coast => coast;
@@ -851,6 +854,9 @@ namespace Sea
             // (0.6.0) spray off breaking surf near the camera
             surfSpray = new SurfSpray(api, this);
             api.Event.RegisterGameTickListener(_ => { if (Model != null) surfSpray.Tick(); }, 100);
+            // (0.6.0) spray and, from a gale, spindrift off the open sea's breaking crests
+            crestSpray = new CrestSpray(api, this);
+            api.Event.RegisterGameTickListener(_ => { if (Model != null) crestSpray.Tick(); }, 100);
             // (0.6.0) water running up the beaches
             swash = new SwashRenderer(api, this);
             api.Event.RegisterRenderer(swash, EnumRenderStage.Opaque, "sea-swash");

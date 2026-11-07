@@ -566,6 +566,59 @@ namespace Sea
         }
 
         /// <summary>
+        /// (0.6.0) The open sea's crest at a world position now, as the water shader works it out for its whitecaps
+        /// (WaterShader's <c>sea_Differential</c>, its <c>crest</c> output, with the whole of every train): the long
+        /// waves' height over their spread, the crest's compression (1 less the smallest horizontal eigenvalue of the
+        /// surface's Jacobian; before the place's height factor, which the caller multiplies in, as the shader does), and
+        /// the long waves' falling speed over its spread. Open sea only: on a coast the shader's crest includes the
+        /// orbits' change of size, which this leaves out (the surf has its own measure, <see cref="SurfAt"/>).
+        /// </summary>
+        public (double Height, double Compression, double Fall) CrestAt(double x, double z)
+        {
+            var q = ParameterAt(x, z, Time);
+            double shape = Shape, j00 = 1, j01 = 0, j11 = 1, height = 0, variance = 0, fall = 0, fallVariance = 0;
+            for (int i = 0; i < Count; i++)
+            {
+                double k = Math.Sqrt(Kx[i] * Kx[i] + Kz[i] * Kz[i]);
+                if (k < 1e-7) continue;
+                double phase = Kx[i] * q.X + Kz[i] * q.Z - Omega[i] * Time + Phase[i], sn = Math.Sin(phase), cs = Math.Cos(phase);
+                double ux = Kx[i] / k, uz = Kz[i] / k, c = shape * ShapeWeight(k) * Amp[i] * k * sn;
+                j00 -= c * ux * ux; j01 -= c * ux * uz; j11 -= c * uz * uz;
+                double longWave = 1 - SmoothStep(0.3, 0.6, k), a = longWave * Amp[i], omega = Math.Sqrt(9.81 * k);
+                height += a * sn; variance += 0.5 * a * a;
+                fall += a * omega * cs; fallVariance += 0.5 * a * a * omega * omega;
+            }
+            double least = 0.5 * (j00 + j11 - Math.Sqrt((j00 - j11) * (j00 - j11) + 4 * j01 * j01));
+            return (height / Math.Max(Math.Sqrt(variance), 1e-4), Math.Max(0, 1 - least), fall / Math.Max(Math.Sqrt(fallVariance), 1e-4));
+        }
+
+        /// <summary>
+        /// (0.6.0) How far a crest breaks into whitecap foam, 0 to 1, by the shader's gate (CelestialShader's
+        /// <c>sea_CrestFoam</c> without its noise patches and wind coverage): a sharpened crest (compression, with the
+        /// place's height factor, from 0.22) standing well above the long waves' mean (from 0.8 of their spread).
+        /// </summary>
+        public static double Whitecap(double height, double compression) =>
+            SmoothStep(0.22, 0.40, compression) * SmoothStep(0.8, 1.65, height);
+
+        /// <summary>
+        /// (0.6.0) How far a crest throws spray, 0 to 1: the whitecap's gate (<see cref="Whitecap"/>) widened to the
+        /// sharpened upper part of a wave, since wind tears spray off a crest before it whitens. Thresholds
+        /// <see cref="SprayCompression"/> and <see cref="SprayHeight"/>.
+        /// </summary>
+        public static double SprayCrest(double height, double compression) =>
+            SmoothStep(SprayCompression, SprayCompression + 0.18, compression) * SmoothStep(SprayHeight, SprayHeight + 0.85, height);
+
+        /// <summary>Measured (SeaTests): about 10% of the open sea from Beaufort 6 to 12, 1.5% at 4; the crests' sharpness
+        /// hardly grows past force 6, so how much of it throws spray is left to the wind's whitecap coverage.</summary>
+        public const double SprayCompression = 0.08, SprayHeight = 0.4;
+
+        static double SmoothStep(double a, double b, double x)
+        {
+            double t = Math.Clamp((x - a) / (b - a), 0, 1);
+            return t * t * (3 - 2 * t);
+        }
+
+        /// <summary>
         /// (0.6.0) The shader's sea_CoastSea uniform: the significant height, and the wind the coast's wind sea follows
         /// (m/s; <see cref="CoastWind"/>).
         /// </summary>
