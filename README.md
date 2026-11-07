@@ -340,6 +340,12 @@ Nothing about the wind or the waves is sent while you play, except a clock:
   breaking, whitewater, the current and any rip channel; how far the coast map has got and
   what it has cost (column scans on the main thread, tile solves in the background, rescans after block changes, the
   swash's frame time).
+- `/sea probe [x] [z] [t]` (server) and `.sea probe [x] [z] [t]` (client), 0.6.0: what the open sea contracts answer at
+  a place and wave time (default: where you stand, at the last whole 10 s), as one line: height, shelter, the pose of a
+  30 × 8 block hull, the number of trains and their summed amplitude. The same arguments on both sides must give the
+  same line (rule R5); a difference is a bug.
+- `.sea drawn` (client, 0.6.0): how far the drawn water (the camera's trains) is from the per-place answer, at 0 to
+  512 blocks around you in 16 directions (open issue O1).
 - `.sea` (client, with a dot): what Sea is doing on your own client.
   - where the wind comes from (the provider's name, and any of its answers Sea refused)
   - the wind it sees, and what vanilla sees

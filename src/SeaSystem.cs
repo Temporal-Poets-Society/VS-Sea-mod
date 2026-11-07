@@ -91,11 +91,23 @@ namespace Sea
             // (0.6.0) the coast is scanned a little at a time on the main thread and solved on a background task: tiles
             // asked for by the water's map, by the waves sampled for ships and boats, and by the open contracts
             api.Event.RegisterGameTickListener(_ => { if (SurfOn) coast.Work(api.Side == EnumAppSide.Server ? 3 : 2); }, 50);
+            // (the server's tiles around each player, as the client's water map asks for those in view: a boat there gets
+            // the same coast on both sides from the start, not the open sea until its first lookup's tile is solved)
+            if (api is ICoreServerAPI coastApi)
+                api.Event.RegisterGameTickListener(_ =>
+                {
+                    if (!SurfOn) return;
+                    foreach (var p in coastApi.World.AllOnlinePlayers)
+                        if (p?.Entity?.Pos is { } pos && pos.Dimension == 0) coast.Ask(pos.X, pos.Z, CoastAround);
+                }, 1000);
             contracts = new SeaContracts(this, api, Mod.Logger);
             contracts.Publish();
         }
 
         bool clientHooks;
+
+        /// <summary>(0.6.0) Blocks around each player whose coast tiles the server keeps solved.</summary>
+        const double CoastAround = 128;
         SeaContracts contracts;
 
         /// <summary>(0.6.0) Sea's open contracts on this side (docs/open-sea-contracts.md), or null before Start.</summary>

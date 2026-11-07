@@ -170,19 +170,60 @@ namespace Sea
         public double Lee(double x, double z) => AtPlace(x, z, p => sys.LeeAt(p, x, z), 1.0);
 
         // a place sampled at (x, z) now, from the same small cache as Trains
-        T AtPlace<T>(double x, double z, Func<WavePlace, T> read, T none)
+        T AtPlace<T>(double x, double z, Func<WavePlace, T> read, T none) => AtPlaceAt(x, z, sys.WaveTime, read, none);
+
+        // the same at wave time t
+        T AtPlaceAt<T>(double x, double z, double t, Func<WavePlace, T> read, T none)
         {
-            if (sys.Spectrum == null || !double.IsFinite(x) || !double.IsFinite(z)) return none;
+            if (sys.Spectrum == null || !double.IsFinite(x) || !double.IsFinite(z) || !double.IsFinite(t)) return none;
             try
             {
                 lock (trainLock)
                 {
                     var p = TrainPlace(x, z);
-                    sys.SampleWaves(p, x, z, sys.WaveTime);
+                    sys.SampleWaves(p, x, z, t);
                     return read(p);
                 }
             }
             catch (Exception) { return none; }
+        }
+
+        /// <summary>
+        /// (In-game checks, <c>/sea probe</c> and <c>.sea probe</c>) the contracts' answers at (x, z) at wave time t, as one
+        /// line that is the same on the server and every client when the contracts agree (R5).
+        /// </summary>
+        public string Probe(double x, double z, double t)
+        {
+            if (sys.Spectrum == null) return "Sea's waves aren't ready.";
+            double H(double px, double pz) => AtPlaceAt(px, pz, t, p => sys.HeightOn(p, px, pz), double.NaN);
+            double shelter = Math.Clamp(AtPlaceAt(x, z, t, p => sys.WaveFactorOn(p, x, z), 0.0), 0, 1);
+            var pose = shelter > 0 ? SeaContractMath.PoseOn(H, shelter, x, z, 0.5, 30, 8) : default;
+            var (n, sum) = AtPlaceAt(x, z, t, p => { double s = 0; for (int i = 0; i < p.Count; i++) s += p.Amp[i]; return (p.Count, s); }, (0, 0.0));
+            return FormattableString.Invariant($"probe ({x:0.###}, {z:0.###}) at wave time {t:0.###}: height {H(x, z):0.000000}, shelter {shelter:0.000000}, pose lift {pose.Lift:0.000000} roll {pose.Roll:0.000000} pitch {pose.Pitch:0.000000} (30 x 8 at yaw 0.5), {n} trains, amplitudes {sum:0.000000}");
+        }
+
+        /// <summary>
+        /// (Client, <c>.sea drawn</c>) How far the drawn water (the camera's trains) is from the contracts' per-place height
+        /// at growing distances from (x, z), now: Sea's open issue O1, measured.
+        /// </summary>
+        public string DrawnVsPlace(double x, double z)
+        {
+            if (sys.Spectrum == null) return "Sea's waves aren't ready.";
+            var sb = new System.Text.StringBuilder("drawn water vs the contracts' height, 16 directions each:");
+            foreach (double d in new[] { 0.0, 16, 32, 64, 128, 256, 512 })
+            {
+                double most = 0, wave = 0;
+                for (int k = 0; k < 16; k++)
+                {
+                    double a = k * Math.PI / 8, px = x + d * Math.Cos(a), pz = z + d * Math.Sin(a);
+                    double own = Height(px, pz), drawn = sys.WaveHeightAt(px, pz);
+                    most = Math.Max(most, Math.Abs(own - drawn));
+                    wave = Math.Max(wave, Math.Abs(own));
+                    if (d == 0) break;
+                }
+                sb.Append(FormattableString.Invariant($"\n  {d,3:0} blocks: up to {most:0.0000} off (waves up to {wave:0.00})"));
+            }
+            return sb.ToString();
         }
 
         /// <summary>The sea at a place and game hour: significant height (m), peak period (s), travel direction, the sea's wind (m/s), storm 0–1.</summary>

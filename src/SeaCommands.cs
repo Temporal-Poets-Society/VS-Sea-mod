@@ -57,6 +57,11 @@ namespace Sea
                         sys.ChangeOverride(null);
                         return TextCommandResult.Success($"The weather decides the wind again ({WindSource(sys)}); the sea it raised dies down over the next game hours.");
                     })
+                .EndSubCommand()
+                .BeginSubCommand("probe")
+                    .WithDescription("(0.6.0, checks) The open contracts' answers at x z (default: where you are) at wave time t (default: the last whole 10 s); compare with .sea probe on a client")
+                    .WithArgs(parsers.OptionalDouble("x", double.NaN), parsers.OptionalDouble("z", double.NaN), parsers.OptionalDouble("t", double.NaN))
+                    .HandleWith(args => TextCommandResult.Success(Probe(sys, args.Caller.Player.Entity.Pos, (double)args[0], (double)args[1], (double)args[2])))
                 .EndSubCommand();
         }
 
@@ -143,6 +148,19 @@ namespace Sea
                     .WithDescription("(0.6.0) The coast where you stand: depth, surf, longshore current, and the coast map's progress")
                     .HandleWith(args => TextCommandResult.Success(CoastReport(capi, sys)))
                 .EndSubCommand()
+                .BeginSubCommand("probe")
+                    .WithDescription("(0.6.0, checks) The open contracts' answers at x z (default: where you are) at wave time t (default: the last whole 10 s); compare with /sea probe on the server")
+                    .WithArgs(parsers.OptionalDouble("x", double.NaN), parsers.OptionalDouble("z", double.NaN), parsers.OptionalDouble("t", double.NaN))
+                    .HandleWith(args => TextCommandResult.Success(Probe(sys, capi.World.Player.Entity.Pos, (double)args[0], (double)args[1], (double)args[2])))
+                .EndSubCommand()
+                .BeginSubCommand("drawn")
+                    .WithDescription("(0.6.0, checks) How far the drawn water is from the contracts' per-place height, 0 to 512 blocks from you")
+                    .HandleWith(args =>
+                    {
+                        var pos = capi.World.Player.Entity.Pos;
+                        return sys.Contracts == null ? TextCommandResult.Error("The contracts aren't running.") : TextCommandResult.Success(sys.Contracts.DrawnVsPlace(pos.X, pos.Z));
+                    })
+                .EndSubCommand()
                 .BeginSubCommand("reset")
                     .WithDescription("Back to sea.json's night, sky and glint strengths")
                     .HandleWith(args =>
@@ -154,6 +172,15 @@ namespace Sea
                         return TextCommandResult.Success($"Back to sea.json: night {c.NightStrength:0.##}, sky {c.SkyStrength:0.##}, glint {c.GlintStrength:0.##}.");
                     })
                 .EndSubCommand();
+        }
+
+        static string Probe(SeaSystem sys, Vintagestory.API.Common.Entities.EntityPos pos, double x, double z, double t)
+        {
+            if (sys.Contracts == null) return "The contracts aren't running.";
+            if (!double.IsFinite(x)) x = Math.Floor(pos.X) + 0.5;
+            if (!double.IsFinite(z)) z = Math.Floor(pos.Z) + 0.5;
+            if (!double.IsFinite(t)) t = Math.Floor(sys.WaveTime / 10) * 10;
+            return sys.Contracts.Probe(x, z, t);
         }
 
         /// <summary>Show or set one of the client's live strengths. No value: what it is now. "default": sea.json's again.</summary>

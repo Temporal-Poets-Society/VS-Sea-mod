@@ -112,6 +112,22 @@ namespace Sea
             }
         }
 
+        /// <summary>
+        /// (Server) Keep the tiles within `radius` blocks of (x, z) solved, or ask for them: so a boat near a player gets the
+        /// coast on the server as soon as the client, whose water map asks for the tiles in view, does (contracts, R5).
+        /// </summary>
+        public void Ask(double x, double z, double radius)
+        {
+            long x0 = TileOf(x - radius), x1 = TileOf(x + radius), z0 = TileOf(z - radius), z1 = TileOf(z + radius);
+            lock (gate)
+                for (long tz = z0; tz <= z1; tz++)
+                    for (long tx = x0; tx <= x1; tx++)
+                    {
+                        if (tiles.TryGetValue((tx, tz), out var e)) e.Used = ++uses;
+                        else wanted.Add((tx, tz));
+                    }
+        }
+
         static long Floor(long v, int d) => v >= 0 ? v / d : -((-v + d - 1) / d);
 
         // any thread (the client marks chunks dirty from its relight thread too)
