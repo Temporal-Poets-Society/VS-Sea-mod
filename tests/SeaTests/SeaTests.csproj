@@ -24,6 +24,8 @@
     <Compile Include="WorldOptionsChecks.cs" />
     <Compile Include="BoatChecks.cs" />
     <Compile Include="ContractChecks.cs" />
+    <Compile Include="CoastChecks.cs" />
+    <Compile Include="..\..\src\Coast\CoastMath.cs" Link="Coast\CoastMath.cs" />
     <Compile Include="..\..\src\Contracts\ContractMath.cs" Link="Contracts\ContractMath.cs" />
     <Compile Include="..\..\src\Boats\BoatWaveMath.cs" Link="Boats\BoatWaveMath.cs" />
     <Compile Include="..\..\src\Water\FoamMath.cs" Link="Water\FoamMath.cs" />

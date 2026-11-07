@@ -33,6 +33,11 @@ namespace Sea
         readonly float[] dryE = new float[WaterShader.MaxDryShapes * 4];
         readonly float[] dryP = new float[WaterShader.MaxDryShapes * WaterShader.DryStations * WaterShader.DryLevels];
         public readonly float[] WaveUniform = new float[WaterShader.MaxWaves * 4];
+        // (0.6.0) the coast: its map around the camera and each train's clock (sea_WaveClock)
+        readonly CoastTexture coastTexture = new();
+        readonly float[] clockUniform = new float[WaterShader.MaxWaves * 2];
+        double coastCamX, coastCamZ;
+        bool coastOn;
 
         /// <summary>Set once a water shader was loaded with Sea's code in it.</summary>
         public static bool Injected;
@@ -120,6 +125,14 @@ namespace Sea
             }
             waveCount = LastWaveCount = wn;
             waveShape = (float)place.Shape;
+            // (0.6.0) waves on the beaches: the coast map around the camera, solved by SeaSystem.Coast
+            coastCamX = camX; coastCamZ = camZ;
+            coastOn = wn > 0 && place.Count > 0 && sys.SurfOn;
+            if (coastOn)
+            {
+                coastTexture.Update(sys.Coast, camX, camZ, capi.InWorldEllapsedMilliseconds / 1000.0);
+                place.FillClock(clockUniform);
+            }
             // Foam is cosmetic: use the local provider's current wind, not a grid/clock sample from the wave
             // history. SeaWind retains the configured steady sea wind when there is no wind provider.
             var wind = foamWind = sys.Model?.SeaWind(camX, camZ, sys.Hours, true) ?? place.Wind;
@@ -326,10 +339,14 @@ namespace Sea
                 prog.Uniform(WaterShader.N(prog, "sea_WaveCount"), wn);
                 if (wn > 0) prog.Uniforms4(WaterShader.N(prog, "sea_Wave"), wn, WaveUniform);
                 if (WaterShader.Has(prog, "sea_WaveShape")) prog.Uniform(WaterShader.N(prog, "sea_WaveShape"), waveShape);
+                if (wn > 0 && coastOn && WaterShader.Has(prog, "sea_WaveClock"))
+                    GL.Uniform2(GL.GetUniformLocation(prog.ProgramId, "sea_WaveClock"), wn, clockUniform);
+                coastTexture.Bind(prog, coastCamX, coastCamZ, coastOn && wn > 0);
             }
             if (WaterShader.Has(prog, "sea_Pixel")) prog.Uniform(WaterShader.N(prog, "sea_Pixel"), pixel);
+            // (0.6.0) w: surf whitewater on (it shows without wind foam too)
             if (WaterShader.Has(prog, "sea_Storm")) prog.Uniform(WaterShader.N(prog, "sea_Storm"), stormX, stormZ,
-                sys.FoamView == FoamView.Off ? 0 : foamCoverage, 0f);
+                sys.FoamView == FoamView.Off ? 0 : foamCoverage, sys.FoamView == FoamView.Off || !coastOn ? 0f : 1f);
             if (WaterShader.Has(prog, "sea_FoamOrigin")) prog.Uniform(WaterShader.N(prog, "sea_FoamOrigin"), foamAlong, foamAcross, 0f);
         }
 
@@ -437,6 +454,7 @@ namespace Sea
         public void Dispose()
         {
             if (current == this) current = null;
+            coastTexture.Dispose();
         }
     }
 }

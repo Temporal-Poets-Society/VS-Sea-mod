@@ -86,6 +86,11 @@ namespace Sea
             // the client's patches only by the client (or a dedicated server, which has none): see Hooks
             clientHooks = api.Side == EnumAppSide.Client || (api as ICoreServerAPI)?.Server.IsDedicated == true;
             Hooks.Apply(Mod.Logger, clientHooks);
+            coast = new CoastField(api);
+            coastLookup = coast.Lookup;
+            // (0.6.0) the coast is solved a little at a time on the main thread: tiles asked for by the water's map, by
+            // the waves sampled for ships and boats, and by the open contracts
+            api.Event.RegisterGameTickListener(_ => { if (SurfOn) coast.Work(api.Side == EnumAppSide.Server ? 3 : 2, 1); }, 50);
             contracts = new SeaContracts(this, api, Mod.Logger);
             contracts.Publish();
         }
@@ -277,8 +282,54 @@ namespace Sea
         /// (<see cref="WavePlace.Sample"/>), not wherever it was: a ship new to the place, one that missed a second or
         /// sailed in from elsewhere, the server's tick and a client's frame all get the same surface there.
         /// </summary>
-        internal void SampleWaves(WavePlace place, double x, double z, double t) =>
+        internal void SampleWaves(WavePlace place, double x, double z, double t)
+        {
+            // (0.6.0) every place rides the beaches' surf as the shader draws it
+            place.Coast = SurfOn ? coastLookup : null;
             place.Sample(Spectrum, t, x, z, Model?.Shape.RingStart ?? 0, waveSource);
+        }
+
+        // ---------------------------------------------------------------- (0.6.0) coasts
+
+        CoastField coast;
+        CoastLookup coastLookup;
+
+        /// <summary>(0.6.0) The coast's depths and shore travel times near what's watched (null before Start).</summary>
+        public CoastField Coast => coast;
+
+        /// <summary>
+        /// (0.6.0) Waves feel the sea floor: the config's Surf, in the world itself (not on a Cylinder World ring, whose
+        /// coordinates wrap where the coast map's don't).
+        /// </summary>
+        public bool SurfOn => coast != null && Config?.Surf != false && !(Spectrum?.Circumference > 0);
+
+        /// <summary>(0.6.0) The coast's numbers at a world position (Coastal false off the coast, or before its tile is solved).</summary>
+        public CoastSample CoastAt(double x, double z) =>
+            SurfOn && coast.Lookup(x, z, out var c) ? c : CoastSample.Open;
+
+        /// <summary>
+        /// (0.6.0) The longshore current at a world position (m/s, x east, z south): in a surf zone the breaking waves
+        /// push the water along the beach (CoastMath.Longshore, Komar 1979); none elsewhere. From the waves of a place
+        /// sampled there (a boat's own, or the camera's).
+        /// </summary>
+        public (double X, double Z) CurrentAt(WavePlace place, double x, double z)
+        {
+            if (place == null || place.Count == 0 || !SurfOn) return (0, 0);
+            var c = CoastAt(x, z);
+            if (!c.Coastal || c.Trust <= 0) return (0, 0);
+            // the waves' energy-weighted direction and angular speed offshore
+            double ex = 0, ez = 0, e = 0, w = 0;
+            for (int i = 0; i < place.Count; i++)
+            {
+                double k = Math.Sqrt(place.Kx[i] * place.Kx[i] + place.Kz[i] * place.Kz[i]), a2 = place.Amp[i] * place.Amp[i];
+                if (k < 1e-9) continue;
+                ex += a2 * place.Kx[i] / k; ez += a2 * place.Kz[i] / k; e += a2; w += a2 * place.Omega[i];
+            }
+            double l = Math.Sqrt(ex * ex + ez * ez), t = c.Trust;
+            if (e <= 0 || l < 1e-9) return (0, 0);
+            var v = CoastMath.Longshore(c.Depth, c.AwayX / t, c.AwayZ / t, place.SignificantHeight, w / e, ex / l, ez / l);
+            return (v.X * t, v.Z * t);
+        }
 
         /// <summary>The wind the waves' chop follows (<see cref="WindModel.SeaWind(double, double, double, bool, long)"/>), as worked out for wave sample n.</summary>
         Wind SeaWindAt(double x, double z, double hours, long n) => Model?.SeaWind(x, z, hours, true, n) ?? WindAt(x, z, hours);

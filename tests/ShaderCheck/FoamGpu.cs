@@ -81,6 +81,7 @@ void main(){
             Check(gradientError<.001 && wrongLookupError>.005,$"GPU: shelter sampled at inverse mesh coordinate across a gradient: {gradientError:E3} blocks (world-coordinate lookup would miss by {wrongLookupError:F4})");
             GL.DeleteProgram(prog);
             CrestDryGpu(pointVertex);
+            CoastGpu(pointVertex);
             FoamPatchesGpu();
             CrestRendersGpu();
             GL.BindFramebuffer(FramebufferTarget.Framebuffer,0);GL.UseProgram(0);GL.DeleteFramebuffer(fbo);GL.DeleteTexture(tex);GL.DeleteVertexArray(vao);

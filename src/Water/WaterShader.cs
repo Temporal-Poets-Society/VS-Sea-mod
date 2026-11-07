@@ -66,13 +66,63 @@ float sea_ShapeWeight(float k) { return 0.15+0.85/(1.0+k*k/0.09); }
 // (0.5.3) How much of the sea's swell reaches water with this wave divisor: none on inland water (oceanity 0: rivers, lakes,
 // rapids), all from oceanity 0.25 (the coast's bays and estuaries in between). Vanilla's divisor is 5 * max(0.2, 1 - oceanity).
 float sea_OpenWater(float div) { return smoothstep(0.0, 0.25, 1.0 - div / 5.0); }
+// (0.6.0) The coast (Sea's CoastMath, the same numbers as the CPU): per column depth, travel time from the shore line,
+// and the direction away from it times its trust, bilinear between column centres. sea_CoastArea: column (0, 0)'s centre
+// relative to the camera (xz), the map's size, 1 when there is a map. sea_WaveClock: per train its angular speed and its
+// phase on the shore line now.
+uniform vec2 sea_WaveClock[24];
+uniform vec4 sea_CoastArea = vec4(0.0);
+uniform sampler2D sea_CoastTex;
+const float sea_MaxDepth = 32.0;
+float sea_Surf = 0.0; // whitewater at the last sea_Differential (0.6.0)
+vec4 sea_Coast(vec2 q) {
+    vec4 open = vec4(sea_MaxDepth, 0.0, 0.0, 0.0);
+    if (sea_CoastArea.w < 0.5) return open;
+    vec2 f = q - sea_CoastArea.xy;
+    float n = sea_CoastArea.z;
+    if (f.x < 0.0 || f.y < 0.0 || f.x >= n - 1.0 || f.y >= n - 1.0) return open;
+    vec2 i = floor(f), t = f - i;
+    ivec2 c = ivec2(i);
+    vec4 a = texelFetch(sea_CoastTex, c, 0), b = texelFetch(sea_CoastTex, c + ivec2(1, 0), 0);
+    vec4 d = texelFetch(sea_CoastTex, c + ivec2(0, 1), 0), e = texelFetch(sea_CoastTex, c + ivec2(1, 1), 0);
+    return (1.0 - t.y) * ((1.0 - t.x) * a + t.x * b) + t.y * ((1.0 - t.x) * d + t.x * e);
+}
+float sea_SurfShare(float k, vec4 c) {
+    if (c.x >= sea_MaxDepth) return 0.0;
+    return (1.0 - smoothstep(0.4, 1.6, k * c.x)) * (1.0 - smoothstep(0.6 * sea_MaxDepth, sea_MaxDepth, c.x)) * min(length(c.zw), 1.0);
+}
+float sea_Shoal(float omega, float h) { return clamp(sqrt(4.905 / max(omega, 0.000001) / sqrt(9.81 * max(h, 0.3))), 1.0, 2.5); }
+// every train's amplitude cut (H_s <= 0.6 h) and how far the waves are breaking
+vec2 sea_Breaking(vec4 c) {
+    if (c.x >= sea_MaxDepth) return vec2(1.0, 0.0);
+    float e = 0.0;
+    for (int i=0; i<sea_WaveCount; i++) {
+        vec4 w = sea_Wave[i];
+        float s = sea_SurfShare(length(w.xy), c), ks = s > 0.0 ? sea_Shoal(sea_WaveClock[i].x, c.x) : 1.0;
+        e += 0.5 * w.w * w.w * ((1.0 - s) * (1.0 - s) + s * s * ks * ks);
+    }
+    float ratio = 4.0 * sqrt(e) / max(0.6 * max(c.x, 0.0), 0.0001);
+    return vec2(ratio > 1.0 ? 1.0 / ratio : 1.0, smoothstep(0.6, 1.0, ratio));
+}
+// a surf train's shape at phase theta when breaking b: (shape, its derivative, nearness to the crest)
+vec3 sea_Breaker(float theta, float b) {
+    float p = 1.0 + 2.0 * b, al = 0.6 * b;
+    float psi = theta - al * sin(theta);
+    float u = 0.5 + 0.5 * sin(psi);
+    float mean = 0.5 + b * (-0.3517 + b * (0.2331 - 0.0985 * b));
+    return vec3(2.0 * (pow(max(u, 0.0), p) - mean), p * pow(max(u, 0.000001), p - 1.0) * cos(psi) * (1.0 - al * cos(theta)), u);
+}
 vec3 sea_Surface(vec2 q, float factor) {
     vec3 p = vec3(q.x,0.0,q.y);
+    vec4 c = sea_WaveCount > 0 ? sea_Coast(q) : vec4(sea_MaxDepth, 0.0, 0.0, 0.0);
+    vec2 br = sea_Breaking(c);
     for (int i=0; i<sea_WaveCount; i++) {
         vec4 w=sea_Wave[i];
         float k=length(w.xy), phase=dot(w.xy,q)+w.z;
-        p.y += w.w*sin(phase)*factor;
-        if (k>0.0000001) p.xz += sea_WaveShape*sea_ShapeWeight(k)*w.w*w.xy/k*cos(phase);
+        float s=sea_SurfShare(k,c), a=w.w*br.x;
+        p.y += a*(1.0-s)*sin(phase)*factor;
+        if (s>0.0) { vec2 ck=sea_WaveClock[i]; p.y += a*s*sea_Shoal(ck.x,c.x)*sea_Breaker(ck.y-ck.x*c.y,br.y).x*factor; }
+        if (k>0.0000001) p.xz += sea_WaveShape*sea_ShapeWeight(k)*a*(1.0-s)*w.xy/k*cos(phase);
     }
     return p;
 }
@@ -83,22 +133,39 @@ void sea_Differential(vec2 q, float factor, float footprint, out vec2 slope, out
     mat2 jac=mat2(1.0); vec2 gradient=vec2(0.0);
     float height=0.0, variance=0.0, fall=0.0, fallVariance=0.0;
     rough=0.0;
+    vec4 c = sea_WaveCount > 0 ? sea_Coast(q) : vec4(sea_MaxDepth, 0.0, 0.0, 0.0);
+    vec2 br = sea_Breaking(c);
+    float away = length(c.zw);
+    // a surf train's phase falls by omega per second of travel time: its wave vector is -omega grad T, |grad T| = 1/sqrt(g h)
+    vec2 gradT = away > 0.0001 ? c.zw / away / sqrt(9.81 * max(c.x, 0.3)) : vec2(0.0);
+    float surfSum = 0.0, surfCrest = 0.0;
     for(int i=0;i<sea_WaveCount;i++) {
         vec4 w=sea_Wave[i]; float k=length(w.xy);
         if(k<0.0000001) continue;
+        float s=sea_SurfShare(k,c), a=w.w*br.x, ao=a*(1.0-s);
         float phase=dot(w.xy,q)+w.z, sn=sin(phase), cs=cos(phase);
         float keep=1.0-smoothstep(0.25,0.75,k*footprint);
         vec2 direction=w.xy/k;
-        jac -= sea_WaveShape*sea_ShapeWeight(k)*w.w*k*sn*keep*outerProduct(direction,direction);
-        gradient += keep*w.w*w.xy*cs*factor;
-        rough += (1.0-keep*keep)*0.5*pow(w.w*k*factor,2.0);
+        jac -= sea_WaveShape*sea_ShapeWeight(k)*ao*k*sn*keep*outerProduct(direction,direction);
+        gradient += keep*ao*w.xy*cs*factor;
+        rough += (1.0-keep*keep)*0.5*pow(ao*k*factor,2.0);
         float longWave=1.0-smoothstep(0.3,0.6,k);
-        height += longWave*keep*w.w*sn;
-        variance += 0.5*pow(longWave*w.w,2.0);
+        height += longWave*keep*ao*sn;
+        variance += 0.5*pow(longWave*ao,2.0);
         float omega=sqrt(9.81*k);
-        fall += longWave*keep*w.w*omega*cs;
-        fallVariance += 0.5*pow(longWave*w.w*omega,2.0);
+        fall += longWave*keep*ao*omega*cs;
+        fallVariance += 0.5*pow(longWave*ao*omega,2.0);
+        if (s>0.0) {
+            vec2 ck=sea_WaveClock[i];
+            float as=a*s*sea_Shoal(ck.x,c.x);
+            vec3 sh=sea_Breaker(ck.y-ck.x*c.y,br.y);
+            float ks=ck.x*length(gradT), keepS=1.0-smoothstep(0.25,0.75,ks*footprint);
+            gradient -= keepS*as*sh.y*ck.x*gradT*factor;
+            rough += (1.0-keepS*keepS)*0.5*pow(as*ks*factor,2.0);
+            surfSum += as; surfCrest += as*sh.z*sh.z*sh.z;
+        }
     }
+    sea_Surf = surfSum > 0.0001 ? br.y * (0.2 + 0.8 * smoothstep(0.35, 0.85, surfCrest / surfSum)) : 0.0;
     slope=inverse(jac)*gradient;
     float least=0.5*(jac[0][0]+jac[1][1]-length(vec2(jac[0][0]-jac[1][1],2.0*jac[0][1])));
     crest=vec3(height/max(sqrt(variance),0.0001),max(0.0,1.0-least)*factor,fall/max(sqrt(fallVariance),0.0001));

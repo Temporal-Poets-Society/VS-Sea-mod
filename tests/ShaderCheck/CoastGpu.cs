@@ -1,0 +1,107 @@
+using System;
+using System.Collections.Generic;
+using OpenTK.Graphics.OpenGL4;
+using Sea;
+
+namespace ShaderCheck
+{
+    static partial class Program
+    {
+        /// <summary>
+        /// (0.6.0) A beach drawn by the production vertex code from a coast texture equals the CPU's surface over the same
+        /// map (what boats ride): forward positions, the inverse height at the drawn points, and the slope's direction.
+        /// </summary>
+        static void CoastGpu(string pointVertex)
+        {
+            int prog = Build("0.6.0: production surf geometry on a coast map", pointVertex,
+                "#version 330 core\nflat in vec4 result;out vec4 color;void main(){color=result;}", new Dictionary<string, int>());
+            if (prog == 0) return;
+            // a curved shore through the sampled points: land west of x = -20 + 0.004 z², sloping 1:12 out to sea
+            const int margin = 2, n = 252, w = n + 2 * margin;
+            double positionError = 0, inverseError = 0, normalError = 0, surfMax = 0;
+            int points = 0;
+            foreach (double origin in new[] { 0.0, 812345.5 })
+            {
+                double oz = origin == 0 ? 0 : -233007.25;
+                long ox = (long)Math.Floor(origin) - w / 2, ozi = (long)Math.Floor(oz) - w / 2;
+                var depth = new float[w * w];
+                for (int j = 0; j < w; j++)
+                    for (int i = 0; i < w; i++)
+                    {
+                        double x = ox + i + 0.5 - origin, z = ozi + j + 0.5 - oz, shore = -20 + 0.004 * z * z;
+                        depth[j * w + i] = x < shore ? 0 : (float)((x - shore) / 12 + 0.4);
+                    }
+                var time = new float[w * w];
+                var dist = new float[w * w];
+                CoastMath.Solve(depth, w, time, dist);
+                var pixels = CoastMath.TileOf(depth, time, dist, w, margin, n);
+                long tx = ox + margin, tz = ozi + margin;
+                CoastLookup lookup = (double x, double z, out CoastSample s) =>
+                {
+                    s = CoastMath.Bilinear(x, z, (ci, cj, into) =>
+                    {
+                        long a = ci - tx, b = cj - tz;
+                        if (a < 0 || b < 0 || a >= n || b >= n) return false;
+                        Array.Copy(pixels, (b * n + a) * 4, into, 0, 4);
+                        return true;
+                    }, new float[4]);
+                    return true;
+                };
+                int coastTex = GL.GenTexture();
+                GL.ActiveTexture(TextureUnit.Texture1);
+                GL.BindTexture(TextureTarget.Texture2D, coastTex);
+                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+                GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba32f, n, n, 0, PixelFormat.Rgba, PixelType.Float, pixels);
+                GL.ActiveTexture(TextureUnit.Texture0);
+                foreach (double strength in new[] { 0.5, 1.5 })
+                    foreach (double from in new[] { 270.0, 315 })
+                    {
+                        var p = CrestPlace(strength, 1, from);
+                        p.Coast = lookup;
+                        WaveUpload(prog, p, origin, oz);
+                        var clock = new float[48];
+                        int c = p.FillClock(clock);
+                        GL.Uniform2(GL.GetUniformLocation(prog, "sea_WaveClock"), c, clock);
+                        GL.Uniform1(GL.GetUniformLocation(prog, "sea_CoastTex"), 1);
+                        GL.Uniform4(GL.GetUniformLocation(prog, "sea_CoastArea"), (float)(tx + 0.5 - origin), (float)(tz + 0.5 - oz), (float)n, 1f);
+                        GL.Uniform1(GL.GetUniformLocation(prog, "testFactor"), 1f);
+                        GL.Uniform1(GL.GetUniformLocation(prog, "testGradient"), 0);
+                        float[] Render(int mode)
+                        {
+                            GL.Uniform1(GL.GetUniformLocation(prog, "testMode"), mode);
+                            GL.DrawArrays(PrimitiveType.Points, 0, 256);
+                            var data = new float[1024];
+                            GL.ReadPixels(0, 0, 16, 16, PixelFormat.Rgba, PixelType.Float, data);
+                            return data;
+                        }
+                        var pos = Render(0);
+                        var normals = Render(1);
+                        for (int i = 0; i < 256; i++)
+                        {
+                            double qx = (i % 16 - 7.5) * 7.3, qz = (i / 16 - 7.5) * 7.3;
+                            var cpu = p.SurfaceAt(origin + qx, oz + qz);
+                            positionError = Math.Max(positionError, Math.Max(Math.Abs(cpu.X - origin - pos[i * 4]),
+                                Math.Max(Math.Abs(cpu.Y - pos[i * 4 + 1]), Math.Abs(cpu.Z - oz - pos[i * 4 + 2]))));
+                            double x = origin + pos[i * 4], z = oz + pos[i * 4 + 2];
+                            if (p.CoastAt(qx + origin, qz + oz, out var cs, out _, out _) && cs.Depth > 0.6)
+                            {
+                                inverseError = Math.Max(inverseError, Math.Abs(p.HeightAt(x, z) - pos[i * 4 + 1]));
+                                const double d = .01;
+                                // (the shader leaves out how the share, cap and shoaling change across the bottom: small)
+                                normalError = Math.Max(normalError, Math.Max(Math.Abs((p.HeightAt(x + d, z) - p.HeightAt(x - d, z)) / (2 * d) - normals[i * 4]),
+                                    Math.Abs((p.HeightAt(x, z + d) - p.HeightAt(x, z - d)) / (2 * d) - normals[i * 4 + 1])));
+                                surfMax = Math.Max(surfMax, p.SurfAt(x, z).Breaking);
+                                points++;
+                            }
+                        }
+                    }
+                GL.DeleteTexture(coastTex);
+            }
+            Check(positionError < .001, $"GPU surf positions = CPU surface on a coast map: max {positionError:E3} blocks");
+            Check(inverseError < .002 && points > 200, $"CPU ship height at GPU-drawn surf points: max {inverseError:E3} blocks ({points} points in water, breaking up to {surfMax:0.00})");
+            Check(normalError < .15, $"GPU surf normals near CPU finite differences: max slope error {normalError:E3}");
+            GL.DeleteProgram(prog);
+        }
+    }
+}

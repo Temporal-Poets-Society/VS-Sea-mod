@@ -47,7 +47,8 @@ namespace Sea
     sea_SurfaceSlope = vec2(0.0);
     sea_SurfaceRough = 0.0;
     sea_FoamCrest = vec3(0.0);
-    if ((sea_Effects.x > 0.0 || sea_Effects.y > 0.0 || sea_Storm.z > 0.0) && (waterFlagsIn & 1) == 1 && (waterFlagsIn & LiquidIsLavaBitMask) == 0) {
+    sea_SurfFoam = 0.0;
+    if ((sea_Effects.x > 0.0 || sea_Effects.y > 0.0 || sea_Storm.z > 0.0 || sea_Storm.w > 0.0) && (waterFlagsIn & 1) == 1 && (waterFlagsIn & LiquidIsLavaBitMask) == 0) {
         float div = ((waterFlagsIn & LiquidWeakWaveBitMask) > 0 ? 90.0 : 5.0)
             * max(0.2, 1.0 - float((waterFlagsIn >> 2) & 255) / 255.0);
         // (0.4.7) Blocks per pixel here, as Wmap's far sea measures it (length of fwidth of the position): the distance
@@ -59,10 +60,11 @@ namespace Sea
         sea_Differential((xyz+origin).xz, sea_OpenWater(div)/div, sea_Footprint, sea_SurfaceSlope, sea_SurfaceRough, sea_FoamCrest);
         sea_SurfaceSlope *= sea_WaveCalm;
         sea_FoamCrest.y *= sea_WaveCalm;
+        sea_SurfFoam = sea_Storm.w > 0.0 ? sea_Surf * sea_WaveCalm : 0.0;
     }");
             // (sea_Effects and sea_Eye as the fragment stage declares them: one uniform of the program)
             return code.Insert(code.IndexOf("void main(", StringComparison.Ordinal),
-                "out vec2 sea_SurfaceSlope;\nout float sea_SurfaceRough;\nout vec3 sea_FoamCrest;\nuniform vec4 sea_Storm = vec4(0.0);\nuniform vec2 sea_Effects = vec2(0.0);\nuniform vec3 sea_Eye;\nuniform float sea_Pixel = 0.0;\n");
+                "out vec2 sea_SurfaceSlope;\nout float sea_SurfaceRough;\nout vec3 sea_FoamCrest;\nout float sea_SurfFoam;\nuniform vec4 sea_Storm = vec4(0.0);\nuniform vec2 sea_Effects = vec2(0.0);\nuniform vec3 sea_Eye;\nuniform float sea_Pixel = 0.0;\n");
         }
 
         public static string Fragment(string code)
@@ -100,10 +102,12 @@ namespace Sea
     }
     // Sea owns breaking-wave foam; vanilla's depth/contact foam above is preserved. This sits outside the
     // reflection switch and FOAMEFFECT, as the shared waves do outside WAVINGSTUFF. Lit by the water's own light.
-    if (!isLava && fragNormal.y > 0.9 && cameraUnderwater < 0.01 && sea_Storm.z > 0.0) {
+    if (!isLava && fragNormal.y > 0.9 && cameraUnderwater < 0.01 && (sea_Storm.z > 0.0 || sea_SurfFoam > 0.001)) {
         vec2 foamPos = sea_FoamCoordinates(fWorldPos.xz, sea_Storm.xy, sea_FoamOrigin.xy);
         float coverage = skyExposed > 0 ? sea_Storm.z : 0.0;
         float foam = coverage > 0.0 ? sea_WindFoam(foamPos, sea_FoamCrest, coverage) : 0.0;
+        // (0.6.0) whitewater on the breakers and the bores behind them, holed like the wind's foam
+        if (sea_SurfFoam > 0.001) foam = max(foam, sea_SurfWater(foamPos, sea_SurfFoam));
         float edge = 1.0 - smoothstep(viewDistance * 0.76, viewDistance * 0.80, length(fWorldPos.xz));
         foam *= edge;
         texColor.rgb = mix(texColor.rgb, vec3(0.88, 0.94, 0.92) * rgba.rgb * shadowBright, foam);
@@ -173,13 +177,20 @@ float sea_WindFoam(vec2 p, vec3 crest, float coverage) {
     float lace = smoothstep(-0.3,0.9,crest.z);
     return clamp(breaking * sea_FoamCells(p,lace) * (0.55+0.45*sea_FoamNoise(p*2.0)),0.0,1.0);
 }
+// (0.6.0) Surf: dense on a breaking crest (white near 1), lace over the bore and the inner surf zone (low values).
+float sea_SurfWater(vec2 p, float surf) {
+    float lace = 1.0 - smoothstep(0.3, 0.8, surf);
+    float streaks = 0.6 + 0.4 * sea_FoamNoise(p * vec2(0.35, 1.4) + vec2(17, 5));
+    return clamp(smoothstep(0.08, 0.6, surf) * sea_FoamCells(p, lace) * streaks, 0.0, 1.0);
+}
 ";
 
         public const string Declarations = @"
 in vec2 sea_SurfaceSlope;
 in float sea_SurfaceRough; // (0.4.7) the slope variance of trains too short for the pixel, faded out of sea_SurfaceSlope
 in vec3 sea_FoamCrest; // normalised long height, local crest compression, normalised falling velocity
-uniform vec4 sea_Storm = vec4(0.0); // wind TOWARD direction xz, bounded whitecap input, reserved
+in float sea_SurfFoam; // (0.6.0) surf whitewater (WaterShader's sea_Surf)
+uniform vec4 sea_Storm = vec4(0.0); // wind TOWARD direction xz, bounded whitecap input, (0.6.0) surf whitewater on
 uniform vec3 sea_FoamOrigin; // camera along/across wind minus small drift (periodic, CPU doubles); z reserved
 uniform vec3 sea_Eye;
 uniform vec4 sea_Sun;
