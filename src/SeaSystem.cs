@@ -293,6 +293,10 @@ namespace Sea
 
         CoastField coast;
         CoastLookup coastLookup;
+        SurfSpray surfSpray;
+
+        /// <summary>(0.6.0) Client: the surf spray (null on a server).</summary>
+        public SurfSpray Spray => surfSpray;
 
         /// <summary>(0.6.0) The coast's depths and shore travel times near what's watched (null before Start).</summary>
         public CoastField Coast => coast;
@@ -790,6 +794,9 @@ namespace Sea
             celestialRenderer = new CelestialRenderer(api, this);
             api.Event.RegisterRenderer(celestialRenderer, EnumRenderStage.Opaque, "sea-celestial");
             api.Event.RegisterGameTickListener(_ => UpdateLocalWind(), 250);
+            // (0.6.0) spray off breaking surf near the camera
+            surfSpray = new SurfSpray(api, this);
+            api.Event.RegisterGameTickListener(_ => { if (Model != null) surfSpray.Tick(); }, 100);
             SeaCommands.RegisterClient(api, this);
 
             // the water shaders were compiled before our patch existed: recompile them with Sea's code

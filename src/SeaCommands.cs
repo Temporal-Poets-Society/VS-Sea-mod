@@ -60,6 +60,32 @@ namespace Sea
                 .EndSubCommand();
         }
 
+        /// <summary>(0.6.0) .sea coast: the coast at the player, as the water is drawn there.</summary>
+        static string CoastReport(ICoreClientAPI capi, SeaSystem sys)
+        {
+            if (sys.Coast == null) return "The coast isn't running.";
+            var ep = capi.World.Player.Entity;
+            double x = ep.Pos.X, z = ep.Pos.Z;
+            var n = sys.Coast.Counts;
+            string head = $"Surf {(sys.SurfOn ? "on" : "off (config Surf, or a Cylinder World ring)")}; coast map: {n.Tiles} tiles solved, {n.Columns} chunk columns scanned, {n.Wanted} waiting.";
+            var c = sys.CoastAt(x, z);
+            if (!c.Coastal) return head + " Here: open sea (deeper than " + CoastMath.MaxDepth + " blocks, or not solved yet).";
+            var s = sys.CameraWaves.SurfAt(x, z);
+            var v = sys.CurrentAt(sys.CameraWaves, x, z);
+            double speed = Math.Sqrt(v.X * v.X + v.Z * v.Z);
+            string current = speed < 0.01 ? "none" : $"{speed:0.00} m/s toward {Heading(v.X, v.Z)}";
+            return head + $" Here: {c.Depth:0.0} blocks deep, {c.Time:0.0} s of wave travel from the shore line (trusted {c.Trust:0.00}); "
+                + $"breaking {s.Breaking:0.00}, whitewater {s.Foam:0.00}; longshore current {current}; spray {sys.Spray?.LastSpawned ?? 0} last tick.";
+        }
+
+        // +X east, +Z south
+        static string Heading(double x, double z)
+        {
+            string[] names = { "E", "SE", "S", "SW", "W", "NW", "N", "NE" };
+            int i = (int)Math.Round(Math.Atan2(z, x) / (Math.PI / 4));
+            return names[((i % 8) + 8) % 8];
+        }
+
         /// <summary>.sea on a client: what Sea is doing there (for checking that the client side works).</summary>
         public static void RegisterClient(ICoreClientAPI capi, SeaSystem sys)
         {
@@ -96,6 +122,10 @@ namespace Sea
                         }
                         return TextCommandResult.Success(sys.FoamStatus);
                     })
+                .EndSubCommand()
+                .BeginSubCommand("coast")
+                    .WithDescription("(0.6.0) The coast where you stand: depth, surf, longshore current, and the coast map's progress")
+                    .HandleWith(args => TextCommandResult.Success(CoastReport(capi, sys)))
                 .EndSubCommand()
                 .BeginSubCommand("reset")
                     .WithDescription("Back to sea.json's night, sky and glint strengths")

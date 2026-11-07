@@ -128,7 +128,39 @@ namespace Sea
             var e = Entry();
             e["at"] = new Func<double, double, double, (double Height, double Period, double DirX, double DirZ, double WindX, double WindZ, double Storm)>(SeaStateAt);
             e["shelter"] = new Func<double, double, double>(Shelter);
+            e["current"] = new Func<double, double, (double X, double Z)>(Current);
+            e["surf"] = new Func<double, double, (double Depth, double Breaking, double Foam)>(Surf);
             return e;
+        }
+
+        /// <summary>
+        /// (0.6.0) The water's own drift at a place now (m/s, +X east, +Z south): the longshore current breaking waves
+        /// drive along a beach (Komar 1979); 0 off the coast. Things afloat there move with it.
+        /// </summary>
+        public (double X, double Z) Current(double x, double z) =>
+            AtPlace(x, z, p => sys.CurrentAt(p, x, z), (0.0, 0.0));
+
+        /// <summary>
+        /// (0.6.0) The surf at a place now: depth to the sea floor (blocks; 32 or more off the coast), how far the waves
+        /// break there (0–1) and the whitewater drawn (0–1).
+        /// </summary>
+        public (double Depth, double Breaking, double Foam) Surf(double x, double z) =>
+            AtPlace(x, z, p => { var s = p.SurfAt(x, z); return (s.Depth, s.Breaking, s.Foam); }, (CoastMath.MaxDepth, 0.0, 0.0));
+
+        // a place sampled at (x, z) now, from the same small cache as Trains
+        T AtPlace<T>(double x, double z, Func<WavePlace, T> read, T none)
+        {
+            if (sys.Spectrum == null || !double.IsFinite(x) || !double.IsFinite(z)) return none;
+            try
+            {
+                lock (trainLock)
+                {
+                    var p = TrainPlace(x, z);
+                    sys.SampleWaves(p, x, z, sys.WaveTime);
+                    return read(p);
+                }
+            }
+            catch (Exception) { return none; }
         }
 
         /// <summary>The sea at a place and game hour: significant height (m), peak period (s), travel direction, the sea's wind (m/s), storm 0–1.</summary>
@@ -164,9 +196,28 @@ namespace Sea
             catch (Exception) { return 0; }
         }
 
+        // (caller holds trainLock) the cached place for this grid cell
+        WavePlace TrainPlace(double x, double z)
+        {
+            var key = ((long)Math.Floor(x / WavePlace.GridCell), (long)Math.Floor(z / WavePlace.GridCell));
+            if (!trainPlaces.TryGetValue(key, out var slot))
+            {
+                if (trainPlaces.Count >= 32)
+                {
+                    var oldest = key; long used = long.MaxValue;
+                    foreach (var kv in trainPlaces) if (kv.Value.Used < used) { used = kv.Value.Used; oldest = kv.Key; }
+                    trainPlaces.Remove(oldest);
+                }
+                slot = (new WavePlace(), 0);
+            }
+            trainPlaces[key] = (slot.Place, ++trainUses);
+            return slot.Place;
+        }
+
         /// <summary>
         /// The trains at (x, z) at wave time `seconds`: each the height <c>amp · sin(kx·x + kz·z − omega·t + phase)</c> in m,
-        /// before shelter (multiply by <see cref="Shelter"/>). The same on every side. Fills the arrays (at most their
+        /// before shelter (multiply by <see cref="Shelter"/>). (0.6.0) These are the open sea's trains: near a beach the
+        /// drawn surface (<see cref="Height"/>, <see cref="Pose"/>) also follows the bottom, shoals and breaks. The same on every side. Fills the arrays (at most their
         /// length) and returns how many; 0 before the waves are ready.
         /// </summary>
         public int Trains(double x, double z, double seconds, double[] kx, double[] kz, double[] omega, double[] phase, double[] amp)
@@ -175,19 +226,7 @@ namespace Sea
             if (!double.IsFinite(x) || !double.IsFinite(z) || !double.IsFinite(seconds)) return 0;
             lock (trainLock)
             {
-                var key = ((long)Math.Floor(x / WavePlace.GridCell), (long)Math.Floor(z / WavePlace.GridCell));
-                if (!trainPlaces.TryGetValue(key, out var slot))
-                {
-                    if (trainPlaces.Count >= 32)
-                    {
-                        var oldest = key; long used = long.MaxValue;
-                        foreach (var kv in trainPlaces) if (kv.Value.Used < used) { used = kv.Value.Used; oldest = kv.Key; }
-                        trainPlaces.Remove(oldest);
-                    }
-                    slot = (new WavePlace(), 0);
-                }
-                trainPlaces[key] = (slot.Place, ++trainUses);
-                var p = slot.Place;
+                var p = TrainPlace(x, z);
                 sys.SampleWaves(p, x, z, seconds);
                 int n = Math.Min(p.Count, Math.Min(Math.Min(kx.Length, kz.Length), Math.Min(Math.Min(omega.Length, phase.Length), amp.Length)));
                 for (int i = 0; i < n; i++)
