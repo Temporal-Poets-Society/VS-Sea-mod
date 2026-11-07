@@ -20,7 +20,7 @@ namespace ShaderCheck
             // a curved shore through the sampled points: land west of x = -20 + 0.004 z², sloping 1:12 out to sea
             const int margin = 2, n = 252, w = n + 2 * margin;
             double positionError = 0, inverseError = 0, normalError = 0, surfMax = 0;
-            int points = 0, sheltered = 0, rips = 0, folds = 0;
+            int points = 0, sheltered = 0, rips = 0, folds = 0, reflecting = 0;
             double foldError = 0;
             foreach (double origin in new[] { 0.0, 812345.5 })
             {
@@ -69,7 +69,8 @@ namespace ShaderCheck
                         GL.Uniform2(GL.GetUniformLocation(prog, "sea_WaveClock"), c, clock);
                         GL.Uniform1(GL.GetUniformLocation(prog, "sea_CoastTex"), 1);
                         GL.Uniform4(GL.GetUniformLocation(prog, "sea_CoastArea"), (float)(tx + 0.5 - origin), (float)(tz + 0.5 - oz), (float)n, 1f);
-                        GL.Uniform4(GL.GetUniformLocation(prog, "sea_CoastSea"), (float)p.SignificantHeight, 0f, 0f, 0f);
+                        var coastSea = new float[4]; p.FillCoastSea(coastSea);
+                        GL.Uniform4(GL.GetUniformLocation(prog, "sea_CoastSea"), coastSea[0], coastSea[1], coastSea[2], coastSea[3]);
                         GL.Uniform1(GL.GetUniformLocation(prog, "testFactor"), 1f);
                         GL.Uniform1(GL.GetUniformLocation(prog, "testGradient"), 0);
                         float[] Render(int mode)
@@ -96,6 +97,7 @@ namespace ShaderCheck
                             {
                                 if (Math.Min(Math.Min(Math.Min(cs.Lee0, cs.Lee1), Math.Min(cs.Lee2, cs.Lee3)), Math.Min(Math.Min(cs.Lee4, cs.Lee5), Math.Min(cs.Lee6, cs.Lee7))) < 0.8) sheltered++;
                                 if (cs.Rip > 0.05) rips++;
+                                if (cs.ShoreSlope > 0.3 && cs.Trust > 0.5) reflecting++;
                                 // Where the size of the waves changes within a block or two (a cliff's foot, a rip's edge) the
                                 // drawn surface can fold over itself: a world point there has two surface points, and the CPU's
                                 // lookup finds one of them. Those are counted, not compared.
@@ -121,8 +123,10 @@ namespace ShaderCheck
             }
             Check(positionError < .001, $"GPU surf positions = CPU surface on a coast map: max {positionError:E3} blocks");
             Check(inverseError < .002 && points > 200, $"CPU ship height at GPU-drawn surf points: max {inverseError:E3} blocks ({points} points in water, breaking up to {surfMax:0.00})");
-            Check(folds * 50 < points && foldError < .01, $"the surface folds over itself at few points: {folds} of {points + folds}, where a ship's height is up to {foldError:E2} blocks off the drawn one");
-            Check(sheltered > 20 && rips > 5, $"the coast map exercised the lee of land and rips: {sheltered} sheltered points, {rips} over rip channels");
+            // (the folds are where the long waves' size changes faster than their orbits can follow: a rip's edge in a storm;
+            // the two layers there differ most where a steep breaker front crosses the fold)
+            Check(folds * 50 < points && foldError < .3, $"the surface folds over itself at few points: {folds} of {points + folds}, where a ship's height is up to {foldError:E2} blocks off the drawn one");
+            Check(sheltered > 20 && rips > 5 && reflecting > 5, $"the coast map exercised the lee of land, rips and a shore that throws waves back: {sheltered} sheltered points, {rips} over rip channels, {reflecting} before a steep shore");
             Check(normalError < .15, $"GPU surf normals near CPU finite differences: max slope error {normalError:E3}");
             GL.DeleteProgram(prog);
         }

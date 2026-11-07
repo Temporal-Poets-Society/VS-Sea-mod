@@ -74,7 +74,17 @@ namespace Sea
             var c = sys.CoastAt(x, z);
             if (!c.Affects) return head + " Here: open sea (deeper than " + CoastMath.MaxDepth + " blocks, no land upwave, or not solved yet).";
             string lee = sys.CameraWaves.Count > 0 ? $"{sys.LeeAt(sys.CameraWaves, x, z):0.00} of the sea's height gets past the land" : "no sea";
-            if (!c.Coastal) return head + $" Here: deep water in the lee of land ({lee}).";
+            // the shore in front: how far, how steep, and how much of the sea's waves it throws back here
+            var cw = sys.CameraWaves;
+            double back = 0, all = 0;
+            for (int i = 0; i < cw.Count; i++)
+            {
+                double a2 = cw.Amp[i] * cw.Amp[i];
+                all += a2; back += a2 * CoastMath.Reflection(c, cw.Kx[i], cw.Kz[i], cw.Omega[i], cw.SignificantHeight);
+            }
+            lee += $"; the shore {c.ShoreDist:0} blocks off, steepness {c.ShoreSlope:0.00}"
+                + (all > 0 && back > 0.005 * all ? $", throwing back {back / all:0%} of the waves" : "");
+            if (!c.Coastal) return head + $" Here: deep water ({lee}).";
             var s = sys.CameraWaves.SurfAt(x, z);
             var v = sys.CurrentAt(sys.CameraWaves, x, z);
             double speed = Math.Sqrt(v.X * v.X + v.Z * v.Z);

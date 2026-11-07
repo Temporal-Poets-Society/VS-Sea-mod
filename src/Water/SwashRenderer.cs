@@ -12,7 +12,8 @@ namespace Sea
     /// leaves. Beach cells near the camera come from the coast map (land within a few blocks of the water, its top at
     /// most a block over it, with the slope of the sea floor off it). How high the water runs is the run-up of
     /// Stockdon et al. (2006) for the sea reaching that beach (less in the lee of land) and its peak period; when is the
-    /// surf trains' phase on the shore line, the same clock the shader's breakers follow. Drawn as thin translucent quads
+    /// sea's own phase at the point of the shore line in front of it, where the shader's breakers meet the shore, so the
+    /// waves run up a beach along it as they come in at an angle, not all at once. Drawn as thin translucent quads
     /// on the sand: the film, white at its front, and sand darkened where it has just been wet.
     /// </summary>
     public sealed class SwashRenderer : IRenderer
@@ -36,7 +37,7 @@ namespace Sea
         double collected = double.NegativeInfinity;
         int originX, originY, originZ;
 
-        struct Beach { public long X, Z; public float Dist, Height, Slope; public float L0, L1, L2, L3, L4, L5, L6, L7; }
+        struct Beach { public long X, Z; public double Sx, Sz; public float Dist, Height, Slope; public float L0, L1, L2, L3, L4, L5, L6, L7; }
 
         public SwashRenderer(ICoreClientAPI capi, SeaSystem sys) { this.capi = capi; this.sys = sys; }
 
@@ -67,20 +68,7 @@ namespace Sea
             LastCells = beaches.Count;
             if (beaches.Count == 0 && wet.Count == 0) return;
 
-            // the sea at the shore line: the surf trains' phase there now (as the shader's sea_WaveClock), their height,
-            // the energy-weighted period
-            double e = 0, w = 0, eta = 0;
-            for (int i = 0; i < place.Count; i++)
-            {
-                double a = place.Amp[i];
-                e += a * a; w += a * a * place.Omega[i];
-                eta += a * Math.Sin(place.Phase[i] - place.Omega[i] * place.Time);
-            }
-            if (e <= 0) return;
-            double sigma = Math.Sqrt(e / 2), hs = 4 * sigma, period = 2 * Math.PI / (w / e);
-            // 0 at the trough to 1 at about the 2 % crest: the level the run-up's 2 % figure belongs to
-            double u = Math.Clamp(0.5 + 0.5 * eta / (2.05 * sigma), 0, 1), level = Math.Pow(u, 1.5);
-
+            var (wx, wz) = place.CoastWind;
             data ??= new MeshData(MaxQuads * 4, MaxQuads * 6, false, true, true, true);
             data.Clear();
             originX = (int)Math.Floor(eye.X); originY = (int)Math.Floor(rest); originZ = (int)Math.Floor(eye.Z);
@@ -88,8 +76,20 @@ namespace Sea
             var seen = new HashSet<(long, long)>();
             foreach (var b in beaches)
             {
-                double h0 = hs * Exposure(b, place);
-                double runUp = CoastMath.RunUp(h0, period, b.Slope), z = runUp * level;
+                // the sea reaching this beach (past the land), and its height now at the shore line in front of it
+                var c = new CoastSample { Lee0 = b.L0, Lee1 = b.L1, Lee2 = b.L2, Lee3 = b.L3, Lee4 = b.L4, Lee5 = b.L5, Lee6 = b.L6, Lee7 = b.L7 };
+                double e = 0, w = 0, eta = 0;
+                for (int i = 0; i < place.Count; i++)
+                {
+                    double a = place.Amp[i] * CoastMath.Reach(c, place.Kx[i], place.Kz[i], place.Omega[i], wx, wz);
+                    e += a * a; w += a * a * place.Omega[i];
+                    eta += a * Math.Sin(place.Kx[i] * b.Sx + place.Kz[i] * b.Sz - place.Omega[i] * place.Time + place.Phase[i]);
+                }
+                if (e <= 1e-12) continue;
+                double sigma = Math.Sqrt(e / 2), period = 2 * Math.PI / (w / e);
+                // 0 at the trough to 1 at about the 2 % crest: the level the run-up's 2 % figure belongs to
+                double u = Math.Clamp(0.5 + 0.5 * eta / (2.05 * sigma), 0, 1), level = Math.Pow(u, 1.5);
+                double runUp = CoastMath.RunUp(4 * sigma, period, b.Slope), z = runUp * level;
                 // the water's edge is z / slope past the shore line; the first land cell's near side is on it
                 double cover = Math.Clamp(z / Math.Max(b.Slope, 0.02) - (b.Dist - 1), 0, 1);
                 if (b.Height > 0.5) cover *= Math.Clamp((z - (b.Height - 0.125)) * 4, 0, 1);
@@ -153,19 +153,6 @@ namespace Sea
             data.AddIndices(i, i + 1, i + 2, i, i + 2, i + 3);
         }
 
-        // the share of the sea's height that reaches this beach past the land (energy-weighted over the trains)
-        static double Exposure(in Beach b, WavePlace place)
-        {
-            var c = new CoastSample { Lee0 = b.L0, Lee1 = b.L1, Lee2 = b.L2, Lee3 = b.L3, Lee4 = b.L4, Lee5 = b.L5, Lee6 = b.L6, Lee7 = b.L7 };
-            double e = 0, el = 0;
-            for (int i = 0; i < place.Count; i++)
-            {
-                double a2 = place.Amp[i] * place.Amp[i], l = CoastMath.Lee(c, place.Kx[i], place.Kz[i]);
-                e += a2; el += a2 * l * l;
-            }
-            return e > 0 ? Math.Sqrt(el / e) : 0;
-        }
-
         // the beach cells around the camera, again when it moves a few blocks or the coast map changes
         void Collect(double x, double z, double now)
         {
@@ -184,12 +171,27 @@ namespace Sea
                     float dist = cell[CoastMath.ILandDist];
                     if (cell[CoastMath.IDepth] > 0 || dist <= 0 || dist > 10 || cell[CoastMath.ILandHeight] > 1.2f) continue;
                     int l = CoastMath.ILee;
+                    // the shore line in front of it: down the distance from the water (land +, water -) to where it is 0
+                    float height = cell[CoastMath.ILandHeight], slope = cell[CoastMath.IBeachSlope];
+                    var lee = new float[8];
+                    Array.Copy(cell, l, lee, 0, 8);
+                    double gx = Signed(i + 1, j) - Signed(i - 1, j), gz = Signed(i, j + 1) - Signed(i, j - 1), gl = Math.Sqrt(gx * gx + gz * gz);
+                    double back = Math.Max(dist - 0.5, 0);
+                    double sx = i + 0.5 - (gl > 1e-6 ? gx / gl * back : 0), sz = j + 0.5 - (gl > 1e-6 ? gz / gl * back : 0);
                     beaches.Add(new Beach
                     {
-                        X = i, Z = j, Dist = dist, Height = cell[CoastMath.ILandHeight], Slope = cell[CoastMath.IBeachSlope],
-                        L0 = cell[l], L1 = cell[l + 1], L2 = cell[l + 2], L3 = cell[l + 3], L4 = cell[l + 4], L5 = cell[l + 5], L6 = cell[l + 6], L7 = cell[l + 7],
+                        X = i, Z = j, Sx = sx, Sz = sz, Dist = dist, Height = height, Slope = slope,
+                        L0 = lee[0], L1 = lee[1], L2 = lee[2], L3 = lee[3], L4 = lee[4], L5 = lee[5], L6 = lee[6], L7 = lee[7],
                     });
                 }
+        }
+
+        // the distance from the shore line at a column, + over land and - over water (0 off the map)
+        float Signed(long i, long j)
+        {
+            if (!sys.Coast.Cell(i, j, cell)) return 0;
+            float d = cell[CoastMath.IShoreDist];
+            return cell[CoastMath.IDepth] > 0 ? -d : d;
         }
 
         public void Dispose()

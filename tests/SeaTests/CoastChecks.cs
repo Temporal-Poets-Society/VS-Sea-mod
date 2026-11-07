@@ -36,6 +36,74 @@ namespace SeaTests
             return c;
         }
 
+        // (0.6.0) the shore throwing waves back, the wind's sea growing with the fetch and held down by the depth, the
+        // longshore current turning the surf, and the shore's numbers in a tile
+        static void NewEffects(Action<bool, string> check)
+        {
+            const double g = 9.81;
+            // the tile: a wall into 20 blocks of water, and a beach of slope 1:20
+            var wall = Tile((x, z) => x < 70, (x, z) => 20, out _, out _, out _);
+            var sand = Tile((x, z) => x < 70, (x, z) => Math.Min(32f, 0.05f * (x - 69) + 0.5f), out _, out _, out _);
+            int o = At(80, M + 10);
+            check(Math.Abs(wall[o + CoastMath.IShoreDist] - 11) < 0.5 && wall[o + CoastMath.IShoreSlope] > 2 && sand[o + CoastMath.IShoreSlope] < 0.06,
+                $"shore: water knows its distance from the shore ({wall[o + CoastMath.IShoreDist]:0.0}) and the shore's steepness (wall {wall[o + CoastMath.IShoreSlope]:0.00}, sand {sand[o + CoastMath.IShoreSlope]:0.000})");
+
+            // reflection: a swell of 10 s running square at the shore (k west), the shore d blocks west
+            double om = 2 * Math.PI / 10, k = om * om / g;
+            CoastSample Shore(double slope, double d) => new CoastSample
+            {
+                Depth = CoastMath.MaxDepth, AwayX = CoastMath.Fade(d), Lee0 = 1, Lee1 = 1, Lee2 = 1, Lee3 = 1, Lee4 = 1, Lee5 = 1, Lee6 = 1, Lee7 = 1,
+                ShoreDist = d, ShoreSlope = slope,
+            };
+            double kWall = CoastMath.Reflection(Shore(2.5, 10), -k, 0, om, 2), kSand = CoastMath.Reflection(Shore(0.03, 10), -k, 0, om, 2);
+            check(kWall > 0.85 && kSand < 0.1 && CoastMath.Reflection(Shore(2.5, 10), k, 0, om, 2) == 0 && CoastMath.Reflection(Shore(2.5, 70), -k, 0, om, 2) == 0,
+                $"reflection: a wall throws back nearly all ({kWall:0.00}), sand little ({kSand:0.000}); nothing of waves running off it, nor far out");
+            // a standing sea before the wall: higher at the antinodes, low at the nodes a quarter wavelength from them
+            CoastLookup cliff = (double x, double z, out CoastSample s) => { s = Shore(2.5, Math.Max(x, 0)); return true; };
+            var standing = new WavePlace { Coast = cliff };
+            double so4 = 2 * Math.PI / 4, k4 = so4 * so4 / g;   // 4 s waves: a few antinodes within the trusted 28 blocks
+            double[] kxw = { -k4 }, kzw = { 0 }, aw = { 0.05 }, pw = { 0 };
+            double Range(double x)
+            {
+                double hi = double.MinValue, lo = double.MaxValue;
+                for (int t = 0; t < 100; t++) { standing.SetTrains(500 + t * 0.1, 1, kxw, kzw, aw, pw); double y = standing.HeightAt(x, 0); hi = Math.Max(hi, y); lo = Math.Min(lo, y); }
+                return (hi - lo) / 2;
+            }
+            standing.SetTrains(500, 1, kxw, kzw, aw, pw);
+            double kr = CoastMath.Reflection(Shore(2.5, 3), -k4, 0, so4, standing.SignificantHeight);
+            double anti = Range(Math.PI / k4) / 0.05, node = Range(Math.PI / (2 * k4)) / 0.05;
+            check(Math.Abs(anti - (1 + kr)) < 0.06 && Math.Abs(node - (1 - kr)) < 0.06,
+                $"reflection: a standing sea before a wall, {anti:0.00} of the sea's height at an antinode, {node:0.00} at a node (K_r {kr:0.00})");
+
+            // the wind's sea and the fetch (wind 10 m/s): behind land its short waves come back like swell, its longer ones later
+            double chop = Math.Sqrt(g * 2 * Math.PI / 2), ripple = Math.Sqrt(g * 2 * Math.PI / 0.3);   // 2 m and 0.3 m waves
+            double storm32 = Math.Sqrt(g * 2 * Math.PI / 32);
+            check(CoastMath.FetchPower(ripple, 10) == 1 && CoastMath.FetchPower(chop, 10) > 1.5 && CoastMath.FetchPower(storm32, 37.5) == 4 && CoastMath.FetchPower(chop, 0) == 1,
+                $"fetch: the lee's power for the wind's sea: 0.3 m waves in 10 m/s {CoastMath.FetchPower(ripple, 10):0.0}, 2 m {CoastMath.FetchPower(chop, 10):0.0}, 32 m in a storm {CoastMath.FetchPower(storm32, 37.5):0.0}");
+            double ck = chop * chop / g;
+            check(CoastMath.WindSea(ck, 0, chop, 10, 0) == 1 && CoastMath.WindSea(-ck, 0, chop, 10, 0) == 0 && CoastMath.WindSea(k, 0, om, 2, 0) == 0,
+                "fetch: the wind's own sea is short waves running with it; swell is not");
+            var lee = Shore(0, 30); lee.Lee4 = 0.5; lee.Lee3 = 0.5; lee.Lee5 = 0.5;   // land 16 blocks upwave to the west
+            double om16 = 2 * Math.PI / 16;   // a 16 s swell, far faster than the wind
+            double rChop = CoastMath.Reach(lee, ck, 0, chop, 10, 0), rSwell = CoastMath.Reach(lee, om16 * om16 / g, 0, om16, 10, 0);
+            check(Math.Abs(rChop - Math.Pow(0.5, CoastMath.FetchPower(chop, 10))) < 1e-9 && rChop < 0.3 && Math.Abs(rSwell - 0.5) < 1e-9,
+                $"fetch: in the lee of land 16 blocks upwind the wind's 2 m chop is lower ({rChop:0.00}) than the swell, which bends in by the lee ({rSwell:0.00})");
+
+            // a storm's long waves (300 blocks) bend round land the coast map sees, whatever the wind: only the short sea is the fetch's
+            double lo = Math.Sqrt(g * 2 * Math.PI / 300), lk = lo * lo / g;
+            check(CoastMath.WindSea(lk, 0, lo, 37.5, 0) == 0 && Math.Abs(CoastMath.Reach(lee, lk, 0, lo, 37.5, 0) - 0.5) < 1e-9,
+                "fetch: in a storm the long waves still bend in behind land by the lee");
+
+            // the longshore current turns the surf: waves running with it lengthen, against it shorten; at most half of omega
+            check(CoastMath.Bend(0.1, 0, 0.8, 1, 0) == 0.1 && CoastMath.Bend(0.1, 0, 0.8, -1, 0) == -0.1 && CoastMath.Bend(1, 0, 0.8, 5, 0) == 0.4,
+                "current: the surf's phase rate across the zone changes by k.V (Doppler), at most half of omega");
+            var b20 = Shore(0, 20); b20.Depth = 1;
+            double[] bkx = { -0.05 * Math.Cos(0.6) }, bkz = { 0.05 * Math.Sin(0.6) }, ba = { 0.8 };
+            var cur = CoastMath.LongshoreAt(b20, 1, bkx, bkz, new[] { Math.Sqrt(g * 0.05) }, ba, new double[] { 1 });
+            check(cur.Z > 0.1 && Math.Abs(cur.X) < 1e-9, $"current: oblique waves drive {cur.Z:0.00} m/s along the beach, the way they lean");
+        }
+
+
         public static void Run(Action<bool, string> check)
         {
             // a straight north-south shore: land west of window x = 70, 4 blocks of water east of it
@@ -182,6 +250,7 @@ namespace SeaTests
                     into[0] = (float)Math.Min(h, CoastMath.MaxDepth);
                     into[1] = cx < 0 ? 0 : (float)(2 * Math.Sqrt(Math.Max(cx, 0.1) / (9.81 * 0.05)));   // ∫ dx / sqrt(g s x)
                     into[2] = cx < 0 ? 0 : (float)CoastMath.Fade(cx); into[3] = 0;
+                    into[CoastMath.IShoreDist] = (float)Math.Abs(cx);
                     return true;
                 }, new float[S]);
                 return true;
@@ -194,9 +263,12 @@ namespace SeaTests
             coast.SetTrains(1000, 1, kx1, kz1, a1, ph);
             check(Math.Abs(openPlace.HeightAt(5000, 30) - coast.HeightAt(5000, 30)) < 1e-12, "beach: far offshore (deep) the surface is the open sea's");
             check(Math.Abs(coast.HeightAt(0.3, 7)) < 0.05, "beach: at the water's edge the waves have run out");
-            // in the surf zone (s = 1) crests are parallel to the beach: the same height all along a line of equal depth
-            double h1 = coast.HeightAt(6, 0), h2 = coast.HeightAt(6, 37), h3 = coast.HeightAt(6, -81);
-            check(Math.Abs(h1 - h2) < 1e-6 && Math.Abs(h1 - h3) < 1e-6, "beach: refracted, the surf crests run along the beach");
+            // in the surf zone (s = 1) the crests meet the shore where the sea's own do: along a line of equal depth the
+            // surface repeats with the sea's own wavelength along the beach (Snell's law keeps it), not all at once
+            double along = 2 * Math.PI / Math.Abs(kz1[0]);
+            double h1 = coast.HeightAt(6, 0), h2 = coast.HeightAt(6, along), h3 = coast.HeightAt(6, along / 2);
+            check(Math.Abs(h1 - h2) < 1e-6 && Math.Abs(h1 - h3) > 0.01,
+                $"beach: the surf meets the shore at the sea's angle, repeating every {along:0} blocks along it ({h1:0.000}, {h2:0.000}; half way {h3:0.000})");
             double maxH = 0;
             for (int k = 0; k < 400; k++) { coast.SetTrains(1000 + k * 0.05, 1, kx1, kz1, a1, ph); maxH = Math.Max(maxH, coast.HeightAt(10, 0)); }
             check(maxH <= 1.45 * CoastMath.Gamma * 0.5 / (2 * Math.Sqrt(2)) + 0.005 && maxH > 0.05, $"beach: breakers are no higher than the depth allows ({maxH:0.000} at 0.5 deep)");
@@ -238,6 +310,8 @@ namespace SeaTests
             check(Math.Abs(v.X) < 1e-12 && v.Z > 0 && speed > 0.3 && speed < 1.5,
                 $"current: oblique waves drive water along the beach, the way they lean ({speed:0.00} m/s for H_s 2 m at 30 degrees)");
             check(CoastMath.Longshore(4, 1, 0, 2, 0.6, -0.8, 0.6) == (0, 0), "current: none beyond the breaker line");
+
+            NewEffects(check);
 
             // what a tile costs: a beach with an island off it, solved as the game does (background task)
             var watch = Stopwatch.StartNew();

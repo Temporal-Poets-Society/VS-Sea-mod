@@ -328,21 +328,18 @@ namespace Sea
             if (place == null || place.Count == 0 || !SurfOn) return (0, 0);
             var c = CoastAt(x, z);
             if (!c.Coastal || c.Trust <= 0) return (0, 0);
-            // the waves' energy-weighted direction and angular speed, as they reach here
-            double ex = 0, ez = 0, e = 0, w = 0;
-            for (int i = 0; i < place.Count; i++)
-            {
-                double k = Math.Sqrt(place.Kx[i] * place.Kx[i] + place.Kz[i] * place.Kz[i]);
-                if (k < 1e-9) continue;
-                double a = place.Amp[i] * CoastMath.Lee(c, place.Kx[i], place.Kz[i]), a2 = a * a;
-                ex += a2 * place.Kx[i] / k; ez += a2 * place.Kz[i] / k; e += a2; w += a2 * place.Omega[i];
-            }
-            double l = Math.Sqrt(ex * ex + ez * ez), t = c.Trust;
-            if (e <= 0 || l < 1e-9) return (0, 0);
-            double hs = 4 * Math.Sqrt(e / 2), ax = c.AwayX / t, az = c.AwayZ / t;
-            var v = CoastMath.Longshore(c.Depth, ax, az, hs, w / e, ex / l, ez / l);
-            var r = CoastMath.RipCurrent(c.Rip / t, c.Depth, ax, az, hs);
-            return ((v.X + r.X) * t, (v.Z + r.Z) * t);
+            // the waves as they reach here (the lee, the wind sea's fetch): the longshore current as the shader's
+            // surf follows it, and the rip from their height
+            Span<double> reach = stackalloc double[WavePlace.MaxWaves];
+            var (wx, wz) = place.CoastWind;
+            CoastMath.Reach(c, place.Count, place.Kx, place.Kz, place.Omega, wx, wz, reach);
+            var v = CoastMath.LongshoreAt(c, place.Count, place.Kx, place.Kz, place.Omega, place.Amp, reach);
+            double e = 0;
+            for (int i = 0; i < place.Count; i++) { double a = place.Amp[i] * reach[i]; e += a * a; }
+            double t = c.Trust, hs = 4 * Math.Sqrt(e / 2), al = Math.Sqrt(c.AwayX * c.AwayX + c.AwayZ * c.AwayZ);
+            if (al < 1e-9) return v;
+            var r = CoastMath.RipCurrent(c.Rip / t, c.Depth, c.AwayX / al, c.AwayZ / al, hs);
+            return (v.X + r.X * t, v.Z + r.Z * t);
         }
 
         /// <summary>
@@ -354,10 +351,14 @@ namespace Sea
             if (place == null || place.Count == 0 || !SurfOn) return 1;
             var c = CoastAt(x, z);
             if (!c.Affects) return 1;
+            // (the wind's own sea by its fetch since the land and the depth)
+            Span<double> reach = stackalloc double[WavePlace.MaxWaves];
+            var (wx, wz) = place.CoastWind;
+            CoastMath.Reach(c, place.Count, place.Kx, place.Kz, place.Omega, wx, wz, reach);
             double e = 0, el = 0;
             for (int i = 0; i < place.Count; i++)
             {
-                double a2 = place.Amp[i] * place.Amp[i], l = CoastMath.Lee(c, place.Kx[i], place.Kz[i]);
+                double a2 = place.Amp[i] * place.Amp[i], l = reach[i];
                 e += a2; el += a2 * l * l;
             }
             return e > 0 ? Math.Sqrt(el / e) : 1;

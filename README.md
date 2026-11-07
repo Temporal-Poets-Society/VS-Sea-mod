@@ -7,14 +7,22 @@
   steepens into breakers with a peaked crest and a steep shoreward face. Breaking surf draws whitewater and throws
   spray. Boats, ships and the open contracts ride the same surface the shader draws. Config `Surf` (on).
 - **The lee of land.** Islands and headlands keep waves off the water behind them, deep water too: per column the coast
-  map looks upwave in 8 directions for land and lets less through the nearer it is (the waves bend in behind it and the
-  wind builds them again further off).
+  map looks upwave in 8 directions for land and lets less through the nearer it is. Swell and long waves bend in
+  behind it by that share; the wind's own sea comes back with the fetch, its short waves first and its longer waves
+  only further off (they need more open water to grow).
+- **Waves thrown back.** A cliff, a sea wall or a steep rocky shore reflects the waves running at it (Seelig and
+  Ahrens: almost all from a wall, next to nothing from a sandy beach). The reflected train meets the incoming one and
+  the water before a wall stands up and down in place, with crests up to twice as high.
+- **Crests that meet the shore at an angle.** The surf keeps the phase the open sea has along the shore line, so
+  crests run along a beach and reach it one stretch after another instead of everywhere at once; the longshore current
+  bends them by its Doppler shift.
 - **Currents in the surf.** Waves breaking at an angle drive water along the beach (Komar 1979), and the water they
   pile up runs back out to sea through rip channels: fixed places along gentle sandy beaches, about 250 blocks apart
   on average. Over a rip the breakers have a gap and the outgoing current holds the waves back, so their crests bow
   seaward. Rafts, sailboats and Ships' rowboats drift with the current; ships do in Ships.
 - **Swash.** Each wave runs up the beach as a thin sheet with a white front, as high as Stockdon's run-up for the
-  sea reaching that beach, and leaves the sand dark and wet for a few seconds.
+  sea reaching that stretch of beach (sheltered coves get less), timed by the surf's own phase at the nearest shore
+  point, so it runs up one part of a beach after another. The sand stays dark and wet for a few seconds.
 - **The coast map follows the blocks.** A dug channel, a pier or a sea wall: the chunk is scanned again and the tiles
   that see it are solved again. Tiles are solved on a background thread (about 15–25 ms each offline); `.sea coast`
   shows what the map has cost.
@@ -326,7 +334,8 @@ Nothing about the wind or the waves is sent while you play, except a clock:
 - `/sea storms` is gone (0.4.0): storms are Earth's.
 
 - `.sea coast` (client, 0.6.0): the coast where you stand: depth, wave travel time from the shore, the share of the
-  sea that gets past the land, breaking, whitewater, the current and any rip channel; how far the coast map has got and
+  sea that gets past the land, how far off the shore is and how steep, the share of the waves it throws back,
+  breaking, whitewater, the current and any rip channel; how far the coast map has got and
   what it has cost (column scans on the main thread, tile solves in the background, rescans after block changes, the
   swash's frame time).
 - `.sea` (client, with a dot): what Sea is doing on your own client.
@@ -497,11 +506,14 @@ Earth, Terra Prety and other world generators: `docs/compatibility.md`.
 ## Not yet
 
 - **What the 0.4.2 review left open** (by design, deferred, or not yet play-tested): [docs/open-issues.md](docs/open-issues.md).
-- **Coasts, what 0.6.0 leaves out.** The lee is a geometric estimate (rays upwave, no real diffraction pattern);
-  waves are not reflected off cliffs or walls. The longshore current doesn't bend the waves riding it (a rip's does).
-  All surf trains reach the shore line together, so the swash runs up a whole beach at once. Where the size of the
-  waves changes within a block or two (the foot of a cliff, a rip's edge) the drawn surface can fold over itself at a
-  few points; a boat's height there may be a few millimetres off the drawn one. Ships rides the surf by a plane fitted
-  under her hull, not train by train.
+- **Coasts, what 0.6.0 leaves out.** The lee is a geometric estimate (rays upwave, no real diffraction pattern).
+  Fetch is judged only within the coast map's 64-block reach: the open sea's state comes from the weather, so a
+  sheltered gulf or a lake a few kilometres across gets the sea's own waves away from its shores. Growth limited by
+  depth (shallow banks far from land holding the sea down) is not applied: done locally it also held down the sea
+  arriving at beaches. Both need world-scale land and depth that the weather and Sea agree on (likely from Earth).
+  Reflected waves carry no orbit of their own, so a boat before a wall rises and falls without being pushed to and
+  fro. Where the size of the waves changes within a block or two (the foot of a cliff, a rip's edge in a storm) the
+  drawn surface can fold over itself at a few points; a boat's height there may be up to 0.2 blocks off the drawn
+  one. Ships rides the surf by a plane fitted under her hull, not train by train.
 
 For isolated comparisons, use `tools/New-CelestialTestProfile.ps1`; see [the procedure](docs/sky-water.md#reproducible-in-game-comparison-pending). It creates a fresh data directory without overwriting packages or saves. The older shell self-test resets its testserver save/log folders, so use the fresh-profile workflow to retain those snapshots. For another Release build, choose a new version or a fresh explicit `-p:PackageFile=C:\path\to\a-new-unique.zip`.

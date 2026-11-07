@@ -472,30 +472,75 @@ namespace Sea
         public CoastLookup Coast;
 
         /// <summary>
+        /// (0.6.0) The wind (m/s, x east, z south) the coast's wind sea follows: set for tests or a mod's own sea; null
+        /// takes the newest sample's (<see cref="Wind"/>). The shader gets the same (<see cref="FillCoastSea"/>).
+        /// </summary>
+        public (double X, double Z)? CoastWindOverride;
+
+        /// <summary>(0.6.0) The wind the coast's wind sea follows now, m/s.</summary>
+        public (double X, double Z) CoastWind => CoastWindOverride ?? (Wind.X * Beaufort.MetersPerSecondPerUnit, Wind.Z * Beaufort.MetersPerSecondPerUnit);
+
+        /// <summary>
         /// (0.6.0) The coast's numbers at a mesh coordinate, and its breaking there (false: open sea). Its Time is the surf's
         /// own travel time there (<see cref="CoastMath.SurfTime"/>: longer over a rip).
         /// </summary>
         public bool CoastAt(double qx, double qz, out CoastSample c, out double cap, out double breaking)
         {
-            cap = 1; breaking = 0;
+            Span<double> reach = stackalloc double[MaxWaves];
+            return CoastAt(qx, qz, out c, out cap, out breaking, out _, out _, reach);
+        }
+
+        /// <summary>
+        /// (0.6.0) As above, with every train's share that gets past the land to here (<see cref="CoastMath.Reach"/>) and the
+        /// longshore current (m/s) that turns the surf's crests: what the shader's sea_CoastAt works out.
+        /// </summary>
+        public bool CoastAt(double qx, double qz, out CoastSample c, out double cap, out double breaking, out double vx, out double vz, Span<double> reach)
+        {
+            cap = 1; breaking = 0; vx = vz = 0;
             if (Coast == null || Count == 0 || !Coast(qx, qz, out c) || !c.Affects) { c = CoastSample.Open; return false; }
-            (cap, breaking) = CoastMath.Breaking(c, Count, Kx, Kz, Omega, Amp);
+            var (wx, wz) = CoastWind;
+            CoastMath.Reach(c, Count, Kx, Kz, Omega, wx, wz, reach);
+            (cap, breaking) = CoastMath.Breaking(c, Count, Kx, Kz, Omega, Amp, reach);
+            (vx, vz) = CoastMath.LongshoreAt(c, Count, Kx, Kz, Omega, Amp, reach);
             if (c.Rip > 0) c.Time = CoastMath.SurfTime(c, SignificantHeight);
             return true;
+        }
+
+        /// <summary>
+        /// (0.6.0) Train i's height at mesh coordinate q on a coast (WaterShader's sea_TrainY): its open part (the share that
+        /// isn't surf), its surf part, which meets the shore where the sea's own crests do and turns in the longshore
+        /// current, and the part the shore throws back. Gives the open part's amplitude and the surf part's amplitude
+        /// and phase.
+        /// </summary>
+        double TrainOnCoast(int i, double qx, double qz, double t, in CoastSample c, double cap, double b, double vx, double vz,
+            double hs, double reach, out double open, out double surfAmp, out double surfPhase)
+        {
+            double th = Kx[i]*qx+Kz[i]*qz-Omega[i]*t+Phase[i];
+            double s = CoastMath.SurfShare(Math.Sqrt(Kx[i]*Kx[i]+Kz[i]*Kz[i]), c), a = Amp[i]*cap*reach;
+            open = a*(1-s);
+            double y = open*Math.Sin(th);
+            surfAmp = 0; surfPhase = 0;
+            if (s > 0)
+            {
+                surfPhase = th + CoastMath.ShoreOffset(c, Kx[i], Kz[i]) - (Omega[i] - CoastMath.Bend(Kx[i], Kz[i], Omega[i], vx, vz))*c.Time;
+                surfAmp = a*s*CoastMath.Shoaling(Omega[i], c.Depth);
+                y += surfAmp*CoastMath.Breaker(surfPhase, b).Value;
+            }
+            double kr = CoastMath.Reflection(c, Kx[i], Kz[i], Omega[i], hs);
+            if (kr > 0) y += open*kr*Math.Sin(th + 2*CoastMath.ShoreOffset(c, Kx[i], Kz[i]));
+            return y;
         }
 
         /// <summary>Height above rest of the surface point drawn from mesh coordinate q at wave time t.</summary>
         double Elevation(double qx, double qz, double t)
         {
-            bool coast = CoastAt(qx, qz, out var c, out double cap, out double b);
-            double y = 0;
+            Span<double> reach = stackalloc double[MaxWaves];
+            bool coast = CoastAt(qx, qz, out var c, out double cap, out double b, out double vx, out double vz, reach);
+            double y = 0, hs = coast ? SignificantHeight : 0;
             for (int i = 0; i < Count; i++)
             {
-                double th = Kx[i]*qx+Kz[i]*qz-Omega[i]*t+Phase[i];
-                if (!coast) { y += Amp[i]*Math.Sin(th); continue; }
-                double s = CoastMath.SurfShare(Math.Sqrt(Kx[i]*Kx[i]+Kz[i]*Kz[i]), c), a = Amp[i]*cap*CoastMath.Lee(c, Kx[i], Kz[i]);
-                y += a*(1-s)*Math.Sin(th);
-                if (s > 0) y += a*s*CoastMath.Shoaling(Omega[i], c.Depth)*CoastMath.Breaker(Phase[i]-Omega[i]*(t+c.Time), b).Value;
+                if (!coast) { y += Amp[i]*Math.Sin(Kx[i]*qx+Kz[i]*qz-Omega[i]*t+Phase[i]); continue; }
+                y += TrainOnCoast(i, qx, qz, t, c, cap, b, vx, vz, hs, reach[i], out _, out _, out _);
             }
             return y;
         }
@@ -507,22 +552,32 @@ namespace Sea
         public (double Breaking, double Foam, double Depth) SurfAt(double x, double z)
         {
             var q = ParameterAt(x, z, Time);
-            if (!CoastAt(q.X, q.Z, out var c, out double cap, out double b)) return (0, 0, c.Depth);
-            double sum = 0, crest = 0;
+            Span<double> reach = stackalloc double[MaxWaves];
+            if (!CoastAt(q.X, q.Z, out var c, out double cap, out double b, out double vx, out double vz, reach)) return (0, 0, c.Depth);
+            double sum = 0, crest = 0, hs = SignificantHeight;
             for (int i = 0; i < Count; i++)
             {
-                double s = CoastMath.SurfShare(Math.Sqrt(Kx[i]*Kx[i]+Kz[i]*Kz[i]), c);
-                if (s <= 0) continue;
-                double a = Amp[i]*cap*CoastMath.Lee(c, Kx[i], Kz[i])*s*CoastMath.Shoaling(Omega[i], c.Depth);
-                double u = CoastMath.Breaker(Phase[i]-Omega[i]*(Time+c.Time), b).Crest;
+                TrainOnCoast(i, q.X, q.Z, Time, c, cap, b, vx, vz, hs, reach[i], out _, out double a, out double phase);
+                if (a <= 0) continue;
+                double u = CoastMath.Breaker(phase, b).Crest;
                 sum += a; crest += a*u*u*u;
             }
             return (b, CoastMath.SurfFoam(b, sum, crest), c.Depth);
         }
 
         /// <summary>
-        /// (0.6.0) The shader's sea_WaveClock[] uniform: per train its angular speed and its phase on the shore line now
-        /// (phase - ω t, mod 2π, worked out in doubles), which a surf train's phase counts back from by the travel time.
+        /// (0.6.0) The shader's sea_CoastSea uniform: the significant height, and the wind the coast's wind sea follows
+        /// (m/s; <see cref="CoastWind"/>).
+        /// </summary>
+        public void FillCoastSea(float[] u)
+        {
+            var (wx, wz) = CoastWind;
+            u[0] = (float)SignificantHeight; u[1] = (float)wx; u[2] = (float)wz; u[3] = 0;
+        }
+
+        /// <summary>
+        /// (0.6.0) The shader's sea_WaveClock[] uniform: per train its angular speed and (unused since the surf meets the
+        /// shore where the sea's own crests do) its phase less ω t, mod 2π.
         /// </summary>
         public int FillClock(float[] u)
         {
@@ -586,13 +641,15 @@ namespace Sea
         void Displacement(double qx, double qz, double t, double shape, out double dx, out double dz)
         {
             dx = dz = 0;
-            // (0.6.0) on a coast the orbits shrink with the cap, and the surf trains (shaped vertically) have none
-            bool coast = CoastAt(qx, qz, out var c, out double cap, out _);
+            // (0.6.0) on a coast the orbits shrink with the cap and what gets past the land, and the surf trains and the
+            // shore's reflection (shaped vertically) have none
+            Span<double> reach = stackalloc double[MaxWaves];
+            bool coast = CoastAt(qx, qz, out var c, out double cap, out _, out _, out _, reach);
             for (int i = 0; i < Count; i++)
             {
                 double k = Math.Sqrt(Kx[i]*Kx[i]+Kz[i]*Kz[i]);
                 if (k < 1e-12) continue;
-                double a = coast ? Amp[i] * cap * CoastMath.Lee(c, Kx[i], Kz[i]) * (1 - CoastMath.SurfShare(k, c)) : Amp[i];
+                double a = coast ? Amp[i] * cap * reach[i] * (1 - CoastMath.SurfShare(k, c)) : Amp[i];
                 double d = shape * ShapeWeight(k) * a / k * Math.Cos(Kx[i]*qx+Kz[i]*qz-Omega[i]*t+Phase[i]);
                 dx += Kx[i]*d; dz += Kz[i]*d;
             }

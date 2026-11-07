@@ -66,57 +66,36 @@ float sea_ShapeWeight(float k) { return 0.15+0.85/(1.0+k*k/0.09); }
 // (0.5.3) How much of the sea's swell reaches water with this wave divisor: none on inland water (oceanity 0: rivers, lakes,
 // rapids), all from oceanity 0.25 (the coast's bays and estuaries in between). Vanilla's divisor is 5 * max(0.2, 1 - oceanity).
 float sea_OpenWater(float div) { return smoothstep(0.0, 0.25, 1.0 - div / 5.0); }
-// (0.6.0) The coast (Sea's CoastMath, the same numbers as the CPU), bilinear between column centres: sea_C = (depth, a surf
-// train's travel time from the shore line, the direction away from it times its trust); sea_LA, sea_LB: the share of the
-// waves from each of 8 directions (east, south-east, south, ... north-east) that reaches here past the land; sea_Rip: a rip
-// channel. sea_CoastTex holds 4 texels per column (depth, time, away; lee 0-3; lee 4-7; rip and the beach). sea_CoastArea:
-// column (0, 0)'s centre relative to the camera (xz), the map's size in columns, 1 when there is a map. sea_CoastSea.x: the
-// sea's significant height. sea_WaveClock: per train its angular speed and its phase on the shore line now.
+// (0.6.0) The coast (Sea's CoastMath, the same numbers as the CPU), bilinear between column centres, as a sea_Coast:
+// c = (depth, a surf train's travel time from the shore line (held back over a rip), the direction away from it times its
+// trust); la, lb: the share of the waves from each of 8 directions (east, south-east, south, ... north-east) that reaches
+// here past the land; t3 = (rip channel, shore distance, land height, shore steepness); br = (every train's cap, how far
+// the waves break, 1, how much a rip holds the surf back); v: the longshore
+// current (m/s). sea_CoastTex holds 4 texels per column (depth, time, away; lee 0-3; lee 4-7; rip and the shore).
+// sea_CoastArea: column (0, 0)'s centre relative to the camera (xz), the map's size in columns, 1 when there is a map.
+// sea_CoastSea: the sea's significant height, and the wind (m/s, xz) its own sea follows. sea_WaveClock: per train its
+// angular speed (y is not used).
 uniform vec2 sea_WaveClock[24];
 uniform vec4 sea_CoastArea = vec4(0.0);
 uniform vec4 sea_CoastSea = vec4(0.0);
 uniform sampler2D sea_CoastTex;
 const float sea_MaxDepth = 32.0;
+const float sea_Step = 0.02;
 float sea_Surf = 0.0; // whitewater at the last sea_Differential (0.6.0)
-vec4 sea_C = vec4(sea_MaxDepth, 0.0, 0.0, 0.0);
-vec4 sea_LA = vec4(1.0);
-vec4 sea_LB = vec4(1.0);
-float sea_Rip = 0.0, sea_RipSlow = 1.0;
-void sea_CoastAt(vec2 q) {
-    sea_C = vec4(sea_MaxDepth, 0.0, 0.0, 0.0); sea_LA = vec4(1.0); sea_LB = vec4(1.0); sea_Rip = 0.0; sea_RipSlow = 1.0;
-    if (sea_CoastArea.w < 0.5 || sea_WaveCount == 0) return;
-    vec2 f = q - sea_CoastArea.xy;
-    float n = sea_CoastArea.z;
-    if (f.x < 0.0 || f.y < 0.0 || f.x >= n - 1.0 || f.y >= n - 1.0) return;
-    vec2 i = floor(f), t = f - i;
-    ivec2 c = ivec2(i);
-    sea_C = vec4(0.0); sea_LA = vec4(0.0); sea_LB = vec4(0.0);
-    for (int k = 0; k < 4; k++) {
-        ivec2 o = ivec2(k & 1, k >> 1);
-        float w = (o.x == 1 ? t.x : 1.0 - t.x) * (o.y == 1 ? t.y : 1.0 - t.y);
-        ivec2 p = ivec2(4 * (c.x + o.x), c.y + o.y);
-        sea_C += w * texelFetch(sea_CoastTex, p, 0);
-        sea_LA += w * texelFetch(sea_CoastTex, p + ivec2(1, 0), 0);
-        sea_LB += w * texelFetch(sea_CoastTex, p + ivec2(2, 0), 0);
-        float rip = texelFetch(sea_CoastTex, p + ivec2(3, 0), 0).x;
-        sea_Rip += w * rip;
-    }
-    // over a rip channel the seaward current holds the surf back: its travel time is T (1 + U / c)
-    if (sea_Rip > 0.0) {
-        float speed = sqrt(9.81 * max(sea_C.x, 0.3));
-        float hold = min(0.35 * sqrt(9.81 * max(sea_CoastSea.x, 0.0)), 0.8 * speed) / speed;
-        sea_RipSlow = 1.0 + sea_Rip * hold;
-        sea_C.y *= sea_RipSlow;
-    }
+struct sea_Coast { vec4 c; vec4 la; vec4 lb; vec4 t3; vec4 br; vec2 v; };
+sea_Coast sea_K;
+vec2 sea_SideStep(int s) {
+    float d = (s & 1) == 0 ? sea_Step : -sea_Step;
+    return (s >> 1) == 0 ? vec2(d, 0.0) : vec2(0.0, d);
 }
-// the share of a train with wave vector k (so coming from -k) that reaches here past the land
-float sea_LeeOf(vec2 k) {
+// the share of a train with wave vector k (so coming from -k) that the land upwave lets through
+float sea_LeeOf(sea_Coast K, vec2 k) {
     if (dot(k, k) < 1e-14) return 1.0;
     float a = atan(-k.y, -k.x);
     if (a < 0.0) a += 6.28318531;
     float u = a / 0.785398163, d = floor(u), f = u - d;
     int i = int(d) & 7, j = (i + 1) & 7;
-    float li = i < 4 ? sea_LA[i] : sea_LB[i - 4], lj = j < 4 ? sea_LA[j] : sea_LB[j - 4];
+    float li = i < 4 ? K.la[i] : K.lb[i - 4], lj = j < 4 ? K.la[j] : K.lb[j - 4];
     return li * (1.0 - f) + lj * f;
 }
 float sea_SurfShare(float k, vec4 c) {
@@ -124,19 +103,104 @@ float sea_SurfShare(float k, vec4 c) {
     return (1.0 - smoothstep(0.4, 1.6, k * c.x)) * (1.0 - smoothstep(0.6 * sea_MaxDepth, sea_MaxDepth, c.x)) * min(length(c.zw), 1.0);
 }
 float sea_Shoal(float omega, float h) { return clamp(sqrt(4.905 / max(omega, 0.000001) / sqrt(9.81 * max(h, 0.3))), 1.0, 2.5); }
-// at the last sea_CoastAt: every train's amplitude cut (H_s <= 0.6 h, more over a rip's channel) and how far the waves
-// are breaking (less over a rip: the gap in the breakers)
-vec2 sea_Breaking() {
-    if (sea_C.x >= sea_MaxDepth) return vec2(1.0, 0.0);
-    float e = 0.0;
-    for (int i=0; i<sea_WaveCount; i++) {
-        vec4 w = sea_Wave[i];
-        float s = sea_SurfShare(length(w.xy), sea_C), ks = s > 0.0 ? sea_Shoal(sea_WaveClock[i].x, sea_C.x) : 1.0;
-        float a = w.w * sea_LeeOf(w.xy);
-        e += 0.5 * a * a * ((1.0 - s) * (1.0 - s) + s * s * ks * ks);
+// how much of train i is the wind's own sea (slower than 1.2-1.6 times the wind, running with it) short beside the land the
+// coast map sees (under 32-128 blocks: longer waves bend round it like swell)
+float sea_WindSea(int i) {
+    vec2 wv = sea_CoastSea.yz;
+    float u = length(wv), k = length(sea_Wave[i].xy), omega = sea_WaveClock[i].x;
+    if (u < 0.5 || k < 1e-7 || omega <= 0.0) return 0.0;
+    return (1.0 - smoothstep(1.2, 1.6, 9.81 / omega / u)) * smoothstep(0.0, 0.5, dot(sea_Wave[i].xy, wv) / (k * u))
+        * (1.0 - smoothstep(32.0, 128.0, 6.28318531 / k));
+}
+// the power of the lee a train of the wind's own sea takes: 1 at or above the peak the coast map's reach of fetch raises, up
+// to 4 for one 3 times slower (the fetch moves the peak, f_p = 3.5 (g/U)(gF/U^2)^-0.33)
+float sea_FetchPower(float omega) {
+    float u = length(sea_CoastSea.yz);
+    if (u < 0.5 || omega <= 0.0) return 1.0;
+    float peak = 3.5 * 9.81 / u * pow(9.81 * 64.0 / (u * u), -0.33);
+    return 1.0 + 3.0 * smoothstep(1.0, 3.0, peak / (omega / 6.28318531));
+}
+// train i's share that gets past the land: swell by the lee, the wind's own short sea by a power of it (its need of fetch)
+float sea_Reach(sea_Coast K, int i) {
+    float l = sea_LeeOf(K, sea_Wave[i].xy), w = sea_WindSea(i);
+    return w > 0.0 ? l + (pow(max(l, 0.0), sea_FetchPower(sea_WaveClock[i].x)) - l) * w : l;
+}
+// a train's phase at the nearest shore line less its phase here
+float sea_ShoreOffset(sea_Coast K, vec2 k) {
+    float l = length(K.c.zw);
+    return l > 1e-9 ? -K.t3.y * dot(k, K.c.zw) / l : 0.0;
+}
+// the share of train i the shore throws back (Seelig and Ahrens, from the shore's Iribarren number)
+float sea_Reflect(sea_Coast K, int i) {
+    vec2 k = sea_Wave[i].xy;
+    float omega = sea_WaveClock[i].x, l = length(K.c.zw), kl = length(k);
+    if (!(K.t3.w > 0.0) || l <= 1e-9 || kl < 1e-7 || omega <= 0.0) return 0.0;
+    float toward = -dot(k, K.c.zw) / (kl * l);
+    float l0 = 6.28318531 * 9.81 / (omega * omega), xi = K.t3.w / sqrt(max(sea_CoastSea.x, 0.05) / l0);
+    return min(0.9, xi * xi / (5.5 + xi * xi)) * min(l, 1.0) * smoothstep(0.0, 0.3, toward);
+}
+// the longshore current (Komar 1979) at depth h, waves of significant height hs and angular speed omega running toward toward
+vec2 sea_Longshore(float h, vec2 away, float hs, float omega, vec2 toward) {
+    if (!(hs > 0.0) || !(h > 0.0) || !(omega > 0.0)) return vec2(0.0);
+    float hb = hs / 0.6;
+    if (h >= hb) return vec2(0.0);
+    vec2 n = -away, t = vec2(-n.y, n.x);
+    float cos0 = dot(toward, n), sin0 = dot(toward, t);
+    if (cos0 <= 0.0) return vec2(0.0);
+    float sinb = clamp(sin0 * sqrt(9.81 * hb) / (9.81 / omega), -1.0, 1.0), cosb = sqrt(1.0 - sinb * sinb);
+    return 1.17 * sqrt(9.81 * hs) * sinb * cosb * sin(3.14159265 * h / hb) * smoothstep(0.0, 0.2, cos0) * t;
+}
+bool sea_Affects(sea_Coast K) {
+    return K.c.x < sea_MaxDepth || K.t3.x > 0.0 || (K.t3.w > 0.0 && length(K.c.zw) > 0.0)
+        || min(min(min(K.la.x, K.la.y), min(K.la.z, K.la.w)), min(min(K.lb.x, K.lb.y), min(K.lb.z, K.lb.w))) < 0.999;
+}
+void sea_CoastOpen() {
+    sea_K.c = vec4(sea_MaxDepth, 0.0, 0.0, 0.0); sea_K.la = vec4(1.0); sea_K.lb = vec4(1.0);
+    sea_K.t3 = vec4(0.0, 128.0, 0.0, 0.0); sea_K.br = vec4(1.0, 0.0, 1.0, 1.0); sea_K.v = vec2(0.0);
+}
+void sea_CoastAt(vec2 q) {
+    sea_CoastOpen();
+    if (sea_CoastArea.w < 0.5 || sea_WaveCount == 0) return;
+    vec2 f = q - sea_CoastArea.xy;
+    float n = sea_CoastArea.z;
+    if (f.x < 0.0 || f.y < 0.0 || f.x >= n - 1.0 || f.y >= n - 1.0) return;
+    vec2 i = floor(f), t = f - i;
+    ivec2 c = ivec2(i);
+    sea_K.c = vec4(0.0); sea_K.la = vec4(0.0); sea_K.lb = vec4(0.0); sea_K.t3 = vec4(0.0);
+    for (int k = 0; k < 4; k++) {
+        ivec2 o = ivec2(k & 1, k >> 1);
+        float w = (o.x == 1 ? t.x : 1.0 - t.x) * (o.y == 1 ? t.y : 1.0 - t.y);
+        ivec2 p = ivec2(4 * (c.x + o.x), c.y + o.y);
+        sea_K.c += w * texelFetch(sea_CoastTex, p, 0);
+        sea_K.la += w * texelFetch(sea_CoastTex, p + ivec2(1, 0), 0);
+        sea_K.lb += w * texelFetch(sea_CoastTex, p + ivec2(2, 0), 0);
+        sea_K.t3 += w * texelFetch(sea_CoastTex, p + ivec2(3, 0), 0);
     }
-    float ratio = 4.0 * sqrt(e) / max(0.6 * max(sea_C.x, 0.0) * (1.0 + 0.5 * sea_Rip), 0.0001);
-    return vec2(ratio > 1.0 ? 1.0 / ratio : 1.0, smoothstep(0.6, 1.0, ratio) * (1.0 - 0.6 * sea_Rip));
+    // (nothing here changes the waves: the open sea's numbers exactly, as the CPU takes them)
+    if (!sea_Affects(sea_K)) { sea_CoastOpen(); return; }
+    // over a rip channel the seaward current holds the surf back: its travel time is T (1 + U / c)
+    if (sea_K.t3.x > 0.0) {
+        float speed = sqrt(9.81 * max(sea_K.c.x, 0.3));
+        float hold = min(0.35 * sqrt(9.81 * max(sea_CoastSea.x, 0.0)), 0.8 * speed) / speed;
+        sea_K.br.w = 1.0 + sea_K.t3.x * hold;
+        sea_K.c.y *= sea_K.br.w;
+    }
+    if (sea_K.c.x >= sea_MaxDepth) return;
+    // every train's amplitude cut (H_s <= 0.6 h, more over a rip's channel), how far the waves break (less over a rip: the
+    // gap in the breakers), and the longshore current from the waves' energy-weighted direction and angular speed
+    float e = 0.0, ex = 0.0, ez = 0.0, el = 0.0, ew = 0.0;
+    for (int i = 0; i < sea_WaveCount; i++) {
+        vec4 w = sea_Wave[i];
+        float k = length(w.xy), s = sea_SurfShare(k, sea_K.c), ks = s > 0.0 ? sea_Shoal(sea_WaveClock[i].x, sea_K.c.x) : 1.0;
+        float a = w.w * sea_Reach(sea_K, i), a2 = a * a;
+        e += 0.5 * a2 * ((1.0 - s) * (1.0 - s) + s * s * ks * ks);
+        if (k >= 1e-7) { ex += a2 * w.x / k; ez += a2 * w.y / k; el += a2; ew += a2 * sea_WaveClock[i].x; }
+    }
+    float ratio = 4.0 * sqrt(e) / max(0.6 * max(sea_K.c.x, 0.0) * (1.0 + 0.5 * sea_K.t3.x), 0.0001);
+    sea_K.br.xy = vec2(ratio > 1.0 ? 1.0 / ratio : 1.0, smoothstep(0.6, 1.0, ratio) * (1.0 - 0.6 * sea_K.t3.x));
+    float al = length(sea_K.c.zw), dl = length(vec2(ex, ez));
+    if (al > 1e-9 && el > 0.0 && dl >= 1e-9)
+        sea_K.v = sea_Longshore(sea_K.c.x, sea_K.c.zw / al, 4.0 * sqrt(el / 2.0), ew / el, vec2(ex, ez) / dl) * min(al, 1.0);
 }
 // a surf train's shape at phase theta when breaking b: (shape, its derivative, nearness to the crest)
 vec3 sea_Breaker(float theta, float b) {
@@ -146,17 +210,35 @@ vec3 sea_Breaker(float theta, float b) {
     float mean = 0.5 + b * (-0.3517 + b * (0.2331 - 0.0985 * b));
     return vec3(2.0 * (pow(max(u, 0.0), p) - mean), p * pow(max(u, 0.000001), p - 1.0) * cos(psi) * (1.0 - al * cos(theta)), u);
 }
+// train i's height at q on coast K (sea_CoastAt's): its open part (the share that isn't surf), its surf part, which meets the
+// shore where the sea's own crests do and turns in the longshore current, and the part the shore throws back. ao: the open
+// part's amplitude; as, ths: the surf part's amplitude (0 without one) and phase.
+float sea_TrainY(int i, vec2 q, sea_Coast K, out float ao, out float as, out float ths) {
+    vec4 w = sea_Wave[i];
+    float omega = sea_WaveClock[i].x, phase = dot(w.xy, q) + w.z;
+    float s = sea_SurfShare(length(w.xy), K.c), a = w.w * K.br.x * sea_Reach(K, i);
+    ao = a * (1.0 - s);
+    float y = ao * sin(phase);
+    float kv = clamp(dot(w.xy, K.v), -0.5 * omega, 0.5 * omega);
+    ths = phase + sea_ShoreOffset(K, w.xy) - (omega - kv) * K.c.y;
+    as = 0.0;
+    if (s > 0.0) {
+        as = a * s * sea_Shoal(omega, K.c.x);
+        y += as * sea_Breaker(ths, K.br.y).x;
+    }
+    float kr = sea_Reflect(K, i);
+    if (kr > 0.0) y += ao * kr * sin(phase + 2.0 * sea_ShoreOffset(K, w.xy));
+    return y;
+}
 vec3 sea_Surface(vec2 q, float factor) {
     vec3 p = vec3(q.x,0.0,q.y);
     sea_CoastAt(q);
-    vec2 br = sea_Breaking();
+    bool coast = sea_Affects(sea_K);
     for (int i=0; i<sea_WaveCount; i++) {
         vec4 w=sea_Wave[i];
-        float k=length(w.xy), phase=dot(w.xy,q)+w.z;
-        float s=sea_SurfShare(k,sea_C), a=w.w*br.x*sea_LeeOf(w.xy);
-        p.y += a*(1.0-s)*sin(phase)*factor;
-        if (s>0.0) { vec2 ck=sea_WaveClock[i]; p.y += a*s*sea_Shoal(ck.x,sea_C.x)*sea_Breaker(ck.y-ck.x*sea_C.y,br.y).x*factor; }
-        if (k>0.0000001) p.xz += sea_WaveShape*sea_ShapeWeight(k)*a*(1.0-s)*w.xy/k*cos(phase);
+        float k=length(w.xy), phase=dot(w.xy,q)+w.z, ao=w.w, as, ths;
+        if (coast) p.y += sea_TrainY(i,q,sea_K,ao,as,ths)*factor; else p.y += w.w*sin(phase)*factor;
+        if (k>0.0000001) p.xz += sea_WaveShape*sea_ShapeWeight(k)*ao*w.xy/k*cos(phase);
     }
     return p;
 }
@@ -169,51 +251,46 @@ void sea_Differential(vec2 q, float factor, float footprint, out vec2 slope, out
     float height=0.0, variance=0.0, fall=0.0, fallVariance=0.0;
     rough=0.0;
     sea_CoastAt(q);
-    // (0.6.0) on a coast the trains' sizes change from place to place (the depth cap, the share handed to the surf, the
-    // lee of land, a rip), and the surf's travel time and breaking with them: the trains' sizes, the travel time and the
-    // breaking 1/50 block to either side (their gradients by central differences; the phase's own is exact)
-    bool coastal = sea_C.x < sea_MaxDepth || sea_Rip > 0.0 || min(min(sea_LA.x, sea_LA.y), min(sea_LA.z, sea_LA.w)) < 0.999
-        || min(min(sea_LB.x, sea_LB.y), min(sea_LB.z, sea_LB.w)) < 0.999;
-    // (each holds the change across 2 steps)
-    float envOx[24], envOz[24], envSx[24], envSz[24];
-    vec2 timeAt = vec2(0.0), breakAt = vec2(0.0);
-    const float sea_Step = 0.02;
+    // (0.6.0) on a coast each train's size changes from place to place (the depth cap, the share handed to the surf, the
+    // lee of land and the wind sea's fetch, a rip), and its surf and reflected parts follow the shore: the coast
+    // 1/50 block to either side, and each train's parts there, give their gradients by central differences (the open
+    // part's phase is exact)
+    bool coastal = sea_Affects(sea_K);
+    sea_Coast side[4];
     if (coastal) {
-        for (int i=0; i<sea_WaveCount; i++) { envOx[i] = 0.0; envOz[i] = 0.0; envSx[i] = 0.0; envSz[i] = 0.0; }
-        for (int side = 0; side < 4; side++) {
-            int axis = side >> 1;
-            float sgn = (side & 1) == 0 ? 1.0 : -1.0;
-            sea_CoastAt(q + sgn * (axis == 0 ? vec2(sea_Step, 0.0) : vec2(0.0, sea_Step)));
-            vec2 b2 = sea_Breaking();
-            timeAt[axis] += sgn * sea_C.y; breakAt[axis] += sgn * b2.y;
-            for (int i=0; i<sea_WaveCount; i++) {
-                vec4 w = sea_Wave[i];
-                float s = sea_SurfShare(length(w.xy), sea_C), e = b2.x * sea_LeeOf(w.xy);
-                float eo = sgn * e * (1.0 - s), es = s > 0.0 ? sgn * w.w * e * s * sea_Shoal(sea_WaveClock[i].x, sea_C.x) : 0.0;
-                if (axis == 0) { envOx[i] += eo; envSx[i] += es; } else { envOz[i] += eo; envSz[i] += es; }
-            }
-        }
-        sea_CoastAt(q);
+        sea_Coast here = sea_K;
+        for (int s = 0; s < 4; s++) { sea_CoastAt(q + sea_SideStep(s)); side[s] = sea_K; }
+        sea_K = here;
     }
-    vec2 br = sea_Breaking();
-    float away = length(sea_C.zw);
-    // a surf train's phase falls by omega per second of travel time: its wave vector is -omega grad T
-    vec2 gradT = timeAt / (2.0 * sea_Step);
     float surfSum = 0.0, surfCrest = 0.0;
     for(int i=0;i<sea_WaveCount;i++) {
         vec4 w=sea_Wave[i]; float k=length(w.xy);
         if(k<0.0000001) continue;
-        float lee=sea_LeeOf(w.xy), s=sea_SurfShare(k,sea_C), a=w.w*br.x*lee, ao=a*(1.0-s);
         float phase=dot(w.xy,q)+w.z, sn=sin(phase), cs=cos(phase);
         float keep=1.0-smoothstep(0.25,0.75,k*footprint);
         vec2 direction=w.xy/k;
+        float ao=w.w, as=0.0, ths=0.0;
+        if (coastal) sea_TrainY(i,q,sea_K,ao,as,ths);
         jac -= sea_WaveShape*sea_ShapeWeight(k)*ao*k*sn*keep*outerProduct(direction,direction);
         gradient += keep*ao*w.xy*cs*factor;
         if (coastal) {
-            // the orbits and the height grow and shrink with the size: J += (orbit direction) x grad(size)
-            vec2 dO = w.w*vec2(envOx[i], envOz[i])/(2.0*sea_Step);
+            float aoS[4], restS[4], thsS[4];
+            for (int s = 0; s < 4; s++) {
+                vec2 p = q + sea_SideStep(s);
+                float a1, s1, t1;
+                float y = sea_TrainY(i,p,side[s],a1,s1,t1);
+                aoS[s] = a1; restS[s] = y - a1*sin(dot(w.xy,p)+w.z); thsS[s] = t1;
+            }
+            // the orbits and the height grow and shrink with the open part's size: J += (orbit direction) x grad(size)
+            vec2 dO = vec2(aoS[0]-aoS[1], aoS[2]-aoS[3])/(2.0*sea_Step);
             jacSize += sea_WaveShape*sea_ShapeWeight(k)*cs*keep*outerProduct(direction,dO);
             gradient += keep*dO*sn*factor;
+            // the surf and what the shore throws back, faded out where finer than the footprint
+            float ks = as>0.0 ? length(vec2(thsS[0]-thsS[1], thsS[2]-thsS[3]))/(2.0*sea_Step) : 0.0;
+            float keepS = 1.0-smoothstep(0.25,0.75,max(ks,k)*footprint);
+            gradient += keepS*vec2(restS[0]-restS[1], restS[2]-restS[3])/(2.0*sea_Step)*factor;
+            rough += (1.0-keepS*keepS)*0.5*pow(as*ks*factor,2.0);
+            if (as>0.0) { vec3 sh=sea_Breaker(ths,sea_K.br.y); surfSum += as; surfCrest += as*sh.z*sh.z*sh.z; }
         }
         rough += (1.0-keep*keep)*0.5*pow(ao*k*factor,2.0);
         float longWave=1.0-smoothstep(0.3,0.6,k);
@@ -222,19 +299,8 @@ void sea_Differential(vec2 q, float factor, float footprint, out vec2 slope, out
         float omega=sqrt(9.81*k);
         fall += longWave*keep*ao*omega*cs;
         fallVariance += 0.5*pow(longWave*ao*omega,2.0);
-        if (s>0.0 || (coastal && abs(envSx[i])+abs(envSz[i]) > 0.0)) {
-            vec2 ck=sea_WaveClock[i];
-            float as=s>0.0?a*s*sea_Shoal(ck.x,sea_C.x):0.0;
-            vec3 sh=sea_Breaker(ck.y-ck.x*sea_C.y,br.y);
-            float ks=ck.x*length(gradT), keepS=1.0-smoothstep(0.25,0.75,ks*footprint);
-            // the phase (exact), the size and the breaker's shape as breaking changes (by differences)
-            float byB = (sea_Breaker(ck.y-ck.x*sea_C.y,min(br.y+0.01,1.0)).x - sh.x) / max(min(br.y+0.01,1.0)-br.y, 0.000001);
-            gradient += keepS*(-as*sh.y*ck.x*gradT + (vec2(envSx[i], envSz[i])*sh.x + as*byB*breakAt) / (2.0*sea_Step))*factor;
-            rough += (1.0-keepS*keepS)*0.5*pow(as*ks*factor,2.0);
-            surfSum += as; surfCrest += as*sh.z*sh.z*sh.z;
-        }
     }
-    sea_Surf = surfSum > 0.0001 ? br.y * (0.2 + 0.8 * smoothstep(0.35, 0.85, surfCrest / surfSum)) : 0.0;
+    sea_Surf = surfSum > 0.0001 ? sea_K.br.y * (0.2 + 0.8 * smoothstep(0.35, 0.85, surfCrest / surfSum)) : 0.0;
     // where the size changes within a block or two (a cliff's foot, a rip's edge) the drawn surface can fold over itself:
     // take as much of the size's part as keeps the surface from folding
     float size = 1.0;
