@@ -19,7 +19,7 @@ namespace ShaderCheck
             if (prog == 0) return;
             // a curved shore through the sampled points: land west of x = -20 + 0.004 z², sloping 1:12 out to sea
             const int margin = 2, n = 252, w = n + 2 * margin;
-            double positionError = 0, inverseError = 0, normalError = 0, surfMax = 0;
+            double positionError = 0, inverseError = 0, normalError = 0, normalExcess = 0, surfMax = 0;
             int points = 0, sheltered = 0, rips = 0, folds = 0, reflecting = 0;
             double foldError = 0;
             foreach (double origin in new[] { 0.0, 812345.5 })
@@ -112,8 +112,12 @@ namespace ShaderCheck
                                     if (Math.Abs(fq.X - origin - qx) + Math.Abs(fq.Z - oz - qz) > 0.2) fold = true;
                                 }
                                 if (fold) { folds++; continue; }
-                                normalError = Math.Max(normalError, Math.Max(Math.Abs((p.HeightAt(x + d, z) - p.HeightAt(x - d, z)) / (2 * d) - normals[i * 4]),
-                                    Math.Abs((p.HeightAt(x, z + d) - p.HeightAt(x, z - d)) / (2 * d) - normals[i * 4 + 1])));
+                                // (0.6.0) against the slope itself: a storm's breaker face is steeper than 1, where the GPU's
+                                // 1/50-block differences of the coast terms and these 1/100-block ones part by more than on gentle water
+                                double gx = (p.HeightAt(x + d, z) - p.HeightAt(x - d, z)) / (2 * d), gz = (p.HeightAt(x, z + d) - p.HeightAt(x, z - d)) / (2 * d);
+                                double miss = Math.Max(Math.Abs(gx - normals[i * 4]), Math.Abs(gz - normals[i * 4 + 1]));
+                                normalError = Math.Max(normalError, miss);
+                                normalExcess = Math.Max(normalExcess, miss / Math.Max(0.15, 0.2 * Math.Sqrt(gx * gx + gz * gz)));
                                 surfMax = Math.Max(surfMax, p.SurfAt(x, z).Breaking);
                                 points++;
                             }
@@ -127,7 +131,7 @@ namespace ShaderCheck
             // the two layers there differ most where a steep breaker front crosses the fold)
             Check(folds * 50 < points && foldError < .3, $"the surface folds over itself at few points: {folds} of {points + folds}, where a ship's height is up to {foldError:E2} blocks off the drawn one");
             Check(sheltered > 20 && rips > 5 && reflecting > 5, $"the coast map exercised the lee of land, rips and a shore that throws waves back: {sheltered} sheltered points, {rips} over rip channels, {reflecting} before a steep shore");
-            Check(normalError < .15, $"GPU surf normals near CPU finite differences: max slope error {normalError:E3}");
+            Check(normalExcess < 1, $"GPU surf normals near CPU finite differences: within 0.15 or 20% of the slope (max error {normalError:E3}, {100 * normalExcess:F0}% of its allowance)");
             GL.DeleteProgram(prog);
         }
     }

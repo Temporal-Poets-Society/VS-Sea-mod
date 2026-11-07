@@ -594,11 +594,18 @@ namespace Sea
 
         /// <summary>
         /// (0.6.0) How far a crest breaks into whitecap foam, 0 to 1, by the shader's gate (CelestialShader's
-        /// <c>sea_CrestFoam</c> without its noise patches and wind coverage): a sharpened crest (compression, with the
-        /// place's height factor, from 0.22) standing well above the long waves' mean (from 0.8 of their spread).
+        /// <c>sea_CrestFoam</c> without its noise patches): a sharpened crest (compression, with the place's height
+        /// factor, from 0.22) standing well above the long waves' mean (from 0.8 of their spread). In a storm (the wind's
+        /// whitecap coverage from 0.1 to 0.9) the gate eases to compression from 0.14 and height from 0.35, never low
+        /// enough for sheltered water (at most 0.65 x 0.2 = 0.13).
         /// </summary>
-        public static double Whitecap(double height, double compression) =>
-            SmoothStep(0.22, 0.40, compression) * SmoothStep(0.8, 1.65, height);
+        public static double Whitecap(double height, double compression, double coverage = 0)
+        {
+            double s = SmoothStep(0.1, 0.9, coverage);
+            return SmoothStep(Lerp(0.22, 0.14, s), Lerp(0.40, 0.30, s), compression) * SmoothStep(Lerp(0.8, 0.35, s), Lerp(1.65, 1.2, s), height);
+        }
+
+        static double Lerp(double a, double b, double t) => a + (b - a) * t;
 
         /// <summary>
         /// (0.6.0) How far a crest throws spray, 0 to 1: the whitecap's gate (<see cref="Whitecap"/>) widened to the
@@ -611,6 +618,43 @@ namespace Sea
         /// <summary>Measured (SeaTests): about 10% of the open sea from Beaufort 6 to 12, 1.5% at 4; the crests' sharpness
         /// hardly grows past force 6, so how much of it throws spray is left to the wind's whitecap coverage.</summary>
         public const double SprayCompression = 0.08, SprayHeight = 0.4;
+
+        /// <summary>
+        /// (0.6.0) The strongest long train here (wavelength over about 10 blocks): the way it runs and its phase speed
+        /// in blocks per second, the speed the crests travel at. False with no trains.
+        /// </summary>
+        public bool LeadingTrain(out double ux, out double uz, out double speed)
+        {
+            ux = uz = speed = 0;
+            double best = 0;
+            for (int i = 0; i < Count; i++)
+            {
+                double k = Math.Sqrt(Kx[i] * Kx[i] + Kz[i] * Kz[i]);
+                if (k < 1e-7 || k > 0.6 || Amp[i] <= best) continue;
+                best = Amp[i];
+                double sign = Omega[i] >= 0 ? 1 : -1;
+                ux = sign * Kx[i] / k; uz = sign * Kz[i] / k; speed = Math.Abs(Omega[i]) / k;
+            }
+            return best > 0;
+        }
+
+        /// <summary>
+        /// (0.6.0) Moves (x, z) uphill along the line (ux, uz) to the top of the crest there (half-block steps, halved
+        /// down to an eighth; at most a few blocks) and returns that height above rest.
+        /// </summary>
+        public double ClimbCrest(ref double x, ref double z, double ux, double uz)
+        {
+            double h = HeightAt(x, z), step = 0.5;
+            for (int it = 0; it < 12 && step > 0.1; it++)
+            {
+                double ahead = HeightAt(x + ux * step, z + uz * step);
+                if (ahead > h) { x += ux * step; z += uz * step; h = ahead; continue; }
+                double behind = HeightAt(x - ux * step, z - uz * step);
+                if (behind > h) { x -= ux * step; z -= uz * step; h = behind; continue; }
+                step *= 0.5;
+            }
+            return h;
+        }
 
         static double SmoothStep(double a, double b, double x)
         {

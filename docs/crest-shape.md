@@ -65,6 +65,11 @@ The vertex differential supplies normalized long-wave height, local compression
 - A short trailing shoulder: positive falling phase opens bubble holes into lace, and fades the patch out
   between normalized fall 0.35 and 1.8. It cannot become a long downwind trail.
 
+**0.6.0 (SEA-D70): storm-eased gate.** With `storm = smoothstep(0.1, 0.9, coverage)` the compression gate moves
+from 0.22–0.40 to 0.14–0.30, the height gate from 0.8–1.65 to 0.35–1.2, and the shoulder's fade end from 1.8 to
+2.6. Sheltered water still cannot pass (0.13 < 0.14). At force 12 the eased gate whitens 25 of 400 test places,
+the calm one 4. `WavePlace.Whitecap(height, compression, coverage)` is the CPU copy; crest spray uses it.
+
 These are tunable **incipient-breaking presentation thresholds**, not a hydrodynamic overturning solver.
 The no-loop surface intentionally never actually overturns. Foam age here is a phase proxy; wake film keeps its
 real node age, world coordinates, atlas, lighting, lifetime and accepted 250,000-sample raster budget.

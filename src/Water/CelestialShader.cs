@@ -162,10 +162,12 @@ float sea_CrestFoam(vec2 p, vec3 crest, float coverage) {
     float density = sqrt(clamp(coverage,0.0,1.0));
     float patches = smoothstep(mix(0.72,0.40,density),mix(0.88,0.70,density),islands) * smoothstep(0.22,0.5,holes);
     // Compression measures actual crest sharpening, scaled by the local liquid height factor. Sheltered
-    // water (factor .2) cannot reach .22 even at the global no-loop bound (.65*.2=.13).
-    float breaking = smoothstep(0.22,0.40,crest.y) * smoothstep(0.8,1.65,crest.x);
-    // Only a short shoulder behind a passing crest remains; this is a phase-age proxy, not saved foam.
-    float tail = 1.0-smoothstep(0.35,1.8,max(crest.z,0.0));
+    // water (factor .2) cannot reach .14 even at the global no-loop bound (.65*.2=.13).
+    // (0.6.0) In a storm (coverage from .1 to .9) the gate eases: less sharpened and lower crests break too.
+    float storm = smoothstep(0.1,0.9,coverage);
+    float breaking = smoothstep(mix(0.22,0.14,storm),mix(0.40,0.30,storm),crest.y) * smoothstep(mix(0.8,0.35,storm),mix(1.65,1.2,storm),crest.x);
+    // Only a shoulder behind a passing crest remains, longer in a storm; this is a phase-age proxy, not saved foam.
+    float tail = 1.0-smoothstep(0.35,mix(1.8,2.6,storm),max(crest.z,0.0));
     return breaking * tail * patches * min(1.0,24.0*coverage);
 }
 float sea_WindFoam(vec2 p, vec3 crest, float coverage) {

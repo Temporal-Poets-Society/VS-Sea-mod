@@ -23,11 +23,16 @@
 - **Swash.** Each wave runs up the beach as a thin sheet with a white front, as high as Stockdon's run-up for the
   sea reaching that stretch of beach (sheltered coves get less), timed by the surf's own phase at the nearest shore
   point, so it runs up one part of a beach after another. The sand stays dark and wet for a few seconds.
+- **Steeper storms.** A gale's sea keeps the old shape (30 times as long as it is high); stronger winds make it
+  steeper, down to 18 times at Beaufort 12, as a young storm sea is. Force 12 is now 5.5 blocks high and 99 long,
+  every 8 s (was 165 long, 10.3 s). In a storm the whitecaps break more easily and leave a longer shoulder.
+  `StormHeightScale` keeps the same steepness.
 - **Spray off the open sea's crests.** From about Beaufort 5 the wind tears spray off breaking crests near you, and from
   a gale it also blows spindrift low and fast downwind. The crests are found as the water shader finds its whitecaps
-  (the drawn surface's own compression, `WavePlace.CrestAt`), widened to the sharpened upper part of a wave: about 10%
-  of the sea from force 6 up, with the wind's whitecap coverage deciding how many of them throw spray. Local and
-  cosmetic; off with `.sea foam off`. Before this only surf on beaches threw spray. In game at force 12: 60 fps.
+  (the drawn surface's own compression, `WavePlace.CrestAt`). Only a crest or its rising front throws spray: it starts
+  at the crest's tip as a thin curtain of fine droplets and travels with the crest, so it stays on the breaking
+  crest. Local and cosmetic; off with `.sea foam off`. Before this only surf on beaches threw spray. In game at
+  force 12: 59 fps with the spray at its limit.
 - **The coast map follows the blocks.** A dug channel, a pier or a sea wall: the chunk is scanned again and the tiles
   that see it are solved again. Tiles are solved on a background thread (about 15–25 ms each offline); `.sea coast`
   shows what the map has cost.

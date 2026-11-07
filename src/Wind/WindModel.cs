@@ -212,18 +212,32 @@ namespace Sea
                 StormForHeight(referenceHeight, Config.WaveScale));
         }
 
+        /// <summary>
+        /// (0.6.0) A built sea's peak wavelength over its significant height: 30 (steepness 1/30) up to a gale, falling
+        /// smoothly to 18 at the strongest wind (strength 0.8 to 1.5, Beaufort 8 to 12), so a storm's sea is steeper
+        /// than a gale's, as a young storm sea is, instead of the same shape scaled up. The wind strength is read back
+        /// from the history's height without <c>StormHeightScale</c>, so taller storms keep the same steepness.
+        /// </summary>
+        internal static double StormLengthRatio(double referenceHeight, double waveScale)
+        {
+            double s = Math.Sqrt(Math.Max(0, (referenceHeight / Math.Max(0.1, waveScale) - 0.1) / 2.4));
+            double t = Math.Clamp((s - 0.8) / 0.7, 0, 1);
+            return 30 - 12 * t * t * (3 - 2 * t);
+        }
+
         internal static double StormForHeight(double height, double waveScale) =>
             WaveSpectrum.StormBlend(Math.Sqrt(Math.Max(0, (height / Math.Max(0.1, waveScale) - 0.1) / 2.4)));
 
         internal static double PeriodForHeight(double height, double waveScale, double referenceHeight = -1)
         {
-            // Compress wavelength consistently with gameplay height: Lp/Hs = 30 in a built storm. Using the
-            // history's height retains swell after a lull and scales both dimensions when taller storms are chosen.
+            // Compress wavelength consistently with gameplay height: Lp/Hs = 30 in a built storm, shorter in the
+            // strongest winds (StormLengthRatio). Using the history's height retains swell after a lull and scales both
+            // dimensions when taller storms are chosen.
             if (referenceHeight < 0) referenceHeight = height;
             double normalizedHeight = referenceHeight / Math.Max(0.1, waveScale);
             double legacyPeriod = 2.5 + 3.2 * Math.Sqrt(normalizedHeight);
             double storm = StormForHeight(referenceHeight, waveScale);
-            double stormLength = 30 * height;
+            double stormLength = StormLengthRatio(referenceHeight, waveScale) * height;
             return Math.Sqrt((1 - storm) * legacyPeriod * legacyPeriod + storm * stormLength * 2 * Math.PI / 9.81);
         }
 

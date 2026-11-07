@@ -125,7 +125,7 @@ void main(){
     if(testMode==2)foam=sea_FoamCells(q,1.0);
     if(testMode==3)foam=sea_WindFoam(q,vec3(2.0,0.5,0.0),testCoverage);
     if(testMode==4)foam=sea_WindFoam(q,vec3(2.0,0.0,0.0),testCoverage);
-    if(testMode==5)foam=sea_WindFoam(q,vec3(2.0,0.5,2.0),testCoverage);
+    if(testMode==5)foam=sea_WindFoam(q,vec3(2.0,0.5,2.7),testCoverage);
     color=vec4(foam,crest.x,crest.y,1);
 }";
             int prog=Build("issue 37: crest-only production foam",full,fragment,new Dictionary<string,int>());if(prog==0)return;
@@ -146,8 +146,11 @@ void main(){
                 Console.WriteLine($"  crests37 {s}: mean foam {100*mean:F4}%, area>.1 {100*area:F4}%, max compression {compression:F4}, sheltered {Mean(sheltered):F7}");
                 Check(Mean(sheltered)==0,$"GPU: sheltered factor .2 has zero wind foam at strength {s}, even with sky exposure");
                 Check(s!=.3 || mean<.002,"GPU: default breeze remains sparse, not a wind-foam sheet");
-                bool onlyBreaking=Enumerable.Range(0,n*n).All(i=>data[i*4]==0 || (data[i*4+1]>.8 && data[i*4+2]>.22));
-                Check(onlyBreaking,$"GPU: wind foam {s} is confined to compressed high crest tops");
+                // (0.6.0) the gate eases in a storm (whitecap coverage .1 to .9): height from .8 to .35, compression from .22 to .14
+                double cov=WaveSpectrum.WhitecapCoverage(s),st=Math.Clamp((cov-.1)/.8,0,1);st=st*st*(3-2*st);
+                double minHeight=.8+(.35-.8)*st,minCompression=.22+(.14-.22)*st;
+                bool onlyBreaking=Enumerable.Range(0,n*n).All(i=>data[i*4]==0 || (data[i*4+1]>minHeight-1e-4 && data[i*4+2]>minCompression-1e-4));
+                Check(onlyBreaking,$"GPU: wind foam {s} is confined to compressed high crest tops (height over {minHeight:F2} of the spread, compression over {minCompression:F2})");
             }
             var patches=Draw(mode:3);var flat=Draw(mode:4);var old=Draw(mode:5);
             Check(Mean(patches)>0 && Mean(flat)==0 && Mean(old)==0,"GPU: strong wind alone cannot produce foam; patches fade behind crest");

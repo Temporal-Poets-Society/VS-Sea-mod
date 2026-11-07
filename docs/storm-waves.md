@@ -62,6 +62,12 @@ grows approximately with wind squared, and increasing `StormHeightScale` now inc
 The blend from the old breeze period uses the **history's normalized reference height before StormHeightScale**,
 not today's wind or the selected multiplier, retaining swell
 after a lull. This is a PM-shaped gameplay sea, not a claim that 5.5-block waves physically have a hurricane period.
+
+**0.6.0 (SEA-D70): steeper storms.** With 30 at every strength a force 12 sea was a gale's sea scaled up. The ratio
+(`WindModel.StormLengthRatio`) now stays 30 up to strength 0.8 and falls smoothly to 18 at 1.5, still read from the
+history's height before StormHeightScale, so the multiplier keeps the steepness. Force 12 default: Hs 5.50,
+Lp 99, Tp 8.0 s (was 165, 10.3 s); force 10: ratio 27.6; force 8 unchanged (1.28 high, 41 long). The per-band cap
+(0.05 L) and the no-loop budget (0.65) are unchanged, so the surface still never loops.
 Sea's existing duration handling remains; it does not yet trace coastlines or compute geographic fetch (SEA-P01).
 
 Convert `S(f) df` to variance per logarithmic wavelength bin: amplitude weight

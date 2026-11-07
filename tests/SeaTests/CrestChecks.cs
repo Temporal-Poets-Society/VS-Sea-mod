@@ -46,7 +46,7 @@ namespace SeaTests
             Console.WriteLine("crest spray: the shader's whitecap crests on the CPU");
             var storm=new WavePlace();
             storm.Update(spec,300.25,new WindModel(new WorldShape(),new SeaConfig{SeaWindFrom=270,SeaWindStrength=1.5f}).SeaAt(50000,50000,3000),Wind.FromCompass(270,1.5));
-            double worstJ=0;int whitecaps=0,points=0;
+            double worstJ=0;int whitecaps=0,points=0,stormCaps=0,shelteredCaps=0;
             for(int n=0;n<400;n++) {
                 double x=50000+n*1.37,z=50000+n*0.61;
                 var crest=storm.CrestAt(x,z);
@@ -57,13 +57,28 @@ namespace SeaTests
                 double least=0.5*(j00+j11-Math.Sqrt((j00-j11)*(j00-j11)+(j01+j10)*(j01+j10)));
                 worstJ=Math.Max(worstJ,Math.Abs(Math.Max(0,1-least)-crest.Compression));
                 if(WavePlace.Whitecap(crest.Height,crest.Compression)>=0.2)whitecaps++;
+                if(WavePlace.Whitecap(crest.Height,crest.Compression,WaveSpectrum.WhitecapCoverage(1.5))>=0.2)stormCaps++;
+                if(WavePlace.Whitecap(crest.Height,crest.Compression*0.2,1)>0)shelteredCaps++;
                 points++;
             }
             check(worstJ<1e-5,$"crest compression = 1 - least eigenvalue of the drawn surface's Jacobian: {points} storm points, max error {worstJ:E2}");
-            check(whitecaps>0&&whitecaps<points/2,$"force 12: {whitecaps} of {points} places are whitecap crests (some, not most)");
+            check(whitecaps>0&&whitecaps<points/2,$"force 12, the calm gate: {whitecaps} of {points} places are whitecap crests (some, not most)");
+            check(stormCaps>=4*whitecaps&&stormCaps<points/2,$"force 12, the storm-eased gate: {stormCaps} of {points} places whiten ({whitecaps} with the calm gate), still not most");
+            check(shelteredCaps==0,$"sheltered water (height factor 0.2) never whitens, even at full coverage ({shelteredCaps} places)");
+            {
+                var shape=new WorldShape();
+                double r08=WindModel.StormLengthRatio((0.1+2.4*0.64),1),r10=WindModel.StormLengthRatio((0.1+2.4*1.0),1),r15=WindModel.StormLengthRatio((0.1+2.4*2.25),1),r05=WindModel.StormLengthRatio((0.1+2.4*0.25),1);
+                check(Math.Abs(r05-30)<1e-9&&Math.Abs(r08-30)<1e-9&&r10<30&&r10>18&&Math.Abs(r15-18)<1e-9,$"storm steepness: wavelength/height 30 up to a gale, {r10:F1} at force 10, 18 at force 12");
+                var m15=new WindModel(shape,new SeaConfig{SeaWindFrom=270,SeaWindStrength=1.5f});var st=m15.SeaAt(50000,50000,3000);
+                check(Math.Abs(st.Wavelength/st.Height-18)<0.5,$"built force 12: {st.Height:F2} high, {st.Wavelength:F0} long (1:{st.Wavelength/st.Height:F1}), every {st.Period:F1} s");
+                var m22=new WindModel(shape,new SeaConfig{SeaWindFrom=270,SeaWindStrength=1.5f,StormHeightScale=2.2f});var st22=m22.SeaAt(50000,50000,3000);
+                check(Math.Abs(st22.Wavelength/st22.Height-18)<0.5,$"StormHeightScale 2.2 keeps the steepness: {st22.Height:F2} high, {st22.Wavelength:F0} long");
+                var m06=new WindModel(shape,new SeaConfig{SeaWindFrom=270,SeaWindStrength=0.7f});var s06=m06.SeaAt(50000,50000,3000);
+                Console.WriteLine($"  (force 8: {s06.Height:F2} high, {s06.Wavelength:F0} long, every {s06.Period:F1} s)");
+            }
             var calm=new WavePlace();
             calm.Update(spec,300.25,new WindModel(new WorldShape(),new SeaConfig{SeaWindFrom=270,SeaWindStrength=0.1f}).SeaAt(50000,50000,3000),Wind.FromCompass(270,0.1));
-            int calmCaps=0;for(int n=0;n<400;n++){var c=calm.CrestAt(50000+n*1.37,50000+n*0.61);if(WavePlace.Whitecap(c.Height,c.Compression)>=0.2)calmCaps++;}
+            int calmCaps=0;for(int n=0;n<400;n++){var c=calm.CrestAt(50000+n*1.37,50000+n*0.61);if(WavePlace.Whitecap(c.Height,c.Compression,WaveSpectrum.WhitecapCoverage(0.1))>=0.2)calmCaps++;}
             check(calmCaps==0||WaveSpectrum.WhitecapCoverage(0.1)<0.002,$"force 2: no spray (whitecap crests {calmCaps}, coverage {WaveSpectrum.WhitecapCoverage(0.1):F4} below the spray's 0.002)");
             double SprayShare(double f) {
                 var pl=new WavePlace();pl.Update(spec,300.25,new WindModel(new WorldShape(),new SeaConfig{SeaWindFrom=270,SeaWindStrength=(float)f}).SeaAt(50000,50000,3000),Wind.FromCompass(270,f));
@@ -72,8 +87,26 @@ namespace SeaTests
             }
             double s4=SprayShare(0.3),s8=SprayShare(0.7),s12=SprayShare(1.5);
             check(s4<0.03&&s8>0.05&&s12>0.05&&s12<0.2,$"spray crests: {100*s4:F1}% of the sea at force 4, {100*s8:F1}% at 8, {100*s12:F1}% at 12 (whitecap coverage then sets how many throw it: {WaveSpectrum.WhitecapCoverage(0.3):F3}, {WaveSpectrum.WhitecapCoverage(0.7):F3}, {WaveSpectrum.WhitecapCoverage(1.5):F3})");
-            check(CelestialShader.FoamDeclarations.Contains("smoothstep(0.22,0.40,crest.y) * smoothstep(0.8,1.65,crest.x)"),
-                "the spray's crest gate is the shader's (sea_CrestFoam's thresholds unchanged)");
+            {
+                // spray starts at a crest's tip and runs with it
+                check(storm.LeadingTrain(out double ux,out double uz,out double speed)&&ux>0.8&&speed>9&&speed<16,
+                    $"force 12: the leading train runs toward the E ({ux:F2}, {uz:F2}) at {speed:F1} blocks/s (99 long, every 8 s: 12.4)");
+                int tips=0,worse=0;double far=0,below=0;
+                for(int n=0;n<400;n++){
+                    double x=50000+n*1.37,z=50000+n*0.61;var c=storm.CrestAt(x,z);
+                    if(c.Fall>0.35||WavePlace.Whitecap(c.Height,c.Compression,WaveSpectrum.WhitecapCoverage(1.5))<0.12)continue;
+                    double h0=storm.HeightAt(x,z),tx=x,tz=z,top=storm.ClimbCrest(ref tx,ref tz,ux,uz);
+                    if(top<h0-1e-9)worse++;
+                    far=Math.Max(far,Math.Sqrt((tx-x)*(tx-x)+(tz-z)*(tz-z)));
+                    // a tip: no higher water a quarter block either way along the run
+                    below=Math.Max(below,Math.Max(storm.HeightAt(tx+ux*0.25,tz+uz*0.25),storm.HeightAt(tx-ux*0.25,tz-uz*0.25))-top);
+                    tips++;
+                }
+                check(tips>5&&worse==0&&far<6&&below<0.02,$"spray crests climbed to their tips: {tips} at force 12, at most {far:F1} blocks away, never lower, tip within {Math.Max(0,below):F3} of the top");
+            }
+            check(CelestialShader.FoamDeclarations.Contains("float storm = smoothstep(0.1,0.9,coverage);")
+                && CelestialShader.FoamDeclarations.Contains("smoothstep(mix(0.22,0.14,storm),mix(0.40,0.30,storm),crest.y) * smoothstep(mix(0.8,0.35,storm),mix(1.65,1.2,storm),crest.x)"),
+                "WavePlace.Whitecap is the shader's crest gate (sea_CrestFoam's thresholds, calm and storm)");
         }
     }
 }

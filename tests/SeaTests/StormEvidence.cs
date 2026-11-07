@@ -93,8 +93,8 @@ namespace SeaTests
                     check(worst < 1e-10, $"default breeze geometry/phases unchanged (worst {worst:E2})");
                 }
                 else check(now.shortSlope >= 0.055 && now.shortSlope <= 0.075 && now.longShare > 0.90
-                    && sea.Wavelength / after.SignificantHeight >= 25 && sea.Wavelength / after.SignificantHeight <= 35,
-                    $"scale {stormScale}, {s}: Lp/Hs 25–35, long waves >90% energy, breeze-like short RMS slope");
+                    && Math.Abs(sea.Wavelength / after.SignificantHeight - WindModel.StormLengthRatio(oldHeight, 1)) < 1.5,
+                    $"scale {stormScale}, {s}: Lp/Hs {sea.Wavelength / after.SignificantHeight:F1} as the storm steepness gives ({WindModel.StormLengthRatio(oldHeight, 1):F1}: 30 to a gale, 18 at 1.5), long waves >90% energy, breeze-like short RMS slope");
                 // The actual renderer upload, including camera phase reduction, against the CPU ship sampler.
                 var uniforms = new float[96];
                 int count = after.FillUniforms(uniforms, 378606, 69939);
@@ -107,8 +107,8 @@ namespace SeaTests
             Directory.CreateDirectory("obj");
             File.WriteAllLines("obj/storm-spectrum.csv", rows);
             double lambda(double s) => new WindModel(new WorldShape(), new SeaConfig { SeaWindStrength = (float)s }).SeaAt(0,0,100).Wavelength;
-            check(Math.Abs(lambda(1.5) / 5.5 - 30) < 1e-5 && Math.Abs(lambda(0.8) / 1.636 - 30) < 1e-5,
-                "storm peak wavelength follows gameplay significant height at Lp/Hs = 30");
+            check(Math.Abs(lambda(1.5) / 5.5 - 18) < 1e-5 && Math.Abs(lambda(0.8) / 1.636 - 30) < 1e-5,
+                "storm peak wavelength follows gameplay significant height: Lp/Hs = 30 at a gale (0.8), 18 at the strongest wind (1.5)");
             check(WaveSpectrum.WhitecapCoverage(0) == 0 && WaveSpectrum.WhitecapCoverage(0.3) < 0.005
                 && WaveSpectrum.WhitecapCoverage(0.8) < WaveSpectrum.WhitecapCoverage(1.2)
                 && WaveSpectrum.WhitecapCoverage(1.5) > 0.8, "whitecaps start faintly in a breeze and become dense in a hurricane");
@@ -131,9 +131,9 @@ namespace SeaTests
                 var sea = model.SeaAt(0,0,100);
                 var p = new WavePlace(); p.Update(spectrum,100,sea,new Wind(1.5,0));
                 var metric = Metrics(p,Math.Max(1,sea.Wavelength));
-                check((scale == 0 || Math.Abs(sea.Wavelength/sea.Height-30) < 1e-10)
+                check((scale == 0 || Math.Abs(sea.Wavelength/sea.Height-18) < 1e-10)
                     && metric.shortSlope >= 0.055 && metric.shortSlope <= 0.075,
-                    $"StormHeightScale {scale}: wavelength scales with height, independently saturated texture retained");
+                    $"StormHeightScale {scale}: wavelength scales with height (Lp/Hs 18 at 1.5 whatever the scale), independently saturated texture retained");
             }
             double seamWorst = 0, ratioMin = 1, ratioMax = 0;
             var ring = new WaveSpectrum(4242, 254000);
