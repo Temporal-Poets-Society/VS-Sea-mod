@@ -112,6 +112,38 @@ namespace Sea
             double seconds = t.Seconds; t.Seconds = 0;
             water.Intake(__instance, seconds, t.Waves);
         }
+        sealed class DriftState { public long At = long.MinValue / 2; public double X, Z; public readonly WavePlace Waves = new(); }
+        static readonly ConditionalWeakTable<EntityBoat, DriftState> drifts = new();
+
+        /// <summary>
+        /// (0.6.0) Rafts, sailboats and Ships' rowboats afloat are carried by the surf's currents (SeaSystem.CurrentAt: along the
+        /// beach, and out through a rip). After the game's own motion, on the server's tick and the client's frame alike:
+        /// under way the current adds to the boat's speed through the water; left alone the boat is taken up to the
+        /// current's speed over a couple of seconds. Ships' own ships (not boats) do their own.
+        /// </summary>
+        public static void Drift(EntityBoat __instance, float dt)
+        {
+            var b = __instance;
+            if (!BoatWaves.Supported(b) || !b.Swimming || b.Pos.Dimension != 0) return;
+            var sea = SeaSystem.For(b.Api.Side);
+            if (sea?.Spectrum == null || !sea.SurfOn) return;
+            var d = drifts.GetValue(b, _ => new DriftState());
+            long now = b.World.ElapsedMilliseconds;
+            if (now - d.At >= 250)
+            {
+                d.At = now;
+                sea.SampleWaves(d.Waves, b.Pos.X, b.Pos.Z);
+                (d.X, d.Z) = sea.CurrentAt(d.Waves, b.Pos.X, b.Pos.Z);
+            }
+            if (d.X == 0 && d.Z == 0) return;
+            // m/s to the game's motion (blocks per 1/60 s)
+            double vx = d.X / 60, vz = d.Z / 60;
+            var m = b.Pos.Motion;
+            if (b.ForwardSpeed != 0) { m.X += vx; m.Z += vz; return; }
+            double f = 1 - Math.Exp(-Math.Clamp(dt, 0, 0.5) / 2);
+            m.X += (vx - m.X) * f; m.Z += (vz - m.Z) * f;
+        }
+
         void Intake(EntityBoat b, double dt, WavePlace waves)
         {
             float before = Fill(b);

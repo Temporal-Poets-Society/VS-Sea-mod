@@ -1,6 +1,6 @@
 # Open sea contracts
 
-**Status: proposal, 7 November 2026, not agreed with hoblin. Our side partly implemented (unreleased, not tested in game):** Sea 0.6.0-pre.1 on branch `claude/open-contracts` publishes `seastate`, `surface` and `hulls` and follows a published `weather` owner; Ships on branch `claude/sea-contracts` (`31d1668`) reads its waves through its own trains type, with the contracts as its fallback. Earth's `weather` role is not done. Lines saying "today" describe Sea 0.5.2; section 12 marks what the branches did.
+**Status: proposal, 7 November 2026, not agreed with hoblin. Our side partly implemented (unreleased, not tested in game):** Sea 0.6.0-pre.1 on branch `claude/open-contracts` publishes `seastate`, `surface` and `hulls` and follows a published `weather` owner; Ships on branch `claude/sea-contracts` (`31d1668`, `aa1c411`, `73a4367`) reads its waves through its own trains type, with the contracts as its fallback (wind, sea state, `pose`), rides the surf and drifts with the current; it still needs Sea.dll. Earth's `weather` role is not done. Lines saying "today" describe Sea 0.5.2; section 12 marks what the branches did.
 
 **Agreed direction (the author):** Earth owns weather (31 October). Sea keeps its own wave surface and its hull water cut, Ships keeps its own wave motion (`ShipMotion`), and our side becomes more open so that other mods can use it (7 November). Rough Seas' drawn surface is not adopted as the canonical one.
 
@@ -89,8 +89,9 @@ Vanilla code that reads `X` as the strength (`DefaultShaderUniforms.Update`, `En
 |---|---|---|
 | `at` | `Func<double x, double z, double hours, (double Height, double Period, double DirX, double DirZ, double WindX, double WindZ, double Storm)>` | significant wave height (m), peak period (s), unit travel direction, wind at the sea (m/s), storm presence 0–1 |
 | `shelter` | `Func<double x, double z, double>` | the share of the open-sea waves that reaches here, 0–1 |
-| `current` | `Func<double x, double z, (double X, double Z)>` or absent | the water's own drift at (x, z) now, m/s. Sea 0.6.0: the longshore current that breaking waves drive along a beach (Komar 1979), 0 elsewhere. Ocean currents and water temperature would be a later member |
+| `current` | `Func<double x, double z, (double X, double Z)>` or absent | the water's own drift at (x, z) now, m/s. Sea 0.6.0: the longshore current that breaking waves drive along a beach (Komar 1979) and the seaward flow through rip channels, 0 elsewhere. Things afloat move with it. Ocean currents and water temperature would be a later member |
 | `surf` | `Func<double x, double z, (double Depth, double Breaking, double Foam)>` or absent | the coast now: depth to the sea floor in blocks (32 or more off the coast), how far the waves break there (0–1), the whitewater drawn (0–1) |
+| `lee` | `Func<double x, double z, double>` or absent | the share of the sea's height that gets past the land to (x, z) now: 1 on open water, less behind islands and headlands, deep water too. `surface.height` already includes it; `shelter` (the ocean map's) does not |
 
 **Today:** Sea's `SeaAt(x, z)` returns `SeaState` (height in blocks = m, unit direction, period) and `WindAt` returns `Wind` in vanilla units (`src/Wind/Wind.cs`). `WaveFactorAt` is the shelter, 0.2–1 in 0.5.2 and 0 on inland water in the calm-rivers build.
 
@@ -122,7 +123,7 @@ Field by field against Rough Seas' `SeaState`:
 - `Lift` m added to the model's height; `Roll` rad about the length (the renderer's `xangle`); `Pitch` rad about the beam (the renderer's `zangle`).
 - It is the water's pose, without the hull's own inertia. Ships convert to their own frame: `ShipAttitude` has pitch bow-up positive and roll starboard-down positive.
 
-**Near a coast (Sea 0.6.0):** `trains` are the open sea's trains. The drawn surface over shallow water also follows the bottom: the trains hand over to shoreward surf trains that turn parallel to the beach, shoal, are capped at significant height 0.6 × depth and steepen into breakers. `height` and `pose` include that, so a boat in the surf rides what is drawn; a ship that integrates `trains` itself sees the open sea's waves there.
+**Near a coast (Sea 0.6.0):** `trains` are the open sea's trains. The drawn surface over shallow water also follows the bottom: the trains hand over to shoreward surf trains that turn parallel to the beach, shoal, are capped at significant height 0.6 × depth and steepen into breakers. Behind land the trains are cut by the lee (`seastate.lee`), and over rip channels the surf is held back and breaks less. `height` and `pose` include all of that, so a boat in the surf rides what is drawn; a ship that integrates `trains` itself sees the open sea's waves there unless it adds the difference (Ships fits a plane to `height` less its trains under its hull).
 
 **Sides:** all members on the server and every client, for any position. Sea today answers `WaveHeightAt` on a client from the camera's trains, not the asked position's (`docs/open-issues.md`); the contract needs per-position answers on the client too (Sea's server already uses per-cell probes).
 
@@ -167,7 +168,7 @@ The contracts give the water. Each ship mod keeps its own answer to it:
 
 - **Masts for lightning:** ships publish their masthead positions so a storm's lightning (Earth's or Rough Seas') can seek them; Rough Seas has `IMasted` for its own vessels.
 - **Rams** between vessels of different mods.
-- **Ocean currents** drifting unsteered ships of any mod (Sea 0.6.0 publishes only the surf zone's longshore current, `seastate.current`, and does not yet move anything with it).
+- **Ocean currents** drifting unsteered ships of any mod. Sea 0.6.0 publishes only the surf zone's currents (longshore and rips, `seastate.current`); vanilla boats and Ships' ships and rowboats drift with them.
 
 ## 11. What Rough Seas would do (all optional)
 
@@ -188,7 +189,7 @@ His metres per block come from the world's `polarEquatorDistance`; on an Earth w
 2. Rename injected GLSL identifiers to `sea_…` (R8). *Done in 0.6.0-pre.1; Wmap 0.5's far programs keep their old names, which Sea still sets.*
 3. Per-position `height` and `trains` on the client, not the camera's. *`trains` are per position on both sides; client `height` and `pose` still come from the camera's trains.*
 4. Add `pose`. *Done in 0.6.0-pre.1.*
-5. Separately: wave growth from fetch, depth and duration; crest spray particles; less geometric foam. *0.6.0-pre.1 adds waves on beaches (refraction, shoaling, depth-limited breaking, breaker shape, surf whitewater and spray, the longshore current); growth from fetch and depth is not done.*
+5. Separately: wave growth from fetch, depth and duration; crest spray particles; less geometric foam. *0.6.0-pre.1 adds waves on beaches (refraction, shoaling, depth-limited breaking, breaker shape, surf whitewater and spray, swash), the lee of land, rip channels and the surf's currents, which move boats; growth from fetch and depth is not done.*
 
 **Earth**
 1. Publish `weather` (priority 100, `writesVanilla` true): export storm presence, kind and rain from its model.

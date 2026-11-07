@@ -464,18 +464,23 @@ namespace Sea
         }
 
         /// <summary>
-        /// (0.6.0) The coast under this place's water (null: open sea everywhere, as before 0.6.0). With one, near a shore
-        /// the trains hand over to surf trains that follow the bottom, shoal, break and take a breaker's shape, exactly
-        /// as the shader draws them from sea_CoastTex (<see cref="CoastMath"/>).
+        /// (0.6.0) The coast under this place's water (null: open sea everywhere, as before 0.6.0). With one, the land
+        /// upwave keeps its lee, and near a shore the trains hand over to surf trains that follow the bottom, shoal, break
+        /// and take a breaker's shape, held back over rip channels, exactly as the shader draws them from sea_CoastTex
+        /// (<see cref="CoastMath"/>).
         /// </summary>
         public CoastLookup Coast;
 
-        /// <summary>(0.6.0) The coast's numbers at a mesh coordinate, and its breaking there (false: open sea).</summary>
+        /// <summary>
+        /// (0.6.0) The coast's numbers at a mesh coordinate, and its breaking there (false: open sea). Its Time is the surf's
+        /// own travel time there (<see cref="CoastMath.SurfTime"/>: longer over a rip).
+        /// </summary>
         public bool CoastAt(double qx, double qz, out CoastSample c, out double cap, out double breaking)
         {
             cap = 1; breaking = 0;
-            if (Coast == null || Count == 0 || !Coast(qx, qz, out c) || !c.Coastal) { c = CoastSample.Open; return false; }
+            if (Coast == null || Count == 0 || !Coast(qx, qz, out c) || !c.Affects) { c = CoastSample.Open; return false; }
             (cap, breaking) = CoastMath.Breaking(c, Count, Kx, Kz, Omega, Amp);
+            if (c.Rip > 0) c.Time = CoastMath.SurfTime(c, SignificantHeight);
             return true;
         }
 
@@ -488,7 +493,7 @@ namespace Sea
             {
                 double th = Kx[i]*qx+Kz[i]*qz-Omega[i]*t+Phase[i];
                 if (!coast) { y += Amp[i]*Math.Sin(th); continue; }
-                double s = CoastMath.SurfShare(Math.Sqrt(Kx[i]*Kx[i]+Kz[i]*Kz[i]), c), a = Amp[i]*cap;
+                double s = CoastMath.SurfShare(Math.Sqrt(Kx[i]*Kx[i]+Kz[i]*Kz[i]), c), a = Amp[i]*cap*CoastMath.Lee(c, Kx[i], Kz[i]);
                 y += a*(1-s)*Math.Sin(th);
                 if (s > 0) y += a*s*CoastMath.Shoaling(Omega[i], c.Depth)*CoastMath.Breaker(Phase[i]-Omega[i]*(t+c.Time), b).Value;
             }
@@ -508,7 +513,7 @@ namespace Sea
             {
                 double s = CoastMath.SurfShare(Math.Sqrt(Kx[i]*Kx[i]+Kz[i]*Kz[i]), c);
                 if (s <= 0) continue;
-                double a = Amp[i]*cap*s*CoastMath.Shoaling(Omega[i], c.Depth);
+                double a = Amp[i]*cap*CoastMath.Lee(c, Kx[i], Kz[i])*s*CoastMath.Shoaling(Omega[i], c.Depth);
                 double u = CoastMath.Breaker(Phase[i]-Omega[i]*(Time+c.Time), b).Crest;
                 sum += a; crest += a*u*u*u;
             }
@@ -545,7 +550,35 @@ namespace Sea
                 double nx=x-dx, nz=z-dz;
                 bool converged=Math.Abs(nx-qx)+Math.Abs(nz-qz)<1e-7;
                 qx=nx; qz=nz;
-                if(converged) break;
+                if(converged) return (qx,qz);
+            }
+            // (0.6.0) On a coast the orbits' size changes from place to place (the lee of land, a rip, the depth cap), and
+            // where it changes fast the plain iteration no longer contracts: finish with Newton's method on
+            // q + D(q) = x (its Jacobian by differences), each step halved until it brings the point closer.
+            if (Coast == null) return (qx, qz);
+            double Miss(double px, double pz, out double ex, out double ez)
+            {
+                Displacement(px, pz, t, shape, out double ddx, out double ddz);
+                ex = px + ddx - x; ez = pz + ddz - z;
+                return Math.Abs(ex) + Math.Abs(ez);
+            }
+            double miss = Miss(qx, qz, out double fx, out double fz);
+            const double h = 1e-4;
+            for (int j = 0; j < InverseIterations && miss > 1e-7; j++)
+            {
+                Miss(qx + h, qz, out double ax, out double az);
+                Miss(qx, qz + h, out double bx, out double bz);
+                double j11 = (ax - fx) / h, j21 = (az - fz) / h, j12 = (bx - fx) / h, j22 = (bz - fz) / h;
+                double det = j11 * j22 - j12 * j21;
+                if (Math.Abs(det) < 1e-9) break;
+                double sx = (j22 * fx - j12 * fz) / det, sz = (j11 * fz - j21 * fx) / det;
+                bool better = false;
+                for (double step = 1; step > 1e-3; step *= 0.5)
+                {
+                    double px = qx - step * sx, pz = qz - step * sz, m = Miss(px, pz, out double gx, out double gz);
+                    if (m < miss) { qx = px; qz = pz; miss = m; fx = gx; fz = gz; better = true; break; }
+                }
+                if (!better) break;
             }
             return (qx,qz);
         }
@@ -559,7 +592,7 @@ namespace Sea
             {
                 double k = Math.Sqrt(Kx[i]*Kx[i]+Kz[i]*Kz[i]);
                 if (k < 1e-12) continue;
-                double a = coast ? Amp[i] * cap * (1 - CoastMath.SurfShare(k, c)) : Amp[i];
+                double a = coast ? Amp[i] * cap * CoastMath.Lee(c, Kx[i], Kz[i]) * (1 - CoastMath.SurfShare(k, c)) : Amp[i];
                 double d = shape * ShapeWeight(k) * a / k * Math.Cos(Kx[i]*qx+Kz[i]*qz-Omega[i]*t+Phase[i]);
                 dx += Kx[i]*d; dz += Kz[i]*d;
             }

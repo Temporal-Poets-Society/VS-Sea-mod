@@ -35,6 +35,7 @@ namespace Sea
         public readonly float[] WaveUniform = new float[WaterShader.MaxWaves * 4];
         // (0.6.0) the coast: its map around the camera and each train's clock (sea_WaveClock)
         readonly CoastTexture coastTexture = new();
+        float coastSea;
         readonly float[] clockUniform = new float[WaterShader.MaxWaves * 2];
         double coastCamX, coastCamZ;
         bool coastOn;
@@ -132,6 +133,7 @@ namespace Sea
             {
                 coastTexture.Update(sys.Coast, camX, camZ, capi.InWorldEllapsedMilliseconds / 1000.0);
                 place.FillClock(clockUniform);
+                coastSea = (float)place.SignificantHeight;
             }
             // Foam is cosmetic: use the local provider's current wind, not a grid/clock sample from the wave
             // history. SeaWind retains the configured steady sea wind when there is no wind provider.
@@ -342,6 +344,7 @@ namespace Sea
                 if (wn > 0 && coastOn && WaterShader.Has(prog, "sea_WaveClock"))
                     GL.Uniform2(GL.GetUniformLocation(prog.ProgramId, "sea_WaveClock"), wn, clockUniform);
                 coastTexture.Bind(prog, coastCamX, coastCamZ, coastOn && wn > 0);
+                if (coastOn && WaterShader.Has(prog, "sea_CoastSea")) prog.Uniform("sea_CoastSea", coastSea, 0f, 0f, 0f);
             }
             if (WaterShader.Has(prog, "sea_Pixel")) prog.Uniform(WaterShader.N(prog, "sea_Pixel"), pixel);
             // (0.6.0) w: surf whitewater on (it shows without wind foam too)

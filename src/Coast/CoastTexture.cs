@@ -6,7 +6,8 @@ namespace Sea
 {
     /// <summary>
     /// (0.6.0) Client: the coast around the camera as the water shader's sea_CoastTex — <see cref="Size"/>² columns of
-    /// (depth, travel time, away-from-shore direction × trust), RGBA32F, read with texelFetch so the shader's bilinear
+    /// <see cref="CoastMath.Stride"/> floats in 4 RGBA32F texels side by side (depth, travel time, away-from-shore
+    /// direction × trust; the lee of 8 directions; the rip and the beach), read with texelFetch so the shader's bilinear
     /// sample is the CPU's (<see cref="CoastMath.Bilinear"/>). Tiles not solved yet are open sea in both.
     /// </summary>
     public sealed class CoastTexture : IDisposable
@@ -14,7 +15,8 @@ namespace Sea
         public const int Tiles = 8, Size = Tiles * CoastMath.Tile;
         const double RefillSeconds = 2;
 
-        readonly float[] pixels = new float[Size * Size * 4];
+        const int S = CoastMath.Stride;
+        readonly float[] pixels = new float[Size * Size * S];
         int texture, version = -1;
         long ox = long.MinValue, oz = long.MinValue;
         bool missing;
@@ -44,14 +46,10 @@ namespace Sea
                     if (data == null) missing = true;
                     for (int z = 0; z < T; z++)
                     {
-                        int row = ((j * T + z) * Size + i * T) * 4;
-                        if (data != null) Array.Copy(data, z * T * 4, pixels, row, T * 4);
+                        int row = ((j * T + z) * Size + i * T) * S;
+                        if (data != null) Array.Copy(data, z * T * S, pixels, row, T * S);
                         else
-                            for (int x = 0; x < T; x++)
-                            {
-                                int o = row + x * 4;
-                                pixels[o] = CoastMath.MaxDepth; pixels[o + 1] = 0; pixels[o + 2] = 0; pixels[o + 3] = 0;
-                            }
+                            for (int x = 0; x < T; x++) CoastMath.OpenColumn(pixels, row + x * S);
                     }
                 }
             Upload();
@@ -71,12 +69,12 @@ namespace Sea
                     GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
                     GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
                     GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
-                    GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba32f, Size, Size, 0, PixelFormat.Rgba, PixelType.Float, pixels);
+                    GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba32f, Size * S / 4, Size, 0, PixelFormat.Rgba, PixelType.Float, pixels);
                 }
                 else
                 {
                     GL.BindTexture(TextureTarget.Texture2D, texture);
-                    GL.TexSubImage2D(TextureTarget.Texture2D, 0, 0, 0, Size, Size, PixelFormat.Rgba, PixelType.Float, pixels);
+                    GL.TexSubImage2D(TextureTarget.Texture2D, 0, 0, 0, Size * S / 4, Size, PixelFormat.Rgba, PixelType.Float, pixels);
                 }
             }
             finally

@@ -6,8 +6,18 @@
   grows as the water shallows, is held to a height the depth allows (significant height at most 0.6 × depth) and
   steepens into breakers with a peaked crest and a steep shoreward face. Breaking surf draws whitewater and throws
   spray. Boats, ships and the open contracts ride the same surface the shader draws. Config `Surf` (on).
-- **Longshore current.** Waves breaking at an angle drive water along the beach (Komar 1979). Sea works it out and
-  publishes it (`seastate.current`, `.sea coast`), but nothing is moved by it yet.
+- **The lee of land.** Islands and headlands keep waves off the water behind them, deep water too: per column the coast
+  map looks upwave in 8 directions for land and lets less through the nearer it is (the waves bend in behind it and the
+  wind builds them again further off).
+- **Currents in the surf.** Waves breaking at an angle drive water along the beach (Komar 1979), and the water they
+  pile up runs back out to sea through rip channels: fixed places along gentle sandy beaches, about 250 blocks apart
+  on average. Over a rip the breakers have a gap and the outgoing current holds the waves back, so their crests bow
+  seaward. Rafts, sailboats and Ships' rowboats drift with the current; ships do in Ships.
+- **Swash.** Each wave runs up the beach as a thin sheet with a white front, as high as Stockdon's run-up for the
+  sea reaching that beach, and leaves the sand dark and wet for a few seconds.
+- **The coast map follows the blocks.** A dug channel, a pier or a sea wall: the chunk is scanned again and the tiles
+  that see it are solved again. Tiles are solved on a background thread (about 15–25 ms each offline); `.sea coast`
+  shows what the map has cost.
 - **Open sea contracts** ([spec](docs/open-sea-contracts.md)): Sea publishes `seacontracts:seastate`, `surface` and
   `hulls` in `api.ObjectCache` with .NET base types only, so other mods (Rough Seas' boats among them) can read the
   waves, pose a boat on them and have water cut from hulls without referencing `Sea.dll`. It follows a published
@@ -315,8 +325,10 @@ Nothing about the wind or the waves is sent while you play, except a clock:
   does the same for the old one.
 - `/sea storms` is gone (0.4.0): storms are Earth's.
 
-- `.sea coast` (client, 0.6.0): the coast where you stand: depth, wave travel time from the shore, breaking,
-  whitewater, the longshore current, and how far the coast map has got.
+- `.sea coast` (client, 0.6.0): the coast where you stand: depth, wave travel time from the shore, the share of the
+  sea that gets past the land, breaking, whitewater, the current and any rip channel; how far the coast map has got and
+  what it has cost (column scans on the main thread, tile solves in the background, rescans after block changes, the
+  swash's frame time).
 - `.sea` (client, with a dot): what Sea is doing on your own client.
   - where the wind comes from (the provider's name, and any of its answers Sea refused)
   - the wind it sees, and what vanilla sees
@@ -444,11 +456,12 @@ clip.InDryHull(x, y, z);              // the shader's own test, in C#
 Reference `Sea.dll` without copying it (`Private="false"`) and add `"sea"` to your modinfo dependencies.
 
 (0.6.0) Coasts: `place.HeightAt` near a beach includes the surf (`SampleWaves` sets `WavePlace.Coast`);
-`place.SurfAt(x, z)` gives breaking, whitewater and depth; `sea.CoastAt(x, z)` the coast's depth, travel time and
-direction; `sea.CurrentAt(place, x, z)` the longshore current in m/s.
+`place.SurfAt(x, z)` gives breaking, whitewater and depth; `sea.CoastAt(x, z)` the coast's depth, travel time,
+direction, lee per direction and rip; `sea.LeeAt(place, x, z)` the share of the sea that gets past the land;
+`sea.CurrentAt(place, x, z)` the surf's current (longshore and rips) in m/s.
 
 **Without referencing Sea.dll** (0.6.0): the open contracts in `api.ObjectCache`: `seacontracts:seastate` (`at`,
-`shelter`, `current`, `surf`), `seacontracts:surface` (`seconds`, `trains`, `height`, and `pose` with Rough Seas'
+`shelter`, `current`, `surf`, `lee`), `seacontracts:surface` (`seconds`, `trains`, `height`, and `pose` with Rough Seas'
 `PoseOf` meaning) and `seacontracts:hulls` (`register` hull records, `registerDry`, `isDry`). See
 [docs/open-sea-contracts.md](docs/open-sea-contracts.md).
 
@@ -484,10 +497,11 @@ Earth, Terra Prety and other world generators: `docs/compatibility.md`.
 ## Not yet
 
 - **What the 0.4.2 review left open** (by design, deferred, or not yet play-tested): [docs/open-issues.md](docs/open-issues.md).
-- **Coasts, what 0.6.0 leaves out.** The lee of an island or a headland is not sheltered beyond the ocean map
-  (waves bend toward shallow water but don't diffract round land); no rip currents; water doesn't run up the sand
-  (swash); the longshore current doesn't move boats or bend the waves riding it yet. A tile of the coast map is not
-  redone when blocks change under it (a dug channel, a pier) until it is forgotten. Ships' own motion integrates the
-  open sea's trains, so a ship in the surf rocks to the swell, not the breakers.
+- **Coasts, what 0.6.0 leaves out.** The lee is a geometric estimate (rays upwave, no real diffraction pattern);
+  waves are not reflected off cliffs or walls. The longshore current doesn't bend the waves riding it (a rip's does).
+  All surf trains reach the shore line together, so the swash runs up a whole beach at once. Where the size of the
+  waves changes within a block or two (the foot of a cliff, a rip's edge) the drawn surface can fold over itself at a
+  few points; a boat's height there may be a few millimetres off the drawn one. Ships rides the surf by a plane fitted
+  under her hull, not train by train.
 
 For isolated comparisons, use `tools/New-CelestialTestProfile.ps1`; see [the procedure](docs/sky-water.md#reproducible-in-game-comparison-pending). It creates a fresh data directory without overwriting packages or saves. The older shell self-test resets its testserver save/log folders, so use the fresh-profile workflow to retain those snapshots. For another Release build, choose a new version or a fresh explicit `-p:PackageFile=C:\path\to\a-new-unique.zip`.

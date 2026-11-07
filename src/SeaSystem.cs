@@ -88,9 +88,9 @@ namespace Sea
             Hooks.Apply(Mod.Logger, clientHooks);
             coast = new CoastField(api);
             coastLookup = coast.Lookup;
-            // (0.6.0) the coast is solved a little at a time on the main thread: tiles asked for by the water's map, by
-            // the waves sampled for ships and boats, and by the open contracts
-            api.Event.RegisterGameTickListener(_ => { if (SurfOn) coast.Work(api.Side == EnumAppSide.Server ? 3 : 2, 1); }, 50);
+            // (0.6.0) the coast is scanned a little at a time on the main thread and solved on a background task: tiles
+            // asked for by the water's map, by the waves sampled for ships and boats, and by the open contracts
+            api.Event.RegisterGameTickListener(_ => { if (SurfOn) coast.Work(api.Side == EnumAppSide.Server ? 3 : 2); }, 50);
             contracts = new SeaContracts(this, api, Mod.Logger);
             contracts.Publish();
         }
@@ -110,6 +110,7 @@ namespace Sea
         public override void Dispose()
         {
             contracts?.Dispose();
+            coast?.Dispose();
             if (api == null) return;
             if (api.Side == EnumAppSide.Server && serverInstance == this) serverInstance = null;
             if (api.Side == EnumAppSide.Client && clientInstance == this) clientInstance = null;
@@ -121,6 +122,7 @@ namespace Sea
                     capi.Event.UnregisterRenderer(waterRenderer, EnumRenderStage.Before);
                     waterRenderer.Dispose();
                 }
+                if (swash != null) { capi.Event.UnregisterRenderer(swash, EnumRenderStage.Opaque); swash.Dispose(); }
                 if (celestialRenderer != null)
                 {
                     capi.Event.UnregisterRenderer(celestialRenderer, EnumRenderStage.Opaque);
@@ -294,6 +296,10 @@ namespace Sea
         CoastField coast;
         CoastLookup coastLookup;
         SurfSpray surfSpray;
+        SwashRenderer swash;
+
+        /// <summary>(0.6.0) Client: water running up the beaches (null on a server).</summary>
+        public SwashRenderer Swash => swash;
 
         /// <summary>(0.6.0) Client: the surf spray (null on a server).</summary>
         public SurfSpray Spray => surfSpray;
@@ -312,27 +318,49 @@ namespace Sea
             SurfOn && coast.Lookup(x, z, out var c) ? c : CoastSample.Open;
 
         /// <summary>
-        /// (0.6.0) The longshore current at a world position (m/s, x east, z south): in a surf zone the breaking waves
-        /// push the water along the beach (CoastMath.Longshore, Komar 1979); none elsewhere. From the waves of a place
-        /// sampled there (a boat's own, or the camera's).
+        /// (0.6.0) The current at a world position (m/s, x east, z south) driven by the surf: in a surf zone the breaking
+        /// waves push the water along the beach (CoastMath.Longshore, Komar 1979), and over a rip channel it runs back out
+        /// to sea (CoastMath.RipCurrent); none elsewhere. From the waves of a place sampled there (a boat's own, or the
+        /// camera's), less what the land upwave keeps off.
         /// </summary>
         public (double X, double Z) CurrentAt(WavePlace place, double x, double z)
         {
             if (place == null || place.Count == 0 || !SurfOn) return (0, 0);
             var c = CoastAt(x, z);
             if (!c.Coastal || c.Trust <= 0) return (0, 0);
-            // the waves' energy-weighted direction and angular speed offshore
+            // the waves' energy-weighted direction and angular speed, as they reach here
             double ex = 0, ez = 0, e = 0, w = 0;
             for (int i = 0; i < place.Count; i++)
             {
-                double k = Math.Sqrt(place.Kx[i] * place.Kx[i] + place.Kz[i] * place.Kz[i]), a2 = place.Amp[i] * place.Amp[i];
+                double k = Math.Sqrt(place.Kx[i] * place.Kx[i] + place.Kz[i] * place.Kz[i]);
                 if (k < 1e-9) continue;
+                double a = place.Amp[i] * CoastMath.Lee(c, place.Kx[i], place.Kz[i]), a2 = a * a;
                 ex += a2 * place.Kx[i] / k; ez += a2 * place.Kz[i] / k; e += a2; w += a2 * place.Omega[i];
             }
             double l = Math.Sqrt(ex * ex + ez * ez), t = c.Trust;
             if (e <= 0 || l < 1e-9) return (0, 0);
-            var v = CoastMath.Longshore(c.Depth, c.AwayX / t, c.AwayZ / t, place.SignificantHeight, w / e, ex / l, ez / l);
-            return (v.X * t, v.Z * t);
+            double hs = 4 * Math.Sqrt(e / 2), ax = c.AwayX / t, az = c.AwayZ / t;
+            var v = CoastMath.Longshore(c.Depth, ax, az, hs, w / e, ex / l, ez / l);
+            var r = CoastMath.RipCurrent(c.Rip / t, c.Depth, ax, az, hs);
+            return ((v.X + r.X) * t, (v.Z + r.Z) * t);
+        }
+
+        /// <summary>
+        /// (0.6.0) The share of the sea's height (energy-weighted over a place's trains) that gets past the land to a
+        /// world position: 1 on open water, less in the lee of an island or a headland.
+        /// </summary>
+        public double LeeAt(WavePlace place, double x, double z)
+        {
+            if (place == null || place.Count == 0 || !SurfOn) return 1;
+            var c = CoastAt(x, z);
+            if (!c.Affects) return 1;
+            double e = 0, el = 0;
+            for (int i = 0; i < place.Count; i++)
+            {
+                double a2 = place.Amp[i] * place.Amp[i], l = CoastMath.Lee(c, place.Kx[i], place.Kz[i]);
+                e += a2; el += a2 * l * l;
+            }
+            return e > 0 ? Math.Sqrt(el / e) : 1;
         }
 
         /// <summary>The wind the waves' chop follows (<see cref="WindModel.SeaWind(double, double, double, bool, long)"/>), as worked out for wave sample n.</summary>
@@ -797,6 +825,9 @@ namespace Sea
             // (0.6.0) spray off breaking surf near the camera
             surfSpray = new SurfSpray(api, this);
             api.Event.RegisterGameTickListener(_ => { if (Model != null) surfSpray.Tick(); }, 100);
+            // (0.6.0) water running up the beaches
+            swash = new SwashRenderer(api, this);
+            api.Event.RegisterRenderer(swash, EnumRenderStage.Opaque, "sea-swash");
             SeaCommands.RegisterClient(api, this);
 
             // the water shaders were compiled before our patch existed: recompile them with Sea's code

@@ -60,22 +60,28 @@ namespace Sea
                 .EndSubCommand();
         }
 
-        /// <summary>(0.6.0) .sea coast: the coast at the player, as the water is drawn there.</summary>
+        /// <summary>(0.6.0) .sea coast: the coast at the player, as the water is drawn there, and what the map costs.</summary>
         static string CoastReport(ICoreClientAPI capi, SeaSystem sys)
         {
             if (sys.Coast == null) return "The coast isn't running.";
             var ep = capi.World.Player.Entity;
             double x = ep.Pos.X, z = ep.Pos.Z;
             var n = sys.Coast.Counts;
-            string head = $"Surf {(sys.SurfOn ? "on" : "off (config Surf, or a Cylinder World ring)")}; coast map: {n.Tiles} tiles solved, {n.Columns} chunk columns scanned, {n.Wanted} waiting.";
+            var k = sys.Coast.Costs;
+            string head = $"Surf {(sys.SurfOn ? "on" : "off (config Surf, or a Cylinder World ring)")}; coast map: {n.Tiles} tiles solved, {n.Columns} chunk columns scanned, {n.Wanted} waiting. "
+                + $"Cost: {k.Scans} column scans at {k.ScanMs:0.00} ms each (main thread), {k.Solves} tile solves at {k.SolveMs:0.0} ms each, longest {k.SolveMaxMs:0.0} ms (background); "
+                + $"{k.Rescans} columns scanned again after block changes, {k.Resolves} tiles solved again. Swash: {sys.Swash?.LastCells ?? 0} beach cells, {sys.Swash?.LastMs ?? 0:0.00} ms last frame.";
             var c = sys.CoastAt(x, z);
-            if (!c.Coastal) return head + " Here: open sea (deeper than " + CoastMath.MaxDepth + " blocks, or not solved yet).";
+            if (!c.Affects) return head + " Here: open sea (deeper than " + CoastMath.MaxDepth + " blocks, no land upwave, or not solved yet).";
+            string lee = sys.CameraWaves.Count > 0 ? $"{sys.LeeAt(sys.CameraWaves, x, z):0.00} of the sea's height gets past the land" : "no sea";
+            if (!c.Coastal) return head + $" Here: deep water in the lee of land ({lee}).";
             var s = sys.CameraWaves.SurfAt(x, z);
             var v = sys.CurrentAt(sys.CameraWaves, x, z);
             double speed = Math.Sqrt(v.X * v.X + v.Z * v.Z);
             string current = speed < 0.01 ? "none" : $"{speed:0.00} m/s toward {Heading(v.X, v.Z)}";
-            return head + $" Here: {c.Depth:0.0} blocks deep, {c.Time:0.0} s of wave travel from the shore line (trusted {c.Trust:0.00}); "
-                + $"breaking {s.Breaking:0.00}, whitewater {s.Foam:0.00}; longshore current {current}; spray {sys.Spray?.LastSpawned ?? 0} last tick.";
+            string rip = c.Rip > 0.05 ? $"; a rip channel ({c.Rip:0.00})" : "";
+            return head + $" Here: {c.Depth:0.0} blocks deep, {c.Time:0.0} s of wave travel from the shore line (trusted {c.Trust:0.00}); {lee}; "
+                + $"breaking {s.Breaking:0.00}, whitewater {s.Foam:0.00}; current {current}{rip}; spray {sys.Spray?.LastSpawned ?? 0} last tick.";
         }
 
         // +X east, +Z south

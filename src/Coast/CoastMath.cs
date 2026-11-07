@@ -6,33 +6,48 @@ namespace Sea
     /// <summary>
     /// (0.6.0) The coast's numbers at one place, as the water shader reads them from sea_CoastTex: the depth to the sea
     /// floor (blocks; 0 on land, <see cref="CoastMath.MaxDepth"/> where it's deep or unknown), the time a shallow-water
-    /// wave takes from here to the shore line (seconds), and the direction away from the shore (the way that time grows)
-    /// times how much of the coast's effect is trusted here (<see cref="CoastMath.Fade"/>).
+    /// wave takes from here to the shore line (seconds), the direction away from the shore (the way that time grows)
+    /// times how much of the coast's effect is trusted here (<see cref="CoastMath.Fade"/>), the share of the waves from
+    /// each of 8 directions that reaches here past the land (the lee of islands and headlands), and the rip channel.
     /// </summary>
     public struct CoastSample
     {
         public double Depth, Time, AwayX, AwayZ;
+        /// <summary>Shelter: the share of waves coming from the east (0), south-east (1), south (2) … north-east (7) that reaches here.</summary>
+        public double Lee0, Lee1, Lee2, Lee3, Lee4, Lee5, Lee6, Lee7;
+        /// <summary>A rip channel here, 0 to 1: the water piled up by the surf runs back out to sea through it.</summary>
+        public double Rip;
 
-        /// <summary>No coast: deep water, as everywhere before 0.6.0.</summary>
-        public static readonly CoastSample Open = new() { Depth = CoastMath.MaxDepth };
+        /// <summary>No coast: deep water open to every direction, as everywhere before 0.6.0.</summary>
+        public static readonly CoastSample Open = new()
+        {
+            Depth = CoastMath.MaxDepth, Lee0 = 1, Lee1 = 1, Lee2 = 1, Lee3 = 1, Lee4 = 1, Lee5 = 1, Lee6 = 1, Lee7 = 1,
+        };
+
+        public double LeeAt(int d) => d switch { 0 => Lee0, 1 => Lee1, 2 => Lee2, 3 => Lee3, 4 => Lee4, 5 => Lee5, 6 => Lee6, _ => Lee7 };
 
         /// <summary>How much of the coast's effect is trusted here, 0 to 1 (the length of the away vector).</summary>
         public double Trust => Math.Min(1, Math.Sqrt(AwayX * AwayX + AwayZ * AwayZ));
 
-        /// <summary>Within reach of the coast at all (shallower than <see cref="CoastMath.MaxDepth"/>).</summary>
+        /// <summary>Within reach of the sea floor (shallower than <see cref="CoastMath.MaxDepth"/>).</summary>
         public bool Coastal => Depth < CoastMath.MaxDepth;
+
+        /// <summary>Anything here changes the waves: the floor, the lee of land or a rip.</summary>
+        public bool Affects => Coastal || Rip > 0 || Math.Min(Math.Min(Math.Min(Lee0, Lee1), Math.Min(Lee2, Lee3)), Math.Min(Math.Min(Lee4, Lee5), Math.Min(Lee6, Lee7))) < 0.999;
     }
 
     /// <summary>A coast lookup: the numbers at a world position (false: none known there, open sea).</summary>
     public delegate bool CoastLookup(double x, double z, out CoastSample sample);
 
     /// <summary>
-    /// (0.6.0) Waves on a beach. The shore's travel-time field (a fast-marching eikonal solve at the shallow-water speed
-    /// sqrt(g h)), and what the water shader and the CPU both do with it: the sea's trains hand over to shoreward "surf"
-    /// trains that follow the bottom (refraction: crests turn parallel to the beach and bunch up as the water shallows),
-    /// grow by shoaling (Green's law), are capped by depth-limited breaking (H_s ≤ γ h), take a breaker's shape (a peaked
-    /// crest, flat trough and steep front) as they break, and drive a longshore current in the surf zone (Komar 1979).
-    /// Pure: the same numbers in the game, the tests and the shader checks (WaterShader.Geometry mirrors the shape parts).
+    /// (0.6.0) Waves on a coast. The shore's travel-time field (a fast-marching eikonal solve at the shallow-water speed
+    /// sqrt(g h)), the lee of land per direction, rip channels and the beach, and what the water shader and the CPU both
+    /// do with them: the sea's trains are cut by the land upwave (with a soft, diffracted edge), hand over to shoreward
+    /// "surf" trains that follow the bottom (refraction: crests turn parallel to the beach and bunch up as the water
+    /// shallows), grow by shoaling (Green's law), are capped by depth-limited breaking (H_s ≤ γ h), take a breaker's shape
+    /// (a peaked crest, flat trough and steep front) as they break, and drive a longshore current (Komar 1979) and rips,
+    /// whose seaward flow holds the waves back over the channel and leaves a gap in the breakers.
+    /// Pure: the same numbers in the game, the tests and the shader checks (WaterShader.Geometry mirrors the wave parts).
     /// </summary>
     public static class CoastMath
     {
@@ -50,13 +65,21 @@ namespace Sea
         public const double Gamma = 0.6;
         /// <summary>The coast's effect is trusted to this distance from the shore line, and fades out by <see cref="FadeFar"/>.</summary>
         public const double FadeNear = 28, FadeFar = 56;
+        /// <summary>How far upwave the land is looked for (blocks): a tile's margin, so tiles agree.</summary>
+        public const int LeeReach = Margin;
+        /// <summary>Rip channels: about this many blocks apart along a beach (a few surf-zone widths).</summary>
+        public const double RipSpacing = 64;
+
+        /// <summary>Floats per column in a tile and in sea_CoastTex (4 texels): depth, time, away × trust; lee 0–3; lee 4–7; rip, land.</summary>
+        public const int Stride = 16;
+        public const int IDepth = 0, ITime = 1, IAwayX = 2, IAwayZ = 3, ILee = 4, IRip = 12, ILandDist = 13, ILandHeight = 14, IBeachSlope = 15;
 
         // ------------------------------------------------------------ the field
 
         /// <summary>
-        /// Solve a window's travel times. depth: Window² (row-major, z rows) depths in blocks; ≤ 0 is land (the shore's
-        /// sources), NaN unknown (taken as deep). time: seconds from the shore line at sqrt(g h); dist: blocks from it.
-        /// Both +∞ where no shore is in the window.
+        /// Solve a window's travel times. depth: Window² (row-major, z rows) depths in blocks; ≤ 0 is land (minus its top's
+        /// height over the water: the shore's sources), NaN unknown (taken as deep). time: seconds from the shore line at
+        /// sqrt(g h); dist: blocks from it. Both +∞ where no shore is in the window.
         /// </summary>
         public static void Solve(float[] depth, int w, float[] time, float[] dist)
         {
@@ -116,33 +139,54 @@ namespace Sea
             return (float)(0.5 * (a + b + Math.Sqrt(2 * slowness * slowness - (a - b) * (a - b))));
         }
 
+        static bool IsLand(float h) => h <= 0;
+        static float Water(float h) => float.IsNaN(h) ? MaxDepth : Math.Min(h, MaxDepth);
+
         /// <summary>
-        /// A window's tile: per column (row-major, z rows) depth, travel time, and the away-from-shore direction times its
-        /// trust, 4 floats each (the texture's RGBA). The direction is the travel time's gradient, smoothed over 3 × 3.
+        /// A window's tile: per column (row-major, z rows) <see cref="Stride"/> floats. (ox, oz): the world block of the
+        /// window's column (0, 0), for the rip channels' places. The away direction is the travel time's gradient,
+        /// smoothed over 3 × 3; the lee is looked for along fans of rays upwave; rips sit at fixed places along beaches.
         /// </summary>
-        public static float[] TileOf(float[] depth, float[] time, float[] dist, int w, int margin, int tile)
+        public static float[] TileOf(float[] depth, float[] time, float[] dist, int w, int margin, int tile, long ox = 0, long oz = 0)
         {
-            var gx = new float[w * w];
-            var gz = new float[w * w];
+            int n = w * w;
+            var gx = new float[n];
+            var gz = new float[n];
+            var slope = new float[n];
             for (int z = 1; z < w - 1; z++)
                 for (int x = 1; x < w - 1; x++)
                 {
                     int i = z * w + x;
-                    if (!(depth[i] > 0) && !float.IsNaN(depth[i]) || float.IsPositiveInfinity(time[i])) continue;
+                    if (IsLand(depth[i])) continue;
+                    double hx = FloorSlope(depth, i, 1), hz = FloorSlope(depth, i, w);
+                    slope[i] = (float)Math.Sqrt(hx * hx + hz * hz);
+                    if (float.IsPositiveInfinity(time[i])) continue;
                     double dx = Slope(time, i, 1), dz = Slope(time, i, w);
                     double l = Math.Sqrt(dx * dx + dz * dz);
                     if (l > 1e-9) { gx[i] = (float)(dx / l); gz[i] = (float)(dz / l); }
                 }
-            var tileData = new float[tile * tile * 4];
+            Beach(depth, slope, w, out var landDist, out var landSlope);
+            var rays = Rays();
+            var tileData = new float[tile * tile * Stride];
             for (int z = 0; z < tile; z++)
                 for (int x = 0; x < tile; x++)
                 {
-                    int wx = x + margin, wz = z + margin, i = wz * w + wx, o = (z * tile + x) * 4;
+                    int wx = x + margin, wz = z + margin, i = wz * w + wx, o = (z * tile + x) * Stride;
                     float h = depth[i];
-                    bool land = h <= 0;
-                    tileData[o] = land ? 0 : float.IsNaN(h) ? MaxDepth : Math.Min(h, MaxDepth);
-                    if (land || float.IsPositiveInfinity(time[i])) continue;
-                    tileData[o + 1] = time[i];
+                    bool land = IsLand(h);
+                    tileData[o + IDepth] = land ? 0 : Water(h);
+                    // the lee: from the water (on a beach, from the first water toward each direction)
+                    bool near = land ? landDist[i] <= 12 : dist[i] <= LeeReach;
+                    for (int d = 0; d < 8; d++) tileData[o + ILee + d] = near ? Lee(depth, w, wx, wz, d, land, rays) : (land ? 0 : 1);
+                    if (land)
+                    {
+                        tileData[o + ILandDist] = landDist[i];
+                        tileData[o + ILandHeight] = -h;
+                        tileData[o + IBeachSlope] = landSlope[i];
+                        continue;
+                    }
+                    if (float.IsPositiveInfinity(time[i])) continue;
+                    tileData[o + ITime] = time[i];
                     double sx = 0, sz = 0;
                     for (int dz = -1; dz <= 1; dz++)
                         for (int dx = -1; dx <= 1; dx++)
@@ -152,10 +196,23 @@ namespace Sea
                         }
                     double l = Math.Sqrt(sx * sx + sz * sz), trust = Fade(dist[i]);
                     if (l < 1e-9 || trust <= 0) continue;
-                    tileData[o + 2] = (float)(sx / l * trust);
-                    tileData[o + 3] = (float)(sz / l * trust);
+                    double ax = sx / l, az = sz / l;
+                    tileData[o + IAwayX] = (float)(ax * trust);
+                    tileData[o + IAwayZ] = (float)(az * trust);
+                    tileData[o + IRip] = (float)(RipChannel(ox + wx + 0.5 - ax * dist[i], oz + wz + 0.5 - az * dist[i], dist[i], slope[i]) * trust);
                 }
             return tileData;
+        }
+
+        // the sea floor's slope along one axis: between the water on either side (not down the step to the land)
+        static double FloorSlope(float[] depth, int i, int step)
+        {
+            float a = depth[i - step], b = depth[i + step];
+            bool wa = !IsLand(a), wb = !IsLand(b);
+            if (wa && wb) return 0.5 * (Water(b) - Water(a));
+            if (wb) return Water(b) - Water(depth[i]);
+            if (wa) return Water(depth[i]) - Water(a);
+            return 0;
         }
 
         // central difference where both neighbours are water with a time, else the one-sided one there is
@@ -169,28 +226,142 @@ namespace Sea
             return 0;
         }
 
+        // land's distance (blocks, chamfer 1 / 1.414) from the water, and the slope of the sea floor where that water is
+        static void Beach(float[] depth, float[] slope, int w, out float[] landDist, out float[] landFloor)
+        {
+            int n = w * w;
+            var dist = landDist = new float[n];
+            var floor = landFloor = new float[n];
+            for (int i = 0; i < n; i++)
+            {
+                bool land = IsLand(depth[i]);
+                dist[i] = land ? float.PositiveInfinity : 0;
+                floor[i] = land ? 0 : Math.Clamp(slope[i], 0.02f, 0.5f);
+            }
+            const float D = 1.41421356f;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                bool forward = pass == 0;
+                for (int k = 0; k < n; k++)
+                {
+                    int i = forward ? k : n - 1 - k, x = i % w, z = i / w;
+                    if (dist[i] == 0) continue;
+                    int s = forward ? -1 : 1;
+                    Take(i, x + s, z, 1); Take(i, x, z + s, 1); Take(i, x + s, z + s, D); Take(i, x - s, z + s, D);
+                }
+            }
+            void Take(int i, int x, int z, float step)
+            {
+                if (x < 0 || z < 0 || x >= w || z >= w) return;
+                int j = z * w + x;
+                if (dist[j] + step < dist[i]) { dist[i] = dist[j] + step; floor[i] = floor[j]; }
+            }
+        }
+
+        static readonly double[] RayAngles = { -20, -10, 0, 10, 20 }, RayWeights = { 1, 2, 3, 2, 1 };
+
+        // per direction d (waves coming from angle d·45°), the unit steps of its fan of rays
+        static (double X, double Z, double W)[][] Rays()
+        {
+            var r = new (double, double, double)[8][];
+            for (int d = 0; d < 8; d++)
+            {
+                r[d] = new (double, double, double)[RayAngles.Length];
+                for (int k = 0; k < RayAngles.Length; k++)
+                {
+                    double a = d * Math.PI / 4 + RayAngles[k] * Math.PI / 180;
+                    r[d][k] = (Math.Cos(a), Math.Sin(a), RayWeights[k] / 9.0);
+                }
+            }
+            return r;
+        }
+
+        // The share of waves from direction d reaching column (x, z): each ray upwave that meets land x blocks out lets
+        // sqrt(x / reach) through (waves bend in behind it and the wind builds them again), a ray in the clear all of it.
+        // From a beach the rays start at the first water they cross.
+        static float Lee(float[] depth, int w, int x, int z, int d, bool land, (double X, double Z, double W)[][] rays)
+        {
+            double sum = 0;
+            foreach (var (rx, rz, wt) in rays[d])
+            {
+                double px = x + 0.5, pz = z + 0.5, from = 0;
+                bool inWater = !land, hit = false;
+                for (int s = 1; s <= LeeReach + 12; s++)
+                {
+                    int cx = (int)Math.Floor(px + rx * s), cz = (int)Math.Floor(pz + rz * s);
+                    if (cx < 0 || cz < 0 || cx >= w || cz >= w) break;
+                    bool l = IsLand(depth[cz * w + cx]);
+                    if (!inWater)
+                    {
+                        if (!l) { inWater = true; from = s; }
+                        else if (s > 12) { hit = true; from = s; break; }
+                        continue;
+                    }
+                    if (s - from > LeeReach) break;
+                    if (l) { hit = true; from = s - from; break; }
+                }
+                if (!inWater && !hit) hit = true;   // (a beach facing nothing)
+                sum += wt * (hit ? Math.Sqrt(Math.Clamp(from / LeeReach, 0, 1)) : 1);
+            }
+            return (float)sum;
+        }
+
+        /// <summary>
+        /// A rip channel at a water column whose nearest shore is at (shoreX, shoreZ) and which is `dist` blocks out on a
+        /// floor of this slope: channels are fixed places along a beach (value noise over the shore, about
+        /// <see cref="RipSpacing"/> apart), running straight out to sea, on gentle sandy floors only (not at cliffs).
+        /// </summary>
+        public static double RipChannel(double shoreX, double shoreZ, double dist, double floorSlope) =>
+            SmoothStep(0.6, 0.72, ValueNoise(shoreX / RipSpacing, shoreZ / RipSpacing))
+            * (1 - SmoothStep(30, 48, dist)) * (1 - SmoothStep(0.12, 0.25, floorSlope));
+
+        static double ValueNoise(double x, double z)
+        {
+            double fx = Math.Floor(x), fz = Math.Floor(z), tx = x - fx, tz = z - fz;
+            long ix = (long)fx, iz = (long)fz;
+            tx = tx * tx * (3 - 2 * tx); tz = tz * tz * (3 - 2 * tz);
+            double a = Hash(ix, iz), b = Hash(ix + 1, iz), c = Hash(ix, iz + 1), e = Hash(ix + 1, iz + 1);
+            return (a * (1 - tx) + b * tx) * (1 - tz) + (c * (1 - tx) + e * tx) * tz;
+        }
+
+        static double Hash(long x, long z)
+        {
+            ulong h = (ulong)x * 0x9E3779B97F4A7C15UL ^ (ulong)z * 0xC2B2AE3D27D4EB4FUL ^ 0x5EA5EA5EA5EA5EA5UL;
+            h ^= h >> 33; h *= 0xFF51AFD7ED558CCDUL; h ^= h >> 33; h *= 0xC4CEB9FE1A85EC53UL; h ^= h >> 33;
+            return (h >> 11) * (1.0 / (1UL << 53));
+        }
+
         /// <summary>Trust in the coast's numbers this far (blocks) from the shore line: 1 near it, 0 from <see cref="FadeFar"/>.</summary>
         public static double Fade(double dist) => 1 - SmoothStep(FadeNear, FadeFar, dist);
 
         /// <summary>
-        /// The numbers at a world position, bilinear between column centres exactly as the shader's sea_Coast does it.
-        /// cell(i, j) gives column (i, j)'s four floats (false: no map there; taken as <see cref="CoastSample.Open"/>).
+        /// The numbers at a world position, bilinear between column centres exactly as the shader's sea_CoastAt does it.
+        /// cell(i, j) gives column (i, j)'s <see cref="Stride"/> floats (false: no map there; taken as open sea).
         /// </summary>
         public static CoastSample Bilinear(double x, double z, Func<long, long, float[], bool> cell, float[] scratch)
         {
             double fx = x - 0.5, fz = z - 0.5, ix = Math.Floor(fx), iz = Math.Floor(fz);
             double tx = fx - ix, tz = fz - iz;
-            double h = 0, t = 0, ax = 0, az = 0;
+            var s = new CoastSample();
             for (int c = 0; c < 4; c++)
             {
                 double wgt = ((c & 1) == 1 ? tx : 1 - tx) * ((c & 2) == 2 ? tz : 1 - tz);
-                if (!cell((long)ix + (c & 1), (long)iz + (c >> 1), scratch))
-                {
-                    scratch[0] = MaxDepth; scratch[1] = 0; scratch[2] = 0; scratch[3] = 0;
-                }
-                h += wgt * scratch[0]; t += wgt * scratch[1]; ax += wgt * scratch[2]; az += wgt * scratch[3];
+                if (!cell((long)ix + (c & 1), (long)iz + (c >> 1), scratch)) OpenColumn(scratch);
+                s.Depth += wgt * scratch[IDepth]; s.Time += wgt * scratch[ITime];
+                s.AwayX += wgt * scratch[IAwayX]; s.AwayZ += wgt * scratch[IAwayZ];
+                s.Lee0 += wgt * scratch[ILee]; s.Lee1 += wgt * scratch[ILee + 1]; s.Lee2 += wgt * scratch[ILee + 2]; s.Lee3 += wgt * scratch[ILee + 3];
+                s.Lee4 += wgt * scratch[ILee + 4]; s.Lee5 += wgt * scratch[ILee + 5]; s.Lee6 += wgt * scratch[ILee + 6]; s.Lee7 += wgt * scratch[ILee + 7];
+                s.Rip += wgt * scratch[IRip];
             }
-            return new CoastSample { Depth = h, Time = t, AwayX = ax, AwayZ = az };
+            return s;
+        }
+
+        /// <summary>A column of open sea: deep, no shore, open to every direction.</summary>
+        public static void OpenColumn(float[] into, int at = 0)
+        {
+            Array.Clear(into, at, Stride);
+            into[at + IDepth] = MaxDepth;
+            for (int d = 0; d < 8; d++) into[at + ILee + d] = 1;
         }
 
         // ------------------------------------------------------------ waves on it (WaterShader.Geometry mirrors these)
@@ -199,6 +370,17 @@ namespace Sea
         {
             double t = Math.Clamp((x - e0) / (e1 - e0), 0, 1);
             return t * t * (3 - 2 * t);
+        }
+
+        /// <summary>The share of a train (wave vector k, so coming from −k) that reaches here past the land.</summary>
+        public static double Lee(in CoastSample c, double kx, double kz)
+        {
+            if (kx * kx + kz * kz < 1e-14) return 1;
+            double a = Math.Atan2(-kz, -kx);
+            if (a < 0) a += 6.28318531;
+            double u = a / 0.785398163, d = Math.Floor(u), f = u - d;
+            int i = (int)d % 8, j = (i + 1) % 8;
+            return c.LeeAt(i) * (1 - f) + c.LeeAt(j) * f;
         }
 
         /// <summary>
@@ -215,9 +397,23 @@ namespace Sea
         public static double Shoaling(double omega, double h) =>
             Math.Clamp(Math.Sqrt(Gravity / 2 / Math.Max(omega, 1e-6) / Math.Sqrt(Gravity * Math.Max(h, MinDepth))), 1, 2.5);
 
+        /// <summary>A rip's seaward speed (m/s) for a sea of significant height hs: about 0.35 sqrt(g H_s), 1–2 m/s in a big surf.</summary>
+        public static double RipSpeed(double hs) => 0.35 * Math.Sqrt(Gravity * Math.Max(hs, 0));
+
+        /// <summary>
+        /// A surf train's travel time from here to the shore line: over a rip channel the seaward current holds the waves
+        /// back (speed c − U instead of c, to first order T (1 + U / c)), so their crests bow seaward round it.
+        /// </summary>
+        public static double SurfTime(in CoastSample c, double hs)
+        {
+            double speed = Math.Sqrt(Gravity * Math.Max(c.Depth, MinDepth));
+            return c.Time * (1 + c.Rip * Math.Min(RipSpeed(hs), 0.8 * speed) / speed);
+        }
+
         /// <summary>
         /// Depth-limited breaking at a place with these trains (deep-water wavenumber, angular speed, amplitude): the factor
-        /// every train's amplitude is cut by (H_s ≤ γ h), and how far the waves are breaking, 0 (not) to 1.
+        /// every train's amplitude is cut by (H_s ≤ γ h, more in a rip's deeper channel), and how far the waves are
+        /// breaking, 0 (not) to 1 (less in a rip: the gap in the breakers that shows one).
         /// </summary>
         public static (double Cap, double Breaking) Breaking(in CoastSample c, int count, double[] kx, double[] kz, double[] omega, double[] amp)
         {
@@ -226,11 +422,12 @@ namespace Sea
             for (int i = 0; i < count; i++)
             {
                 double k = Math.Sqrt(kx[i] * kx[i] + kz[i] * kz[i]), s = SurfShare(k, c), ks = s > 0 ? Shoaling(omega[i], c.Depth) : 1;
-                e += 0.5 * amp[i] * amp[i] * ((1 - s) * (1 - s) + s * s * ks * ks);
+                double a = amp[i] * Lee(c, kx[i], kz[i]);
+                e += 0.5 * a * a * ((1 - s) * (1 - s) + s * s * ks * ks);
             }
-            double hs = 4 * Math.Sqrt(e), limit = Gamma * Math.Max(c.Depth, 0);
+            double hs = 4 * Math.Sqrt(e), limit = Gamma * Math.Max(c.Depth, 0) * (1 + 0.5 * c.Rip);
             double ratio = hs / Math.Max(limit, 1e-4);
-            return (ratio > 1 ? 1 / ratio : 1, SmoothStep(0.6, 1.0, ratio));
+            return (ratio > 1 ? 1 / ratio : 1, SmoothStep(0.6, 1.0, ratio) * (1 - 0.6 * c.Rip));
         }
 
         /// <summary>
@@ -265,7 +462,7 @@ namespace Sea
         /// The longshore current (m/s, world x/z) at depth h in a surf zone, Komar (1979): V = 1.17 sqrt(g H_b) sin α_b cos α_b
         /// at the breaker line, the angle refracted there by Snell's law from deep water (speed g/ω), spread across the
         /// surf zone as sin(π h / h_b), with h_b = H_s / γ. (awayX, awayZ): unit direction away from the shore;
-        /// (towardX, towardZ): unit direction the waves go; hs: offshore significant height; omega: their angular speed.
+        /// (towardX, towardZ): unit direction the waves go; hs: significant height reaching the coast; omega: their angular speed.
         /// </summary>
         public static (double X, double Z) Longshore(double h, double awayX, double awayZ, double hs, double omega, double towardX, double towardZ)
         {
@@ -280,6 +477,29 @@ namespace Sea
             double sinb = Math.Clamp(sin0 * cb / c0, -1, 1), cosb = Math.Sqrt(1 - sinb * sinb);
             double v = 1.17 * Math.Sqrt(Gravity * hs) * sinb * cosb * Math.Sin(Math.PI * h / hb);
             return (v * tx, v * tz);
+        }
+
+        /// <summary>
+        /// A rip's current (m/s, world x/z) at depth h: straight out to sea (awayX, awayZ: unit), from the beach through
+        /// the surf zone (h_b = H_s / γ) and fading out by twice its depth, where the jet spreads.
+        /// </summary>
+        public static (double X, double Z) RipCurrent(double rip, double h, double awayX, double awayZ, double hs)
+        {
+            if (!(rip > 0) || !(hs > 0) || !(h > 0)) return (0, 0);
+            double hb = hs / Gamma, v = rip * RipSpeed(hs) * (1 - SmoothStep(hb, 2 * hb, h)) * SmoothStep(0, 0.4, h);
+            return (v * awayX, v * awayZ);
+        }
+
+        /// <summary>
+        /// Run-up on a beach (Stockdon et al. 2006, the 2 % level, m above the still water): offshore height h0 and peak
+        /// period, on a beach of this slope.
+        /// </summary>
+        public static double RunUp(double h0, double period, double beachSlope)
+        {
+            if (!(h0 > 0) || !(period > 0)) return 0;
+            double l0 = Gravity * period * period / (2 * Math.PI), hl = Math.Sqrt(h0 * l0);
+            double b = Math.Clamp(beachSlope, 0.01, 0.5);
+            return 1.1 * (0.35 * b * hl + 0.5 * Math.Sqrt(h0 * l0 * (0.563 * b * b + 0.004)));
         }
     }
 }

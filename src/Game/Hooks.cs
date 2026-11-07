@@ -71,6 +71,8 @@ namespace Sea
                 harmony.Patch(AccessTools.Method(typeof(EntityBoat), nameof(EntityBoat.GetInfoText)), postfix: new HarmonyMethod(typeof(NativeBoats), nameof(NativeBoats.Info)));
                 harmony.Patch(AccessTools.Method(typeof(EntityBoat), "tryPickup"), prefix: new HarmonyMethod(typeof(NativeBoats), nameof(NativeBoats.Pickup)));
             });
+            Try("boats drift with the surf's currents", () => harmony.Patch(AccessTools.Method(typeof(EntityBoat), "updateBoatAngleAndMotion"),
+                postfix: new HarmonyMethod(typeof(NativeBoats), nameof(NativeBoats.Drift))));
             Try("boat seats ride waves", () => harmony.Patch(AccessTools.PropertyGetter(typeof(EntityRideableSeat), nameof(EntityRideableSeat.SeatPosition)),
                 postfix: new HarmonyMethod(typeof(BoatWaves), nameof(BoatWaves.SeatPosition))));
             Try("sailboat sails by wind", () => harmony.Patch(AccessTools.Method(typeof(EntityBoat), nameof(EntityBoat.SeatsToMotion)),

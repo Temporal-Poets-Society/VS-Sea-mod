@@ -130,12 +130,13 @@ namespace Sea
             e["shelter"] = new Func<double, double, double>(Shelter);
             e["current"] = new Func<double, double, (double X, double Z)>(Current);
             e["surf"] = new Func<double, double, (double Depth, double Breaking, double Foam)>(Surf);
+            e["lee"] = new Func<double, double, double>(Lee);
             return e;
         }
 
         /// <summary>
         /// (0.6.0) The water's own drift at a place now (m/s, +X east, +Z south): the longshore current breaking waves
-        /// drive along a beach (Komar 1979); 0 off the coast. Things afloat there move with it.
+        /// drive along a beach (Komar 1979) and a rip's flow back out to sea; 0 off the coast. Things afloat there move with it.
         /// </summary>
         public (double X, double Z) Current(double x, double z) =>
             AtPlace(x, z, p => sys.CurrentAt(p, x, z), (0.0, 0.0));
@@ -146,6 +147,12 @@ namespace Sea
         /// </summary>
         public (double Depth, double Breaking, double Foam) Surf(double x, double z) =>
             AtPlace(x, z, p => { var s = p.SurfAt(x, z); return (s.Depth, s.Breaking, s.Foam); }, (CoastMath.MaxDepth, 0.0, 0.0));
+
+        /// <summary>
+        /// (0.6.0) The share of the sea's height that gets past the land to a place now (1 on open water; less in the lee
+        /// of an island or a headland, deep water too). surface.height already has it.
+        /// </summary>
+        public double Lee(double x, double z) => AtPlace(x, z, p => sys.LeeAt(p, x, z), 1.0);
 
         // a place sampled at (x, z) now, from the same small cache as Trains
         T AtPlace<T>(double x, double z, Func<WavePlace, T> read, T none)
@@ -349,6 +356,8 @@ namespace Sea
             }
             if (owner == weatherOwner) return;
             string current = sys.WindProviderName;
+            // (the same mod already gives Sea its wind directly, as Earth does through SetWindProvider: nothing to change)
+            if (current == owner) return;
             if (current != null && current != weatherOwner)
             {
                 if (!weatherRefusedLogged) { weatherRefusedLogged = true; log.Notification("[sea] contracts: {0} publishes the weather, but {1} already decides Sea's wind; kept", owner, current); }
