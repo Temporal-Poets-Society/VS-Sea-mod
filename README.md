@@ -29,7 +29,9 @@
 - **Open sea contracts** ([spec](docs/open-sea-contracts.md)): Sea publishes `seacontracts:seastate`, `surface` and
   `hulls` in `api.ObjectCache` with .NET base types only, so other mods (Rough Seas' boats among them) can read the
   waves, pose a boat on them and have water cut from hulls without referencing `Sea.dll`. It follows a published
-  `weather` owner. The typed API stays.
+  `weather` owner. The typed API stays. Every side answers for the asked place itself, and a hull registered by record
+  is cut as finely as one through the typed API. Checked against Ships' contract reader on a dedicated server: the
+  same numbers as the typed API.
 - **Every shader name Sea injects starts with `sea_`** (no clash with Rough Seas' `seaWaves`). Wmap 0.5's far programs
   keep the old names, which Sea still sets.
 

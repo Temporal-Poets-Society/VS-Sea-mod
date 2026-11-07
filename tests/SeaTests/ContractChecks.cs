@@ -45,6 +45,44 @@ namespace SeaTests
             check(SeaContractMath.ToClip(withProfile, out c) && c.Profile?.Length == WaterShader.ProfileStations && Math.Abs(c.Profile[15] - 0.65f) < 1e-6,
                 "hulls: a record with 16 half-widths gives her outline");
 
+            // (7 November) the full detail: calm level and ring, inset, rake and the dry outline by levels, both ways
+            var full = new WaterClipBox
+            {
+                X = 10, Z = -20, WaterY = 110.875, Yaw = 0.3, HalfLength = 2.2f, HalfWidth = 0.7f, CentreOffset = 0.1f,
+                SlopeAlong = 0.02f, SlopeAcross = -0.04f, CalmSlopeAcross = -0.01f, CalmZone = 3, Dry = true, DryInset = 0.15f,
+                DryDepth = 0.5f, DryHeight = 0.6f, DryRake = -0.3f, DryLevel0 = -0.5f, DryLevelStep = 0.4f, Flooded = true, FloodY = 110.5,
+                Profile = new float[WaterShader.ProfileStations], DryProfile = new float[WaterShader.DryStations * WaterShader.DryLevels],
+            };
+            for (int i = 0; i < full.Profile.Length; i++) full.Profile[i] = 0.2f + 0.03f * i;
+            for (int i = 0; i < full.DryProfile.Length; i++) full.DryProfile[i] = 0.1f + 0.004f * i;
+            var fr = SeaContractMath.ToRecord(full);
+            bool backOk = SeaContractMath.ToClip(fr, out var back);
+            check(backOk && fr.Length == SeaContractMath.HullRecordWithDryProfile
+                && back.X == full.X && back.Z == full.Z && back.WaterY == full.WaterY && back.Yaw == full.Yaw && back.HalfLength == full.HalfLength
+                && back.HalfWidth == full.HalfWidth && back.CentreOffset == full.CentreOffset && back.SlopeAlong == full.SlopeAlong
+                && back.SlopeAcross == full.SlopeAcross && back.CalmSlopeAcross == full.CalmSlopeAcross && back.CalmZone == full.CalmZone
+                && back.Dry && back.DryInset == full.DryInset && back.DryDepth == full.DryDepth && back.DryHeight == full.DryHeight
+                && back.DryRake == full.DryRake && back.DryLevel0 == full.DryLevel0 && back.DryLevelStep == full.DryLevelStep
+                && back.Flooded && back.FloodY == full.FloodY && back.HasDryProfile
+                && System.Linq.Enumerable.SequenceEqual(back.Profile, full.Profile) && System.Linq.Enumerable.SequenceEqual(back.DryProfile, full.DryProfile),
+                "hulls: a detailed record carries every field of Sea's clip box (calm level and ring, inset, rake, dry outline by levels)");
+            int cuts = 0, same = 0;
+            for (int i = 0; i < 4000; i++)
+            {
+                double px = 10 + (i % 80 - 40) * 0.07, pz = -20 + (i / 80 - 25) * 0.07, py = 110.875 + ((i * 7) % 11 - 5) * 0.12;
+                bool a = full.InDryHull(px, py, pz), b = back.InDryHull(px, py, pz);
+                if (a) cuts++;
+                if (a == b) same++;
+            }
+            check(cuts > 200 && same == 4000, $"hulls: the detailed record's dry hull cuts exactly as Sea's own box ({cuts} of 4000 points inside)");
+            var noProfiles = (double[])fr.Clone();
+            noProfiles[SeaContractMath.HProfile] = double.NaN; noProfiles[SeaContractMath.HDryProfile] = double.NaN; noProfiles[SeaContractMath.HCalmSlopeAcross] = double.NaN;
+            check(SeaContractMath.ToClip(noProfiles, out var plain) && plain.Profile == null && !plain.HasDryProfile && plain.CalmSlopeAcross == plain.SlopeAcross && plain.DryInset == full.DryInset,
+                "hulls: NaN marks the footprint, the dry outline or the calm level as not given");
+            var badStep = (double[])fr.Clone();
+            badStep[SeaContractMath.HDryLevelStep] = 0;
+            check(!SeaContractMath.ToClip(badStep, out _), "hulls: a dry outline with no step between its levels is left out");
+
             var bad = (double[])r.Clone();
             bad[SeaContractMath.HYaw] = double.NaN;
             check(!SeaContractMath.ToClip(bad, out _), "hulls: a record with a non-finite field is left out");

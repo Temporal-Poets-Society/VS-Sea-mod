@@ -472,6 +472,19 @@ namespace Sea
             lock(probes) return ShelteredHeight(ProbeAt(x,z),x,z);
         }
 
+        /// <summary>
+        /// (0.6.0) The sheltered surface height at (x, z) on a place the caller sampled there: the open contracts' answer,
+        /// the same on the server and every client (the camera's trains only draw the water; R5 of the contracts).
+        /// </summary>
+        internal double HeightOn(WavePlace place,double x,double z)=>ShelteredHeight(place,x,z);
+
+        /// <summary>(0.6.0) <see cref="WaveFactorAt"/> on a place the caller sampled at (x, z), on every side alike.</summary>
+        internal double WaveFactorOn(WavePlace place,double x,double z)
+        {
+            try { var q=place.ParameterAt(x,z); return MeshWaveFactorAt(q.X,q.Z); }
+            catch(Exception) { return 0.2; }
+        }
+
         double ShelteredHeight(WavePlace place,double x,double z)
         {
             var q=place.ParameterAt(x,z);

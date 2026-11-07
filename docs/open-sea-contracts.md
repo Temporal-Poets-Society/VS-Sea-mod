@@ -129,7 +129,7 @@ Field by field against Rough Seas' `SeaState`:
 
 **Near a coast (Sea 0.6.0):** `trains` are the open sea's trains. The drawn surface over shallow water also follows the bottom: the trains hand over to shoreward surf trains that turn parallel to the beach, shoal, are capped at significant height 0.6 × depth and steepen into breakers. Behind land the trains are cut by the lee (`seastate.lee`, with the fetch), and over rip channels the surf is held back and breaks less. Before cliffs and walls part of each train is reflected (Seelig–Ahrens) and stands against the incoming one; the reflected part moves `height` but not the horizontal orbit. Surf crests reach the shore at the open sea's angle along it, bent by the longshore current. `height` and `pose` include all of that, so a boat in the surf rides what is drawn; a ship that integrates `trains` itself sees the open sea's waves there unless it adds the difference (Ships fits a plane to `height` less its trains under its hull).
 
-**Sides:** all members on the server and every client, for any position. Sea today answers `WaveHeightAt` on a client from the camera's trains, not the asked position's (`docs/open-issues.md`); the contract needs per-position answers on the client too (Sea's server already uses per-cell probes).
+**Sides:** all members on the server and every client, for any position. Since 7 November Sea answers `height`, `pose` and `shelter` from the asked position's own waves on clients too, so every side gives the same answer (R5). Sea's shader still draws the open sea from the camera's trains, so far from the camera the drawn water can differ from these answers by how much the sea state changes over that distance, as it already did for Ships' own ships (`docs/open-issues.md`, O1).
 
 **Today:** `SampleWaves(WavePlace, x, z)` fills `WavePlace.Kx, Kz, Omega, Phase, Amp` (`src/Water/WaveField.cs`, up to `MaxWaves` = 24); `WaveTime` is the clock (server elapsed seconds, clients follow it); `WaveHeightAt` is the height. There is no `pose`.
 
@@ -158,9 +158,17 @@ A hull record is a `double[]` with these indices:
 | 9 | `Dry` | 1: cut the water inside the hull too, not just its surface; 0: surface only |
 | 10, 11 | `DryDepth`, `DryHeight` | how far the dry hull reaches below and above the waterline |
 | 12 | `FloodY` | world y of the water flooding her, or NaN for none: below it the sea is not cut |
-| 13–28 (optional) | `Profile` | 16 half-widths from stern to bow; absent means `HalfBeam` all along |
+| 13–28 (optional) | `Profile` | 16 half-widths from stern to bow; absent, or NaN at 13, means `HalfBeam` all along |
+| 29 (optional, with 13–28) | `CalmSlopeAcross` | the rise per m toward starboard of the level the waves beside her settle to (her roll without her lean in the wind); NaN: `SlopeAcross` |
+| 30 | `CalmZone` | m around the footprint over which the waves die down to that level; 0: the owner's default |
+| 31 | `DryInset` | the footprint's margin around the hull: a dry hull's outline is the footprint less this |
+| 32 | `DryRake` | the stern's rake: m along the keel per m up (negative: a transom leaning out aft) |
+| 33, 34 | `DryLevel0`, `DryLevelStep` | the detailed dry outline's lowest level above the waterline and the step between levels |
+| 35–162 (optional) | `DryProfile` | the dry outline in detail: 4 levels of 32 half-widths, the lowest first, stations from stern to bow over the footprint less the inset; NaN at 35: none |
 
-**Today:** `AddWaterClipSource(IWaterClipSource)` with `WaterClipBox` (`src/Water/WaterShader.cs:281`), and `AddDrySpaces(IDrySpaces)`. The typed form stays: it also carries the detailed dry outline, rake and calm zone. The record is the same box without those, for mods that don't compile against Sea. Rough Seas' boats today use vanilla's `hidewatersurface` lid (a mesh drawn into depth just before the water); that keeps working, and registering a record is an optional upgrade for a hull that tilts or floods.
+A hull cut owner publishes `recordLength` (`int`), the longest record it reads; Sea's is 163. A mod hands the detailed record (29 values or more) only to an owner that publishes it; any other owner gets the first 13 or 29, so a dry hull's record there is the footprint already less the inset.
+
+**Today:** `AddWaterClipSource(IWaterClipSource)` with `WaterClipBox` (`src/Water/WaterShader.cs:281`), and `AddDrySpaces(IDrySpaces)`. The typed form stays. Since 7 November the record carries the same detail (dry outline, rake, inset, calm zone): read back through Sea it is the typed box field for field, and it cuts the same. Rough Seas' boats today use vanilla's `hidewatersurface` lid (a mesh drawn into depth just before the water); that keeps working, and registering a record is an optional upgrade for a hull that tilts or floods.
 
 ## 9. Ship motion stays in the ship mods
 
@@ -191,7 +199,7 @@ His metres per block come from the world's `polarEquatorDistance`; on an Earth w
 **Sea**
 1. Publish `seastate`, `surface` and `hulls` in `api.ObjectCache`; read `weather` when present. The typed API stays. *Done in 0.6.0-pre.1.*
 2. Rename injected GLSL identifiers to `sea_…` (R8). *Done in 0.6.0-pre.1; Wmap 0.5's far programs keep their old names, which Sea still sets.*
-3. Per-position `height` and `trains` on the client, not the camera's. *`trains` are per position on both sides; client `height` and `pose` still come from the camera's trains.*
+3. Per-position `height` and `trains` on the client, not the camera's. *Done 7 November: `trains`, `height`, `pose` and `shelter` are per position on every side. The drawn water away from the camera is still the camera's trains (O1).*
 4. Add `pose`. *Done in 0.6.0-pre.1.*
 5. Separately: wave growth from fetch, depth and duration; crest spray particles; less geometric foam. *0.6.0-pre.1 adds waves on beaches (refraction, shoaling, depth-limited breaking, breaker shape, surf whitewater and spray, swash), the lee of land, rip channels and the surf's currents, which move boats. 7 November: reflection off steep shores, crests meeting the shore at an angle and bent by the longshore current, swash per shore point, and fetch behind land within the coast map's 64 blocks. Growth from depth, and fetch at world scale (km), are not done: they need world-scale land and depth both the weather and the sea agree on.*
 
@@ -202,7 +210,7 @@ His metres per block come from the world's `polarEquatorDistance`; on an Earth w
 
 **Ships**
 1. Read the waves through a trains adapter (section 9). *Done on `claude/sea-contracts` (`31d1668`): Sea's typed API when Sea is loaded, the contracts otherwise; the `pose` fallback followed in `aa1c411`, and `0946ceb` moved the Sea-typed code into a bridge loaded only with Sea, so Ships loads without `Sea.dll`.*
-2. Keep registering hulls through Sea's typed API (it has the detailed outline).
+2. Keep registering hulls through Sea's typed API. *Without Sea, Ships hands the detailed record to an owner that publishes `recordLength`, the plain one to any other.*
 3. Read wind and sea state through the contracts, so a Ships build can run where another mod owns them.
 
 ## 13. Open questions
@@ -217,6 +225,6 @@ His metres per block come from the world's `polarEquatorDistance`; on an Earth w
 ## 14. How we would know it works
 
 1. Earth + Sea + Ships behave exactly as before (regression).
-2. A test boat that uses only the `ObjectCache` contracts rides Sea's waves and gets its water cut, without referencing `Sea.dll`.
+2. A test boat that uses only the `ObjectCache` contracts rides Sea's waves and gets its water cut, without referencing `Sea.dll`. *7 November, Ships' server self-test `sea-contracts` (`tools/run-sea-contracts.ps1`): with the real Sea on a dedicated server, at 507 places (421 on open sea), Ships' contract reader gets exactly what Sea's typed API gives (trains, height, shelter, pose, current, sea state: no difference at all), and a dry place registered through `hulls` is dry in Sea's own answer. Offline (HansaTests `sea-bridge`), a detailed hull record read through Sea's `ToClip` is Ships' clip field for field and cuts the same. Clients, the drawn cut and multiplayer are not checked.*
 3. Earth + Rough Seas: his waves build behind Earth's storms, and only Earth writes vanilla weather.
 4. Dedicated server and two clients: the same `trains`, `height` and `pose` at the same place and time on all three.

@@ -195,8 +195,11 @@ namespace Sea
             return (s.Height, s.Period, s.DirX, s.DirZ, w.X * Mps, w.Z * Mps, storm);
         }
 
-        /// <summary>The share of the open sea's waves that reaches here, 0–1 (0 on inland water).</summary>
-        public double Shelter(double x, double z) => sys.Spectrum == null ? 0 : Math.Clamp(sys.WaveFactorAt(x, z), 0, 1);
+        /// <summary>
+        /// The share of the open sea's waves that reaches here, 0–1 (0 on inland water). Worked out at the place itself
+        /// on every side, so the server and every client agree (R5).
+        /// </summary>
+        public double Shelter(double x, double z) => sys.Spectrum == null ? 0 : Math.Clamp(AtPlace(x, z, p => sys.WaveFactorOn(p, x, z), 0.0), 0, 1);
 
         // ------------------------------------------------------------------ surface (section 7)
 
@@ -260,10 +263,12 @@ namespace Sea
         }
 
         /// <summary>
-        /// The drawn surface's height above still water now (m), shelter and crest movement included. On a client it is
-        /// what the water shader draws there; on the server the place's own waves.
+        /// The surface's height above still water now (m), shelter, crest movement and the coast's surf included, from the
+        /// place's own waves on every side, so the server and every client give the same answer (R5). The shader draws
+        /// the open sea from the camera's trains: away from the camera the drawn water can differ from this by how much the
+        /// sea state changes over that distance (Sea's open issue O1), as it does for Ships' own ships.
         /// </summary>
-        public double Height(double x, double z) => sys.Spectrum == null ? 0 : sys.WaveHeightAt(x, z);
+        public double Height(double x, double z) => sys.Spectrum == null ? 0 : AtPlace(x, z, p => sys.HeightOn(p, x, z), 0.0);
 
         /// <summary>
         /// How a hull of `length` by `beam` m centred at (x, z) lies on the water now, with Rough Seas' meaning of
@@ -290,6 +295,8 @@ namespace Sea
             e["registerDry"] = new Action<string, Func<double, double, double, bool>>(RegisterDry);
             e["unregisterDry"] = new Action<string>(UnregisterDry);
             e["isDry"] = new Func<double, double, double, bool>((x, y, z) => sys.IsDry(x, y, z));
+            // (7 November) the longest record Sea reads: a mod that sees it may hand the detailed record (section 8)
+            e["recordLength"] = SeaContractMath.HullRecordWithDryProfile;
             return e;
         }
 
