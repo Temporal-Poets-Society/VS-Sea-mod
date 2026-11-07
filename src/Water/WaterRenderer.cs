@@ -80,7 +80,7 @@ namespace Sea
             foreach (var pass in Passes)
             {
                 var prog = capi.Shader.GetProgram((int)pass);
-                if (prog == null || prog.Disposed || !prog.HasUniform("seaClipCount")) continue;
+                if (prog == null || prog.Disposed || !WaterShader.Has(prog, "sea_ClipCount")) continue;
                 if (uploadFailed && (IsSwitchedOff(prog) || switchedOff.Count >= 8)) continue;
                 try
                 {
@@ -255,7 +255,7 @@ namespace Sea
             {
                 // (playtest merge) after an error the far waves are set to nothing too, as the water's are: their last
                 // numbers would otherwise freeze in Wmap's far sea
-                if (r.uploadFailed) { if (prog.HasUniform("seaWaveCount")) r.SwitchOffOnce(prog); return; }
+                if (r.uploadFailed) { if (WaterShader.Has(prog, "sea_WaveCount")) r.SwitchOffOnce(prog); return; }
                 try { r.UploadFarWaves(prog); }
                 catch (Exception e)
                 {
@@ -268,7 +268,7 @@ namespace Sea
             if (r.uploadFailed) { r.SwitchOffOnce(prog); return; }
             try
             {
-                if (!prog.HasUniform("seaClipCount")) return;
+                if (!WaterShader.Has(prog, "sea_ClipCount")) return;
                 int slot = -1, free = -1;
                 for (int i = 0; i < r.uploadedTo.Length; i++)
                 {
@@ -291,14 +291,14 @@ namespace Sea
         /// (with vanilla's waves the near water has no Sea waves to continue). A program without the uniforms is left alone.</summary>
         void UploadFarWaves(IShaderProgram prog)
         {
-            if (!prog.HasUniform("seaWaveCount")) return;
+            if (!WaterShader.Has(prog, "sea_WaveCount")) return;
             int wn = Injected && WavesInjected ? waveCount : 0;
-            prog.Uniform("seaWaveCount", wn);
-            if (wn > 0) prog.Uniforms4("seaWave", wn, WaveUniform);
-            if (prog.HasUniform("seaWaveShape")) prog.Uniform("seaWaveShape", waveShape);
+            prog.Uniform(WaterShader.N(prog, "sea_WaveCount"), wn);
+            if (wn > 0) prog.Uniforms4(WaterShader.N(prog, "sea_Wave"), wn, WaveUniform);
+            if (WaterShader.Has(prog, "sea_WaveShape")) prog.Uniform(WaterShader.N(prog, "sea_WaveShape"), waveShape);
             // (0.4.7) the near water's divisor, so the far slopes match it (Wmap took the still-water 5, a fifth of the
             // open sea's)
-            if (prog.HasUniform("seaWaveFactor")) prog.Uniform("seaWaveFactor", waveFactor);
+            if (WaterShader.Has(prog, "sea_WaveFactor")) prog.Uniform(WaterShader.N(prog, "sea_WaveFactor"), waveFactor);
         }
 
         /// <summary>This frame's numbers into a program that's in use.</summary>
@@ -306,31 +306,31 @@ namespace Sea
         {
             const int P = WaterShader.ProfileStations, DP = WaterShader.DryStations * WaterShader.DryLevels;
             int n = clipCount, shapes = shapeCount, wn = waveCount;
-            prog.Uniform("seaClipCount", n);
+            prog.Uniform(WaterShader.N(prog, "sea_ClipCount"), n);
             if (n > 0)
             {
-                prog.Uniforms4("seaClipA", n, clipA);
-                prog.Uniforms4("seaClipB", n, clipB);
-                prog.Uniforms4("seaClipC", n, clipC);
-                prog.Uniforms4("seaClipD", n, clipD);
-                prog.Uniforms4("seaClipP", n * P / 4, clipP);
+                prog.Uniforms4(WaterShader.N(prog, "sea_ClipA"), n, clipA);
+                prog.Uniforms4(WaterShader.N(prog, "sea_ClipB"), n, clipB);
+                prog.Uniforms4(WaterShader.N(prog, "sea_ClipC"), n, clipC);
+                prog.Uniforms4(WaterShader.N(prog, "sea_ClipD"), n, clipD);
+                prog.Uniforms4(WaterShader.N(prog, "sea_ClipP"), n * P / 4, clipP);
                 // only the fragment stage has the dry outlines
-                if (shapes > 0 && prog.HasUniform("seaDryE"))
+                if (shapes > 0 && WaterShader.Has(prog, "sea_DryE"))
                 {
-                    prog.Uniforms4("seaDryE", shapes, dryE);
-                    prog.Uniforms4("seaDryP", shapes * DP / 4, dryP);
+                    prog.Uniforms4(WaterShader.N(prog, "sea_DryE"), shapes, dryE);
+                    prog.Uniforms4(WaterShader.N(prog, "sea_DryP"), shapes * DP / 4, dryP);
                 }
             }
-            if (prog.HasUniform("seaWaveCount"))
+            if (WaterShader.Has(prog, "sea_WaveCount"))
             {
-                prog.Uniform("seaWaveCount", wn);
-                if (wn > 0) prog.Uniforms4("seaWave", wn, WaveUniform);
-                if (prog.HasUniform("seaWaveShape")) prog.Uniform("seaWaveShape", waveShape);
+                prog.Uniform(WaterShader.N(prog, "sea_WaveCount"), wn);
+                if (wn > 0) prog.Uniforms4(WaterShader.N(prog, "sea_Wave"), wn, WaveUniform);
+                if (WaterShader.Has(prog, "sea_WaveShape")) prog.Uniform(WaterShader.N(prog, "sea_WaveShape"), waveShape);
             }
-            if (prog.HasUniform("seaPixel")) prog.Uniform("seaPixel", pixel);
-            if (prog.HasUniform("seaStorm")) prog.Uniform("seaStorm", stormX, stormZ,
+            if (WaterShader.Has(prog, "sea_Pixel")) prog.Uniform(WaterShader.N(prog, "sea_Pixel"), pixel);
+            if (WaterShader.Has(prog, "sea_Storm")) prog.Uniform(WaterShader.N(prog, "sea_Storm"), stormX, stormZ,
                 sys.FoamView == FoamView.Off ? 0 : foamCoverage, 0f);
-            if (prog.HasUniform("seaFoamOrigin")) prog.Uniform("seaFoamOrigin", foamAlong, foamAcross, 0f);
+            if (WaterShader.Has(prog, "sea_FoamOrigin")) prog.Uniform(WaterShader.N(prog, "sea_FoamOrigin"), foamAlong, foamAcross, 0f);
         }
 
         /// <summary>An error here would end the game (it's inside its drawing): Sea's water numbers stop instead, logged once.</summary>
@@ -355,10 +355,13 @@ namespace Sea
             {
                 int id = prog.ProgramId;
                 if (id == 0) return;
-                int clips = GL.GetUniformLocation(id, "seaClipCount"), waves = GL.GetUniformLocation(id, "seaWaveCount");
+                int clips = GL.GetUniformLocation(id, "sea_ClipCount"), waves = GL.GetUniformLocation(id, "sea_WaveCount");
                 if (clips >= 0) GL.Uniform1(clips, 0);
                 if (waves >= 0) GL.Uniform1(waves, 0);
-                int storm = GL.GetUniformLocation(id, "seaStorm");
+                // (0.6.0) a Wmap 0.5 far program declares the wave count under its name before 0.6.0
+                int legacyWaves = GL.GetUniformLocation(id, WaterShader.Legacy("sea_WaveCount"));
+                if (legacyWaves >= 0) GL.Uniform1(legacyWaves, 0);
+                int storm = GL.GetUniformLocation(id, "sea_Storm");
                 if (storm >= 0) GL.Uniform4(storm, 0f, 0f, 0f, 0f);
                 // (only once both went in: otherwise it's tried again at the next use)
                 switchedOff.Add(prog);
@@ -397,21 +400,21 @@ namespace Sea
                 try
                 {
                     if (prog == null || prog.Disposed || prog.ProgramId == 0) continue;
-                    bool water = prog.HasUniform("seaClipCount"), waves = prog.HasUniform("seaWaveCount"),
-                        sky = prog.HasUniform("seaEffects"), floor = prog.HasUniform("seaNightFloor");
+                    bool water = WaterShader.Has(prog, "sea_ClipCount"), waves = WaterShader.Has(prog, "sea_WaveCount"),
+                        sky = WaterShader.Has(prog, "sea_Effects"), floor = WaterShader.Has(prog, "sea_NightFloor");
                     if (!water && !waves && !sky && !floor) continue;
                     int id = prog.ProgramId;
                     GL.GetInteger(GetPName.CurrentProgram, out int previous);
                     GL.UseProgram(id);
                     try
                     {
-                        if (water) GL.Uniform1(GL.GetUniformLocation(id, "seaClipCount"), 0);
-                        if (waves) GL.Uniform1(GL.GetUniformLocation(id, "seaWaveCount"), 0);
-                        if (prog.HasUniform("seaStorm")) GL.Uniform4(GL.GetUniformLocation(id, "seaStorm"), 0f, 0f, 0f, 0f);
-                        if (sky) GL.Uniform2(GL.GetUniformLocation(id, "seaEffects"), 0f, 0f);
-                        if (floor) GL.Uniform3(GL.GetUniformLocation(id, "seaNightFloor"), 0f, 0f, 0f);
-                        if (prog.HasUniform("seaNightEnabled")) GL.Uniform1(GL.GetUniformLocation(id, "seaNightEnabled"), 0f);
-                        if (prog.HasUniform("seaSkyReflect")) GL.Uniform1(GL.GetUniformLocation(id, "seaSkyReflect"), 0f);
+                        if (water) GL.Uniform1(GL.GetUniformLocation(id, "sea_ClipCount"), 0);
+                        if (waves) GL.Uniform1(GL.GetUniformLocation(id, "sea_WaveCount"), 0);
+                        if (WaterShader.Has(prog, "sea_Storm")) GL.Uniform4(GL.GetUniformLocation(id, "sea_Storm"), 0f, 0f, 0f, 0f);
+                        if (sky) GL.Uniform2(GL.GetUniformLocation(id, "sea_Effects"), 0f, 0f);
+                        if (floor) GL.Uniform3(GL.GetUniformLocation(id, "sea_NightFloor"), 0f, 0f, 0f);
+                        if (WaterShader.Has(prog, "sea_NightEnabled")) GL.Uniform1(GL.GetUniformLocation(id, "sea_NightEnabled"), 0f);
+                        if (WaterShader.Has(prog, "sea_SkyReflect")) GL.Uniform1(GL.GetUniformLocation(id, "sea_SkyReflect"), 0f);
                     }
                     finally { GL.UseProgram(previous); }
                 }

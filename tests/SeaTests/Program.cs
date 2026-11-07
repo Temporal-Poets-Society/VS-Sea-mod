@@ -253,25 +253,25 @@ namespace SeaTests
                 Check(cv != null && cf != null && CelestialShader.Vertex(cv) == null && CelestialShader.Fragment(cf) == null, "celestial anchors apply once to installed water shader");
                 // (0.4.7-pre.5) the near water fades each train by Wmap's far-sea rule, keeping the faded slope as glint roughness;
                 // its sky reflection has the game's flat fog and the eye's height, and AstraTerra's sunset glow
-                Check(cv.Contains("1.0-smoothstep(0.25,0.75,k*footprint)") && cv.Contains("rough +=") && cf.Contains("in float seaSurfaceRough;")
-                    && cf.Contains("1.0 - 1.0 / exp((skyPos.y - fogFrom - bias) * flatFogDensity)") && cf.Contains("0.25 * seaAboveSea")
-                    && cf.Contains("seaSunsetShape(d, seaSun.xyz)") && cf.Contains("glint *= width / spread;"),
+                Check(cv.Contains("1.0-smoothstep(0.25,0.75,k*footprint)") && cv.Contains("rough +=") && cf.Contains("in float sea_SurfaceRough;")
+                    && cf.Contains("1.0 - 1.0 / exp((skyPos.y - fogFrom - bias) * flatFogDensity)") && cf.Contains("0.25 * sea_AboveSea")
+                    && cf.Contains("sea_SunsetShape(d, sea_Sun.xyz)") && cf.Contains("glint *= width / spread;"),
                     "near water: trains fade by the far sea's footprint rule; the sky reflection has flat fog, the eye's height and the sunset glow");
                 Check(cf.Contains("smoothstep(viewDistance * 0.76, viewDistance * 0.80, length(fWorldPos.xz))") && !cf.Contains("viewDistance * 0.50"),
                     "near glints last until the game's water has faded (0.76-0.8 of the view distance), where Wmap's far sea takes the glitter on (issue 14)");
-                Check(cf.Contains("if (seaEffects.x <= 0.0)") && cf.Contains("cameraUnderwater < 0.01") && cf.Contains("skyExposed > 0") && cf.Contains("c.a = max(c.a, max(sun, moon))") && cf.Contains("texColor = seaGlints(")
-                    && cf.Contains("texColor = seaSkyReflect(texColor, ray, fres, rgbaFog.rgb);") && !cf.Replace("flatFogStart", "").Contains("Star") && !cf.Contains("texColor.a += added"),
+                Check(cf.Contains("if (sea_Effects.x <= 0.0)") && cf.Contains("cameraUnderwater < 0.01") && cf.Contains("skyExposed > 0") && cf.Contains("c.a = max(c.a, max(sun, moon))") && cf.Contains("texColor = sea_Glints(")
+                    && cf.Contains("texColor = sea_SkyReflect(texColor, ray, fres, rgbaFog.rgb);") && !cf.Replace("flatFogStart", "").Contains("Star") && !cf.Contains("texColor.a += added"),
                     "vanilla highlight retained behind disable; water-only sky gates; glints and the Fresnel sky reflection raise alpha (premultiplied OIT); no star reflections");
                 const string haze = "    haze = min(haze, clamp(dayLight, 0.0, 1.0));\n    color.rgb = mix(color.rgb, sky.rgb, haze);\n}";
                 string sunLit = "void main()\n{\n    vec4 color = vec4(albedo * max(vec3(0.05), sun) * (0.55 + 0.45 * light), 1.0);\n" + haze;
                 string ambientLit = "void main()\n{\n    vec4 color = vec4(albedo * clamp(wmapAmbient, 0.0, 1.0) * nb, 1.0);\n" + haze;
                 string fs = CelestialShader.FarFragment(sunLit), fa = CelestialShader.FarFragment(ambientLit);
-                Check(fs != null && fs.Contains("albedo * max(max(vec3(0.05), sun), seaNightFloor)") && CelestialShader.FarFragment(fs) == null
-                    && fa != null && fa.Contains("albedo * max(clamp(wmapAmbient, 0.0, 1.0), seaNightFloor) * nb") && CelestialShader.FarFragment(fa) == null,
+                Check(fs != null && fs.Contains("albedo * max(max(vec3(0.05), sun), sea_NightFloor)") && CelestialShader.FarFragment(fs) == null
+                    && fa != null && fa.Contains("albedo * max(clamp(wmapAmbient, 0.0, 1.0), sea_NightFloor) * nb") && CelestialShader.FarFragment(fa) == null,
                     "Wmap night floor applies once to sun-lit (0.4.1/0.4.2) and ambient-lit (0.4.3) far terrain");
                 string waterLit = "in vec3 wmapPos;\nvoid main()\n{\n    bool water = true;\n    vec4 color = vec4(albedo * clamp(wmapAmbient, 0.0, 1.0) * nb, 1.0);\n" + haze;
                 string fw = CelestialShader.FarFragment(waterLit);
-                Check(fw != null && fw.Contains(CelestialShader.FarSkyReflection) && fw.Contains("uniform float seaSkyReflect")
+                Check(fw != null && fw.Contains(CelestialShader.FarSkyReflection) && fw.Contains("uniform float sea_SkyReflect")
                     && !fa.Contains(CelestialShader.FarSkyReflection) && CelestialShader.FarFragment(fw) == null,
                     "Wmap's distant sea gets the same Fresnel sky reflection after its sky blend; a shader without its water flag gets the floor only");
                 Check(CelestialShader.FarFragment(ambientLit.Replace("albedo * clamp", "albedo2 * clamp")) == null && CelestialShader.FarFragment(sunLit.Replace("void main()", "void main(void)")) == null
@@ -288,10 +288,10 @@ namespace SeaTests
                 string code = File.ReadAllText(file);
                 string injected = WaterShader.Inject(code, out bool waves);
                 int main = injected?.IndexOf("void main(") ?? -1;
-                int warp = injected?.IndexOf("worldPos = seaWaves(", main) ?? -1;
-                int clip = injected?.IndexOf("worldPos = seaWater(worldPos, xyz + origin);") ?? -1;
+                int warp = injected?.IndexOf("worldPos = sea_Waves(", main) ?? -1;
+                int clip = injected?.IndexOf("worldPos = sea_Water(worldPos, xyz + origin);") ?? -1;
                 bool ok = injected != null && waves
-                    && injected.IndexOf("uniform vec4 seaWave[24];") < main && injected.IndexOf("vec4 seaWaves(") < main
+                    && injected.IndexOf("uniform vec4 sea_Wave[24];") < main && injected.IndexOf("vec4 sea_Waves(") < main
                     && warp > main && clip > warp
                     && clip < injected.IndexOf("vec4 cameraPos = modelViewMatrix * worldPos;")
                     && injected.IndexOf("applyLiquidWarping((waterFlagsIn & LiquidIsLavaBitMask) == 0, worldPos, div)") < 0
@@ -300,10 +300,10 @@ namespace SeaTests
 
                 // dry hulls: the vertex stage hands each water vertex's position (as drawn) to the fragment stage, which
                 // discards the pixels inside a dry hull's outline before anything else
-                int fragPos = injected?.IndexOf("seaFragPos = worldPos.xyz;") ?? -1;
-                bool vok = injected != null && injected.IndexOf("out vec3 seaFragPos;") >= 0 && injected.IndexOf("out vec3 seaFragPos;") < main
+                int fragPos = injected?.IndexOf("sea_FragPos = worldPos.xyz;") ?? -1;
+                bool vok = injected != null && injected.IndexOf("out vec3 sea_FragPos;") >= 0 && injected.IndexOf("out vec3 sea_FragPos;") < main
                     && fragPos > clip && fragPos < injected.IndexOf("vec4 cameraPos = modelViewMatrix * worldPos;")
-                    && injected.IndexOf("if (seaClipD[h].w > 0.5) continue;") > 0;
+                    && injected.IndexOf("if (sea_ClipD[h].w > 0.5) continue;") > 0;
                 string ffile = Path.Combine(shaders, pass + ".fsh");
                 if (!File.Exists(ffile)) { Console.WriteLine($"  skip  {pass}.fsh not found"); continue; }
                 string fcode = File.ReadAllText(ffile);
@@ -311,9 +311,9 @@ namespace SeaTests
                 int fmain = finjected?.IndexOf("void main(") ?? -1;
                 int body = fmain < 0 ? -1 : finjected.IndexOf('{', fmain);
                 string first = body < 0 ? "" : finjected.Substring(body + 1).TrimStart();
-                bool fok = finjected != null && finjected.IndexOf("in vec3 seaFragPos;") < fmain && finjected.IndexOf("bool seaDry(vec3 p)") < fmain
-                    && finjected.IndexOf("uniform vec4 seaClipD[8];") < fmain
-                    && first.StartsWith("if (seaDry(seaFragPos)) discard;")
+                bool fok = finjected != null && finjected.IndexOf("in vec3 sea_FragPos;") < fmain && finjected.IndexOf("bool sea_Dry(vec3 p)") < fmain
+                    && finjected.IndexOf("uniform vec4 sea_ClipD[8];") < fmain
+                    && first.StartsWith("if (sea_Dry(sea_FragPos)) discard;")
                     && finjected.StartsWith(fcode.Substring(0, fcode.IndexOf('\n')))   // #version stays first
                     && WaterShader.InjectFragment(finjected) == null;
                 Check(vok && fok, $"{pass}: dry hulls are cut out per pixel ({pass}.vsh passes the position, {pass}.fsh discards first thing), once");
@@ -382,7 +382,7 @@ namespace SeaTests
                       floodedRolled.InDryHull(1000, 99.25, 2001.5) && floodedRolled.InDryHull(1000, 99.25, 1998.5),
                     "the flood's level is level in the world however she leans (the same height both sides of her when she's rolled)");
                 Check(clip.FloodUniform == WaterClipBox.NoFlood && Math.Abs(flooded.FloodUniform - (-0.8f)) < 1e-5,
-                    "the shader gets the flood's height over her waterline (seaClipB.y), and far below it when she's dry");
+                    "the shader gets the flood's height over her waterline (sea_ClipB.y), and far below it when she's dry");
 
                 // (0.3.6) her own frame exactly: points of her outline tilted the way a ship mod draws her (roll about the
                 // keel, then pitch, then her heading: here +X) are inside however far she leans, and just beyond it aren't
@@ -406,7 +406,7 @@ namespace SeaTests
                 // the fragment stage leaves the sea under a flooded hull's water alone before anything else
                 string fcode = File.Exists(Path.Combine(shaders, "chunkliquid.fsh")) ? WaterShader.InjectFragment(File.ReadAllText(Path.Combine(shaders, "chunkliquid.fsh"))) : null;
                 int dyAt = fcode?.IndexOf("float dy = p.y - b.z;") ?? -1, floodAt = fcode?.IndexOf("if (dy < b.y) continue;") ?? -1, hlAt = fcode?.IndexOf("float hl = ") ?? -1;
-                Check(fcode != null && dyAt > 0 && floodAt > dyAt && hlAt > floodAt, "the dry cut skips what's under a flooded hull's water (seaClipB.y) first");
+                Check(fcode != null && dyAt > 0 && floodAt > dyAt && hlAt > floodAt, "the dry cut skips what's under a flooded hull's water (sea_ClipB.y) first");
             }
 
             DryWaterParticles();
@@ -1039,9 +1039,9 @@ namespace SeaTests
             Change(new WindOverride { FromDegrees = 0, Strength = 0.6, StartHours = 1200 - 24 }, 120000, 1199.97);
             var before = m.SeaWind(x, z, 1199.99, true, 119999);   // (no provider: the config's steady wind, 0.1 from the west)
             var after = m.SeaWind(x, z, 1200, true, 120000);
-            double seaBefore = Sea(119999).Height, built = Sea(120000).Height;
-            Check(current.ActiveSample == 120000 && Math.Abs(before.X - 0.1) < 1e-6 && Math.Abs(after.Z - 0.6) < 1e-9 && seaBefore < 0.5 && Math.Abs(built - m.DevelopedHeight(0.6)) < 1e-9,
-                $"a 'built' setwind counts only from its sample, then its sea is up at once ({seaBefore:0.00} → {built:0.00})");
+            double sea_Before = Sea(119999).Height, built = Sea(120000).Height;
+            Check(current.ActiveSample == 120000 && Math.Abs(before.X - 0.1) < 1e-6 && Math.Abs(after.Z - 0.6) < 1e-9 && sea_Before < 0.5 && Math.Abs(built - m.DevelopedHeight(0.6)) < 1e-9,
+                $"a 'built' setwind counts only from its sample, then its sea is up at once ({sea_Before:0.00} → {built:0.00})");
 
             // two setwinds before the first takes over (Codex): until the first one's sample the one before both stands
             var m2 = new WindModel(Planet(), new SeaConfig { SeaWindStrength = 0.1f });

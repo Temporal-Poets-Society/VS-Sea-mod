@@ -238,7 +238,7 @@ namespace Sea
                 DryHullsInjected = false;
                 return;
             }
-            // dry hulls: the fragment stage cuts the water out inside them (the vertex stage now passes seaFragPos)
+            // dry hulls: the fragment stage cuts the water out inside them (the vertex stage now passes sea_FragPos)
             string frag = p.FragmentShader?.Code == null ? null : WaterShader.InjectFragment(p.FragmentShader.Code);
             if (frag != null)
             {
@@ -266,7 +266,7 @@ namespace Sea
         static void CompilePostfix(object __instance, bool __result)
         {
             if (__result || !(__instance is IShaderProgram p)) return;
-            if (!CelestialFarDisabled && p.PassName == "farterrain" && p.AssetDomain == "wmap" && p.FragmentShader?.Code?.Contains("seaNightFloor") == true)
+            if (!CelestialFarDisabled && p.PassName == "farterrain" && p.AssetDomain == "wmap" && p.FragmentShader?.Code is string farCode && (farCode.Contains("sea_NightFloor") || farCode.Contains("seaNightFloor")))
             {
                 CelestialFarDisabled = true;
                 log?.Warning("[sea] Wmap night floor shader failed; reloading Wmap without Sea's optional brightness adjustment.");

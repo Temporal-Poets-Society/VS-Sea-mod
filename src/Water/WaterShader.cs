@@ -31,48 +31,65 @@ namespace Sea
         /// <summary>Waves calm down over this many blocks outside a hull's footprint, unless the source says otherwise.</summary>
         public const float CalmZone = 4;
         public static readonly string[] Passes = { "chunkliquid", "chunkliquiddepth" };
-        public const string Marker = "seaWater";
+        public const string Marker = "sea_Water";
 
-        // seaWave[i] = (kx, kz, phase at the camera, amplitude)
-        // seaClipA = (origin x, origin z, cos yaw, sin yaw) relative to the camera; seaClipB = (half length, the height of
+        /// <summary>(0.6.0) The fragment stage's detailed dry-outline uniform: a program that has it takes the detailed cut.</summary>
+        public const string DryOutlineUniform = "sea_DryE";
+
+        /// <summary>
+        /// (0.6.0) Every name Sea puts into a shader starts with <c>sea_</c>, so no other mod's code collides with it
+        /// (Rough Seas declares its own <c>seaWaves</c>, <c>seaFoamCrest</c>; open contracts R8). Programs that declare
+        /// Sea's uniforms themselves under the names before 0.6.0 (Wmap 0.5's far sea: <c>seaWave</c>,
+        /// <c>seaNightFloor</c>…) still get them: <see cref="N"/> gives the name the program has.
+        /// </summary>
+        public static string Legacy(string name) => name.StartsWith("sea_", StringComparison.Ordinal) ? "sea" + name.Substring(4) : name;
+
+        /// <summary>(0.6.0) Does the program declare this Sea uniform, under its name or its name before 0.6.0?</summary>
+        public static bool Has(Vintagestory.API.Client.IShaderProgram p, string name) => p.HasUniform(name) || p.HasUniform(Legacy(name));
+
+        /// <summary>(0.6.0) The name the program declares this Sea uniform under (its own name when neither is declared).</summary>
+        public static string N(Vintagestory.API.Client.IShaderProgram p, string name) => p.HasUniform(name) || !p.HasUniform(Legacy(name)) ? name : Legacy(name);
+
+        // sea_Wave[i] = (kx, kz, phase at the camera, amplitude)
+        // sea_ClipA = (origin x, origin z, cos yaw, sin yaw) relative to the camera; sea_ClipB = (half length, the height of
         // the water flooding a dry hull over the water y (the vertex stage doesn't use it), water y at the origin, centre
         // offset along the keel)
-        // seaClipC = (waterline rise per block toward the bow, … toward starboard, calm zone, calm level's rise per block toward starboard)
-        // seaClipD = (dry outline's inset from the footprint, dry depth below the waterline, dry height above it, 1 if dry)
-        // seaClipP: 16 half-widths per hull from stern to bow (4 vec4 each)
+        // sea_ClipC = (waterline rise per block toward the bow, … toward starboard, calm zone, calm level's rise per block toward starboard)
+        // sea_ClipD = (dry outline's inset from the footprint, dry depth below the waterline, dry height above it, 1 if dry)
+        // sea_ClipP: 16 half-widths per hull from stern to bow (4 vec4 each)
         // Shared verbatim with the offline GPU geometry checks. HeightAt inverts this map on the CPU.
         public const string Geometry = @"
-uniform int seaWaveCount = 0;
-uniform vec4 seaWave[24];
-uniform float seaWaveShape = 0.0;
-float seaShapeWeight(float k) { return 0.15+0.85/(1.0+k*k/0.09); }
+uniform int sea_WaveCount = 0;
+uniform vec4 sea_Wave[24];
+uniform float sea_WaveShape = 0.0;
+float sea_ShapeWeight(float k) { return 0.15+0.85/(1.0+k*k/0.09); }
 // (0.5.3) How much of the sea's swell reaches water with this wave divisor: none on inland water (oceanity 0: rivers, lakes,
 // rapids), all from oceanity 0.25 (the coast's bays and estuaries in between). Vanilla's divisor is 5 * max(0.2, 1 - oceanity).
-float seaOpenWater(float div) { return smoothstep(0.0, 0.25, 1.0 - div / 5.0); }
-vec3 seaSurface(vec2 q, float factor) {
+float sea_OpenWater(float div) { return smoothstep(0.0, 0.25, 1.0 - div / 5.0); }
+vec3 sea_Surface(vec2 q, float factor) {
     vec3 p = vec3(q.x,0.0,q.y);
-    for (int i=0; i<seaWaveCount; i++) {
-        vec4 w=seaWave[i];
+    for (int i=0; i<sea_WaveCount; i++) {
+        vec4 w=sea_Wave[i];
         float k=length(w.xy), phase=dot(w.xy,q)+w.z;
         p.y += w.w*sin(phase)*factor;
-        if (k>0.0000001) p.xz += seaWaveShape*seaShapeWeight(k)*w.w*w.xy/k*cos(phase);
+        if (k>0.0000001) p.xz += sea_WaveShape*sea_ShapeWeight(k)*w.w*w.xy/k*cos(phase);
     }
     return p;
 }
 // Parametric derivatives: Eulerian height gradient = transpose(inverse(J)) * dY/dq.
 // Compression is 1 - the smallest horizontal eigenvalue: zero/negative in broad troughs.
-void seaDifferential(vec2 q, float factor, float footprint, out vec2 slope, out float rough,
+void sea_Differential(vec2 q, float factor, float footprint, out vec2 slope, out float rough,
     out vec3 crest) {
     mat2 jac=mat2(1.0); vec2 gradient=vec2(0.0);
     float height=0.0, variance=0.0, fall=0.0, fallVariance=0.0;
     rough=0.0;
-    for(int i=0;i<seaWaveCount;i++) {
-        vec4 w=seaWave[i]; float k=length(w.xy);
+    for(int i=0;i<sea_WaveCount;i++) {
+        vec4 w=sea_Wave[i]; float k=length(w.xy);
         if(k<0.0000001) continue;
         float phase=dot(w.xy,q)+w.z, sn=sin(phase), cs=cos(phase);
         float keep=1.0-smoothstep(0.25,0.75,k*footprint);
         vec2 direction=w.xy/k;
-        jac -= seaWaveShape*seaShapeWeight(k)*w.w*k*sn*keep*outerProduct(direction,direction);
+        jac -= sea_WaveShape*sea_ShapeWeight(k)*w.w*k*sn*keep*outerProduct(direction,direction);
         gradient += keep*w.w*w.xy*cs*factor;
         rough += (1.0-keep*keep)*0.5*pow(w.w*k*factor,2.0);
         float longWave=1.0-smoothstep(0.3,0.6,k);
@@ -89,19 +106,19 @@ void seaDifferential(vec2 q, float factor, float footprint, out vec2 slope, out 
 ";
 
         const string Declarations = Geometry + @"
-uniform int seaClipCount = 0;
-uniform vec4 seaClipA[8];
-uniform vec4 seaClipB[8];
-uniform vec4 seaClipC[8];
-uniform vec4 seaClipD[8];
-uniform vec4 seaClipP[32];
-out vec3 seaFragPos;
-float seaWaveCalm = 1.0; // also suppress wind foam where a non-dry hull calms the drawn surface
+uniform int sea_ClipCount = 0;
+uniform vec4 sea_ClipA[8];
+uniform vec4 sea_ClipB[8];
+uniform vec4 sea_ClipC[8];
+uniform vec4 sea_ClipD[8];
+uniform vec4 sea_ClipP[32];
+out vec3 sea_FragPos;
+float sea_WaveCalm = 1.0; // also suppress wind foam where a non-dry hull calms the drawn surface
 
-vec4 seaWaves(bool notLava, vec4 wp, float div) {
-	float open = notLava && seaWaveCount > 0 ? seaOpenWater(div) : 0.0;
+vec4 sea_Waves(bool notLava, vec4 wp, float div) {
+	float open = notLava && sea_WaveCount > 0 ? sea_OpenWater(div) : 0.0;
 	if (open <= 0.0) return applyLiquidWarping(notLava, wp, div);
-    vec3 p = seaSurface(wp.xz, 1.0/div);
+    vec3 p = sea_Surface(wp.xz, 1.0/div);
     vec4 sw = wp;
     sw.xz = p.xz;
     sw.y += p.y;
@@ -111,26 +128,26 @@ vec4 seaWaves(bool notLava, vec4 wp, float div) {
 }
 
 " + HullOutline + @"
-vec4 seaWater(vec4 wp, vec3 rest) {
-	seaWaveCalm = 1.0;
-	for (int h = 0; h < seaClipCount; h++) {
-		if (seaClipD[h].w > 0.5) continue;
-		vec4 a = seaClipA[h];
-		vec4 b = seaClipB[h];
-		vec4 c = seaClipC[h];
+vec4 sea_Water(vec4 wp, vec3 rest) {
+	sea_WaveCalm = 1.0;
+	for (int h = 0; h < sea_ClipCount; h++) {
+		if (sea_ClipD[h].w > 0.5) continue;
+		vec4 a = sea_ClipA[h];
+		vec4 b = sea_ClipB[h];
+		vec4 c = sea_ClipC[h];
 		if (b.x <= 0.0) continue;
 		vec2 d = wp.xz - a.xy;
 		float fwd = d.x * a.w + d.y * a.z;
 		float side = d.y * a.w - d.x * a.z;
 		float along = fwd - b.w;
 		float dAlong = max(0.0, abs(along) - b.x);
-		float dAcross = max(0.0, abs(side) - seaHalfWidth(h, along / b.x));
+		float dAcross = max(0.0, abs(side) - sea_HalfWidth(h, along / b.x));
 		float dist = length(vec2(dAlong, dAcross));
 		float calm = max(c.z, 0.01);
 		if (dist < calm && abs(rest.y - b.z) < 6.0) {
 			float level = b.z + c.x * fwd + c.w * side;
 			float damping = smoothstep(0.0, calm, dist);
-			seaWaveCalm *= damping;
+			sea_WaveCalm *= damping;
 			wp.y = level + (wp.y - level) * damping;
 			if (dist <= 0.0) wp.y = min(wp.y, b.z + c.x * fwd + c.y * side);
 		}
@@ -142,48 +159,48 @@ vec4 seaWater(vec4 wp, vec3 rest) {
 
         // the footprint's half-width along the keel (u: -1 stern .. 1 bow), the same in both shader stages
         const string HullOutline = @"
-float seaPick(int h, int i) {
-	vec4 v = seaClipP[h * 4 + i / 4];
+float sea_Pick(int h, int i) {
+	vec4 v = sea_ClipP[h * 4 + i / 4];
 	int c = i - (i / 4) * 4;
 	return c == 0 ? v.x : (c == 1 ? v.y : (c == 2 ? v.z : v.w));
 }
 
-float seaHalfWidth(int h, float u) {
+float sea_HalfWidth(int h, float u) {
 	float s = clamp((u + 1.0) * 7.5, 0.0, 15.0);
 	int i = int(floor(s));
 	int j = min(i + 1, 15);
-	return mix(seaPick(h, i), seaPick(h, j), s - float(i));
+	return mix(sea_Pick(h, i), sea_Pick(h, j), s - float(i));
 }
 ";
 
-        public const string DryMarker = "seaDry";
+        public const string DryMarker = "sea_Dry";
 
         // fragment stage: is this water pixel (camera-relative, as drawn) inside a dry hull's outline?
-        // seaClipB.y: a flooded hull's water, level in the world, this far over the water y (NoFlood far below: none);
+        // sea_ClipB.y: a flooded hull's water, level in the world, this far over the water y (NoFlood far below: none);
         // under it the sea isn't cut away, it's in her too
-        // seaClipD.w: 0 not dry, 1 dry with the footprint's outline, 2 + k dry with detailed outline k:
-        // seaDryE[k] = (height of its lowest row above the waterline, height between rows, half length, how far its stern
+        // sea_ClipD.w: 0 not dry, 1 dry with the footprint's outline, 2 + k dry with detailed outline k:
+        // sea_DryE[k] = (height of its lowest row above the waterline, height between rows, half length, how far its stern
         // end moves along the keel per block up: a raked transom),
-        // seaDryP: 32 half-widths per row, 4 rows (32 vec4) per outline, stern to bow, lowest row first
+        // sea_DryP: 32 half-widths per row, 4 rows (32 vec4) per outline, stern to bow, lowest row first
         const string FragmentDeclarations = @"
-uniform int seaClipCount = 0;
-uniform vec4 seaClipA[8];
-uniform vec4 seaClipB[8];
-uniform vec4 seaClipC[8];
-uniform vec4 seaClipD[8];
-uniform vec4 seaClipP[32];
-uniform vec4 seaDryE[4];
-uniform vec4 seaDryP[128];
-in vec3 seaFragPos;
+uniform int sea_ClipCount = 0;
+uniform vec4 sea_ClipA[8];
+uniform vec4 sea_ClipB[8];
+uniform vec4 sea_ClipC[8];
+uniform vec4 sea_ClipD[8];
+uniform vec4 sea_ClipP[32];
+uniform vec4 sea_DryE[4];
+uniform vec4 sea_DryP[128];
+in vec3 sea_FragPos;
 " + HullOutline + @"
-float seaDryPick(int k, int i) {
-	vec4 v = seaDryP[k * 32 + i / 4];
+float sea_DryPick(int k, int i) {
+	vec4 v = sea_DryP[k * 32 + i / 4];
 	int c = i - (i / 4) * 4;
 	return c == 0 ? v.x : (c == 1 ? v.y : (c == 2 ? v.z : v.w));
 }
 
-float seaDryHalfWidth(int k, float u, float hl) {
-	vec4 e = seaDryE[k];
+float sea_DryHalfWidth(int k, float u, float hl) {
+	vec4 e = sea_DryE[k];
 	float s = clamp((u + 1.0) * 15.5, 0.0, 31.0);
 	float t = clamp((hl - e.x) / e.y, 0.0, 3.0);
 	int i = int(floor(s));
@@ -191,18 +208,18 @@ float seaDryHalfWidth(int k, float u, float hl) {
 	int i2 = min(i + 1, 31);
 	int j2 = min(j + 1, 3);
 	float fs = s - float(i);
-	float lo = mix(seaDryPick(k, j * 32 + i), seaDryPick(k, j * 32 + i2), fs);
-	float hi = mix(seaDryPick(k, j2 * 32 + i), seaDryPick(k, j2 * 32 + i2), fs);
+	float lo = mix(sea_DryPick(k, j * 32 + i), sea_DryPick(k, j * 32 + i2), fs);
+	float hi = mix(sea_DryPick(k, j2 * 32 + i), sea_DryPick(k, j2 * 32 + i2), fs);
 	return mix(lo, hi, t - float(j));
 }
 
-bool seaDry(vec3 p) {
-	for (int h = 0; h < seaClipCount; h++) {
-		vec4 d = seaClipD[h];
+bool sea_Dry(vec3 p) {
+	for (int h = 0; h < sea_ClipCount; h++) {
+		vec4 d = sea_ClipD[h];
 		if (d.w < 0.5) continue;
-		vec4 a = seaClipA[h];
-		vec4 b = seaClipB[h];
-		vec4 c = seaClipC[h];
+		vec4 a = sea_ClipA[h];
+		vec4 b = sea_ClipB[h];
+		vec4 c = sea_ClipC[h];
 		vec2 q = p.xz - a.xy;
 		float fwd = q.x * a.w + q.y * a.z;
 		float side = q.y * a.w - q.x * a.z;
@@ -222,12 +239,12 @@ bool seaDry(vec3 p) {
 		if (b.x <= 0.0 || b.x - d.x <= 0.0) continue;
 		if (d.w > 1.5) {
 			int k = int(d.w - 1.5);
-			float len = seaDryE[k].z;
-			if (len <= 0.0 || seaDryE[k].y <= 0.0) continue;
-			if (along > len || along < seaDryE[k].w * hl - len || across > seaDryHalfWidth(k, along / len, hl)) continue;
+			float len = sea_DryE[k].z;
+			if (len <= 0.0 || sea_DryE[k].y <= 0.0) continue;
+			if (along > len || along < sea_DryE[k].w * hl - len || across > sea_DryHalfWidth(k, along / len, hl)) continue;
 			return true;
 		}
-		if (abs(along) > b.x - d.x || across > seaHalfWidth(h, along / b.x) - d.x) continue;
+		if (abs(along) > b.x - d.x || across > sea_HalfWidth(h, along / b.x) - d.x) continue;
 		return true;
 	}
 	return false;
@@ -252,19 +269,19 @@ bool seaDry(vec3 p) {
             int m = code.IndexOf(MainAnchor, StringComparison.Ordinal);
             int c = code.IndexOf(CallAnchor, StringComparison.Ordinal);
             if (m < 0 || c < m) return null;
-            code = code.Insert(c, "worldPos = " + Marker + "(worldPos, xyz + origin);\n\t" + (dry ? "seaFragPos = worldPos.xyz;\n\t" : ""));
+            code = code.Insert(c, "worldPos = " + Marker + "(worldPos, xyz + origin);\n\t" + (dry ? "sea_FragPos = worldPos.xyz;\n\t" : ""));
             int w = code.IndexOf(WarpCall, m, StringComparison.Ordinal);
             if (w >= 0)
             {
-                code = code.Remove(w, "applyLiquidWarping".Length).Insert(w, "seaWaves");
+                code = code.Remove(w, "applyLiquidWarping".Length).Insert(w, "sea_Waves");
                 waves = true;
             }
-            return code.Insert(m, dry ? Declarations : Declarations.Replace("out vec3 seaFragPos;", ""));
+            return code.Insert(m, dry ? Declarations : Declarations.Replace("out vec3 sea_FragPos;", ""));
         }
 
         /// <summary>
         /// The water fragment shader with Sea's dry-hull cut (a discard first thing in main), or null if it's already in
-        /// or main wasn't found. Goes with <see cref="Inject"/> on the same program (that passes seaFragPos).
+        /// or main wasn't found. Goes with <see cref="Inject"/> on the same program (that passes sea_FragPos).
         /// </summary>
         public static string InjectFragment(string code)
         {
@@ -273,7 +290,7 @@ bool seaDry(vec3 p) {
             if (m < 0) return null;
             int brace = code.IndexOf('{', m);
             if (brace < 0) return null;
-            code = code.Insert(brace + 1, "\n\tif (" + DryMarker + "(seaFragPos)) discard;");
+            code = code.Insert(brace + 1, "\n\tif (" + DryMarker + "(sea_FragPos)) discard;");
             return code.Insert(m, FragmentDeclarations);
         }
     }
@@ -341,7 +358,7 @@ bool seaDry(vec3 p) {
         public bool Flooded;
         public double FloodY;
 
-        /// <summary>What the shader gets for the flood (seaClipB.y): its height over <see cref="WaterY"/>, or far below when there's none.</summary>
+        /// <summary>What the shader gets for the flood (sea_ClipB.y): its height over <see cref="WaterY"/>, or far below when there's none.</summary>
         public float FloodUniform => Flooded ? (float)(FloodY - WaterY) : NoFlood;
 
         /// <summary>The flood's height when there's none (blocks under the waterline).</summary>

@@ -66,7 +66,7 @@ namespace ShaderCheck
                     {
                         // Sea's uniforms must survive the driver's optimiser, or its uploads would miss
                         var missing = new List<string>();
-                        foreach (string u in new[] { "seaClipCount", "seaClipA", "seaClipB", "seaClipC", "seaClipD", "seaClipP", "seaDryE", "seaDryP", "seaWaveCount", "seaWave", "seaWaveShape" })
+                        foreach (string u in new[] { "sea_ClipCount", "sea_ClipA", "sea_ClipB", "sea_ClipC", "sea_ClipD", "sea_ClipP", "sea_DryE", "sea_DryP", "sea_WaveCount", "sea_Wave", "sea_WaveShape" })
                             if (GL.GetUniformLocation(prog, u) < 0 && GL.GetUniformLocation(prog, u + "[0]") < 0) missing.Add(u);
                         Check(missing.Count == 0, pass + ": Sea's uniforms are live" + (missing.Count > 0 ? " (missing " + string.Join(", ", missing) + ")" : ""));
                         GL.DeleteProgram(prog);
@@ -82,7 +82,7 @@ namespace ShaderCheck
                             int cp = Build("celestial water, dry cut " + dry, cv, cf, defs);
                             if (cp != 0)
                             {
-                                foreach (string u in new[] { "seaSun", "seaMoon", "seaEffects", "seaSky", "seaSkyTex", "seaGlowTex", "seaWeather", "seaEye", "seaStorm", "seaFoamOrigin" })
+                                foreach (string u in new[] { "sea_Sun", "sea_Moon", "sea_Effects", "sea_Sky", "sea_SkyTex", "sea_GlowTex", "sea_Weather", "sea_Eye", "sea_Storm", "sea_FoamOrigin" })
                                     Check(GL.GetUniformLocation(cp, u) >= 0, "celestial uniform live: " + u);
                                 foreach (string u in new[] { "seaWakeTex", "seaWakeArea", "seaWakeHeight", "seaWakeOrigin" })
                                     Check(GL.GetUniformLocation(cp, u) < 0, "removed wake uniform absent: " + u);
@@ -95,7 +95,7 @@ namespace ShaderCheck
                 string wm = Path.GetFullPath(Path.Combine(Environment.GetEnvironmentVariable("WMAP_ROOT") ?? "../Wmap", "assets/wmap"));
                 // Wmap's includes first: from 0.5 its far shading is in them.
                 if (Directory.Exists(wm)) foreach (string f in Directory.GetFiles(Path.Combine(wm, "shaderincludes"))) includes[Path.GetFileName(f)] = File.ReadAllText(f);
-                if (Directory.Exists(wm) && Load(Path.Combine(wm, "shaders"), "farterrain.fsh").Contains("seaNightFloor"))
+                if (Directory.Exists(wm) && Load(Path.Combine(wm, "shaders"), "farterrain.fsh").Contains("sea_NightFloor"))
                 {
                     // (0.4.7) Wmap 0.5 declares the far-water uniforms and shades its distant sea itself, in every far program:
                     // Sea leaves its shaders unpatched and only sets the uniforms (and the waves).
@@ -105,7 +105,7 @@ namespace ShaderCheck
                     {
                         int fp = Build("Wmap 0.5 " + far + " with its far-water contract", Load(Path.Combine(wm, "shaders"), far + ".vsh"), Load(Path.Combine(wm, "shaders"), far + ".fsh"), defs);
                         if (fp == 0) continue;
-                        foreach (string u in new[] { "seaNightFloor", "seaSkyReflect", "seaWaveCount", "seaWave", "seaWaveFactor", "seaSunset", "seaGlint", "seaSun", "seaSunColor", "seaWeather" })
+                        foreach (string u in new[] { "sea_NightFloor", "sea_SkyReflect", "sea_WaveCount", "sea_Wave", "sea_WaveFactor", "sea_Sunset", "sea_Glint", "sea_Sun", "sea_SunColor", "sea_Weather" })
                             Check(GL.GetUniformLocation(fp, u) >= 0 || GL.GetUniformLocation(fp, u + "[0]") >= 0, "Wmap 0.5 " + far + ": " + u + " is live");
                         GL.DeleteProgram(fp);
                     }
@@ -118,7 +118,7 @@ namespace ShaderCheck
                     int wp = Build("Wmap distant terrain with Sea night floor and sky reflection", Load(Path.Combine(wm, "shaders"), "farterrain.vsh"), farf, defs);
                     if (wp != 0)
                     {
-                        Check(GL.GetUniformLocation(wp, "seaSkyReflect") >= 0 && GL.GetUniformLocation(wp, "seaNightFloor") >= 0, "Wmap: seaSkyReflect and seaNightFloor are live");
+                        Check(GL.GetUniformLocation(wp, "sea_SkyReflect") >= 0 && GL.GetUniformLocation(wp, "sea_NightFloor") >= 0, "Wmap: sea_SkyReflect and sea_NightFloor are live");
                         GL.DeleteProgram(wp);
                     }
                     const string installed = "obj/sky-inspection/installed-farterrain.fsh";
@@ -156,7 +156,7 @@ uniform vec3 testEye;
 out vec4 outColor;
 void main(){ vec3 e=normalize(testEye); vec3 n=vec3(0,1,0); vec3 r=reflect(e,n);
   float fres = 0.02 + 0.98 * pow(1.0 - max(0.0, dot(-e, n)), 5.0);
-  vec4 c=seaSkyReflect(vec4(0.02,0.03,0.04,0.4), r, fres, vec3(0.10,0.12,0.16)); outColor=c; }";
+  vec4 c=sea_SkyReflect(vec4(0.02,0.03,0.04,0.4), r, fres, vec3(0.10,0.12,0.16)); outColor=c; }";
             int vs = Compile(ShaderType.VertexShader, v, out string vl), fs = Compile(ShaderType.FragmentShader, f, out string fl);
             if (vs == 0 || fs == 0) { Check(false, "sky reflection program compiles", vl + fl); return; }
             int p = GL.CreateProgram(); GL.AttachShader(p, vs); GL.AttachShader(p, fs); GL.LinkProgram(p);
@@ -180,13 +180,13 @@ void main(){ vec3 e=normalize(testEye); vec3 n=vec3(0,1,0); vec3 r=reflect(e,n);
             GL.ActiveTexture(TextureUnit.Texture10); GL.BindTexture(TextureTarget.Texture2D, sky);
             GL.ActiveTexture(TextureUnit.Texture11); GL.BindTexture(TextureTarget.Texture2D, glow);
             GL.ActiveTexture(TextureUnit.Texture0);
-            GL.Uniform1(GL.GetUniformLocation(p, "seaSkyTex"), 10); GL.Uniform1(GL.GetUniformLocation(p, "seaGlowTex"), 11);
-            GL.Uniform4(GL.GetUniformLocation(p, "seaSun"), 0f, 0.7f, 0.7f, 1.6f);
-            GL.Uniform4(GL.GetUniformLocation(p, "seaWeather"), 1f, 0f, 0f, 0f);
+            GL.Uniform1(GL.GetUniformLocation(p, "sea_SkyTex"), 10); GL.Uniform1(GL.GetUniformLocation(p, "sea_GlowTex"), 11);
+            GL.Uniform4(GL.GetUniformLocation(p, "sea_Sun"), 0f, 0.7f, 0.7f, 1.6f);
+            GL.Uniform4(GL.GetUniformLocation(p, "sea_Weather"), 1f, 0f, 0f, 0f);
             float[] Read(float strength, float skyLight, float ex, float ey, float ez, float fogMin = 0f)
             {
-                GL.Uniform2(GL.GetUniformLocation(p, "seaEffects"), 0f, strength);
-                GL.Uniform4(GL.GetUniformLocation(p, "seaSky"), skyLight, 0f, fogMin, 0f);
+                GL.Uniform2(GL.GetUniformLocation(p, "sea_Effects"), 0f, strength);
+                GL.Uniform4(GL.GetUniformLocation(p, "sea_Sky"), skyLight, 0f, fogMin, 0f);
                 GL.Uniform3(GL.GetUniformLocation(p, "testEye"), ex, ey, ez);
                 GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
                 float[] result = new float[4]; GL.ReadPixels(0, 0, 1, 1, PixelFormat.Rgba, PixelType.Float, result); return result;
@@ -201,12 +201,12 @@ void main(){ vec3 e=normalize(testEye); vec3 n=vec3(0,1,0); vec3 r=reflect(e,n);
                 $"GPU: sky reflection by Fresnel (looking down b {down[2]:0.000}, grazing {grazing[2]:0.00} alpha {grazing[3]:0.00}; at night the dome over dark space: clear {night[2]:0.00}, fog 0.5 {nightFog[2]:0.00}, not the fog colour 0.16); off leaves the water unchanged");
             // (0.4.7) AstraTerra's sunset glow: a low sun ahead warms the grazing reflection beneath it, not the one behind;
             // and the game's flat fog greys the reflected horizon as it greys the dome and Wmap's far sea
-            GL.Uniform4(GL.GetUniformLocation(p, "seaSun"), 0f, 0.035f, 0.9994f, 1.6f);
+            GL.Uniform4(GL.GetUniformLocation(p, "sea_Sun"), 0f, 0.035f, 0.9994f, 1.6f);
             var plain = Read(1, 1, 0, -0.02f, 1);
-            GL.Uniform4(GL.GetUniformLocation(p, "seaSunset"), 1f, 0.7f, 0.4f, 1f);
+            GL.Uniform4(GL.GetUniformLocation(p, "sea_Sunset"), 1f, 0.7f, 0.4f, 1f);
             var warm = Read(1, 1, 0, -0.02f, 1);
             var behind = Read(1, 1, 0, -0.02f, -1);
-            GL.Uniform4(GL.GetUniformLocation(p, "seaSunset"), 0f, 0f, 0f, 0f);
+            GL.Uniform4(GL.GetUniformLocation(p, "sea_Sunset"), 0f, 0f, 0f, 0f);
             GL.Uniform1(GL.GetUniformLocation(p, "flatFogDensity"), 0.5f);
             var fogged = Read(1, 1, 0, -0.02f, 1);
             GL.Uniform1(GL.GetUniformLocation(p, "flatFogDensity"), 0f);
@@ -225,7 +225,7 @@ void main(){ vec3 e=normalize(testEye); vec3 n=vec3(0,1,0); vec3 r=reflect(e,n);
             string f = "#version 330 core\nuniform float flatFogDensity;\nuniform float flatFogStart;\n" + CelestialShader.Declarations + @"
 uniform vec3 testEye;
 out vec4 outColor;
-void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); vec4 c=seaGlints(vec4(0.02,0.03,0.04,0.4), r, 0.6, 1.0); outColor=vec4(c.rgb*c.a, c.a); }";
+void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); vec4 c=sea_Glints(vec4(0.02,0.03,0.04,0.4), r, 0.6, 1.0); outColor=vec4(c.rgb*c.a, c.a); }";
             int vs = Compile(ShaderType.VertexShader, v, out string vl), fs = Compile(ShaderType.FragmentShader, f, out string fl);
             if (vs == 0 || fs == 0) { Check(false, "celestial visibility program compiles", vl + fl); return; }
             int p = GL.CreateProgram(); GL.AttachShader(p, vs); GL.AttachShader(p, fs); GL.LinkProgram(p);
@@ -238,14 +238,14 @@ void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); vec4 c=seaGlints(ve
             GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, tex, 0);
             GL.BindVertexArray(vao); GL.Viewport(0, 0, 1, 1); GL.UseProgram(p);
             GL.Uniform3(GL.GetUniformLocation(p, "testEye"), 0f, -0.5f, 0.8660254f);
-            GL.Uniform3(GL.GetUniformLocation(p, "seaSunColor"), 1f, 0.95f, 0.85f);
-            GL.Uniform4(GL.GetUniformLocation(p, "seaWeather"), 1f, 1f, 0f, 0f);
+            GL.Uniform3(GL.GetUniformLocation(p, "sea_SunColor"), 1f, 0.95f, 0.85f);
+            GL.Uniform4(GL.GetUniformLocation(p, "sea_Weather"), 1f, 1f, 0f, 0f);
             float[] Read(float effects, float clear, vec4 sun, vec4 moon)
             {
-                GL.Uniform2(GL.GetUniformLocation(p, "seaEffects"), effects, effects);
-                GL.Uniform4(GL.GetUniformLocation(p, "seaWeather"), clear, 1f, 0f, 0f);
-                GL.Uniform4(GL.GetUniformLocation(p, "seaSun"), sun.x, sun.y, sun.z, sun.w);
-                GL.Uniform4(GL.GetUniformLocation(p, "seaMoon"), moon.x, moon.y, moon.z, moon.w);
+                GL.Uniform2(GL.GetUniformLocation(p, "sea_Effects"), effects, effects);
+                GL.Uniform4(GL.GetUniformLocation(p, "sea_Weather"), clear, 1f, 0f, 0f);
+                GL.Uniform4(GL.GetUniformLocation(p, "sea_Sun"), sun.x, sun.y, sun.z, sun.w);
+                GL.Uniform4(GL.GetUniformLocation(p, "sea_Moon"), moon.x, moon.y, moon.z, moon.w);
                 GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
                 float[] result = new float[4]; GL.ReadPixels(0, 0, 1, 1, PixelFormat.Rgba, PixelType.Float, result); return result;
             }
@@ -268,7 +268,7 @@ void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); vec4 c=seaGlints(ve
         readonly struct vec4 { public readonly float x, y, z, w; public vec4(float x, float y, float z, float w) { this.x = x; this.y = y; this.z = z; this.w = w; } }
 
         // (0.4.7-pre.7, issue 14) Wmap's far sea carries the near water's glitter to the horizon: its wmapSeaGlints, taken from
-        // the working tree's include, must give what Sea's seaGlints gives for the same ray, roughness and uniforms.
+        // the working tree's include, must give what Sea's sea_Glints gives for the same ray, roughness and uniforms.
         static void FarGlintMatchesNear()
         {
             string wm = Path.GetFullPath(Path.Combine(Environment.GetEnvironmentVariable("WMAP_ROOT") ?? "../Wmap", "assets/wmap/shaderincludes/wmapfaralbedo.ash"));
@@ -277,13 +277,13 @@ void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); vec4 c=seaGlints(ve
             int from = albedo.IndexOf("float wmapLobe(", StringComparison.Ordinal), to = albedo.IndexOf("// Land this many blocks", StringComparison.Ordinal);
             if (from < 0 || to <= from) { Console.WriteLine("  --   Wmap's far glint not compared (this Wmap has none)"); return; }
             const string v = "#version 330 core\nvoid main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0,1); }";
-            string f = "#version 330 core\nuniform float flatFogDensity;\nuniform float flatFogStart;\nuniform float seaGlint;\nin float seaSurfaceRoughIn;\n"
-                + CelestialShader.Declarations.Replace("in float seaSurfaceRough;", "float seaSurfaceRough;") + albedo.Substring(from, to - from) + @"
+            string f = "#version 330 core\nuniform float flatFogDensity;\nuniform float flatFogStart;\nuniform float sea_Glint;\nin float sea_SurfaceRoughIn;\n"
+                + CelestialShader.Declarations.Replace("in float sea_SurfaceRough;", "float sea_SurfaceRough;") + albedo.Substring(from, to - from) + @"
 uniform vec3 testRay;
 uniform float testRough;
 out vec4 outColor;
-void main(){ seaSurfaceRough = testRough; vec3 r = normalize(testRay);
-  vec4 near = seaGlints(vec4(0.0, 0.0, 0.0, 1.0), r, 0.8, 1.0);
+void main(){ sea_SurfaceRough = testRough; vec3 r = normalize(testRay);
+  vec4 near = sea_Glints(vec4(0.0, 0.0, 0.0, 1.0), r, 0.8, 1.0);
   vec3 far = wmapSeaGlints(vec3(0.0), r, 0.8, testRough);
   outColor = vec4(near.r, far.r, near.g - far.g, near.b - far.b); }";
             int vs = Compile(ShaderType.VertexShader, v, out string vl), fs = Compile(ShaderType.FragmentShader, f, out string fl);
@@ -297,13 +297,13 @@ void main(){ seaSurfaceRough = testRough; vec3 r = normalize(testRay);
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, fb);
             GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, tex, 0);
             GL.BindVertexArray(vao); GL.Viewport(0, 0, 1, 1); GL.UseProgram(p);
-            // a sun 0.6° up, orange; Sea's glint strength 1 on both (seaEffects.x for the near water, seaGlint for the far sea)
-            GL.Uniform2(GL.GetUniformLocation(p, "seaEffects"), 1f, 0f);
-            GL.Uniform1(GL.GetUniformLocation(p, "seaGlint"), 1f);
-            GL.Uniform4(GL.GetUniformLocation(p, "seaSun"), 0f, 0.0105f, 0.99994f, 1.6f);
-            GL.Uniform4(GL.GetUniformLocation(p, "seaMoon"), 0f, -1f, 0f, 0f);
-            GL.Uniform3(GL.GetUniformLocation(p, "seaSunColor"), 1f, 0.6f, 0.3f);
-            GL.Uniform4(GL.GetUniformLocation(p, "seaWeather"), 1f, 0f, 0f, 0.2f);
+            // a sun 0.6° up, orange; Sea's glint strength 1 on both (sea_Effects.x for the near water, sea_Glint for the far sea)
+            GL.Uniform2(GL.GetUniformLocation(p, "sea_Effects"), 1f, 0f);
+            GL.Uniform1(GL.GetUniformLocation(p, "sea_Glint"), 1f);
+            GL.Uniform4(GL.GetUniformLocation(p, "sea_Sun"), 0f, 0.0105f, 0.99994f, 1.6f);
+            GL.Uniform4(GL.GetUniformLocation(p, "sea_Moon"), 0f, -1f, 0f, 0f);
+            GL.Uniform3(GL.GetUniformLocation(p, "sea_SunColor"), 1f, 0.6f, 0.3f);
+            GL.Uniform4(GL.GetUniformLocation(p, "sea_Weather"), 1f, 0f, 0f, 0.2f);
             float worst = 0, peak = 0, wide = 0;
             foreach (float rough in new[] { 0f, 0.002f, 0.05f })
                 foreach (float off in new[] { 0f, 0.02f, 0.06f, 0.15f })
@@ -329,7 +329,7 @@ void main(){ seaSurfaceRough = testRough; vec3 r = normalize(testRay);
 uniform vec3 testEye;
 uniform vec3 testBody;
 out vec4 outColor;
-void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); outColor=vec4(seaLobe(r,testBody,0.002),seaLobe(r,testBody,0.02),0,1); }";
+void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); outColor=vec4(sea_Lobe(r,testBody,0.002),sea_Lobe(r,testBody,0.02),0,1); }";
             int vs = Compile(ShaderType.VertexShader, v, out string vl), fs = Compile(ShaderType.FragmentShader, f, out string fl);
             if (vs == 0 || fs == 0) { Check(false, "celestial equation program compiles", vl + fl); return; }
             int p = GL.CreateProgram(); GL.AttachShader(p, vs); GL.AttachShader(p, fs); GL.LinkProgram(p);
@@ -341,7 +341,7 @@ void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); outColor=vec4(seaLo
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, fb);
             GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, tex, 0);
             GL.BindVertexArray(vao); GL.Viewport(0, 0, 1, 1); GL.UseProgram(p);
-            GL.Uniform4(GL.GetUniformLocation(p, "seaWeather"), 1f, 1f, 0f, 0f);
+            GL.Uniform4(GL.GetUniformLocation(p, "sea_Weather"), 1f, 1f, 0f, 0f);
             GL.Uniform3(GL.GetUniformLocation(p, "testEye"), 0f, -0.5f, 0.8660254f);
             float[] Read(float x, float y, float z)
             {
@@ -366,7 +366,7 @@ void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); outColor=vec4(seaLo
         }
 
         /// <summary>
-        /// Runs Sea's fragment-stage dry test (seaDry, exactly as injected) over a grid of points around a turned, shaped
+        /// Runs Sea's fragment-stage dry test (sea_Dry, exactly as injected) over a grid of points around a turned, shaped
         /// hull, into a small framebuffer, and compares every pixel with Sea's C# twin (WaterClipBox.InDryHull).
         /// </summary>
         static void DryCutMatches()
@@ -437,10 +437,10 @@ void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); outColor=vec4(seaLo
 layout(location = 0) in vec2 corner;
 uniform vec4 area;
 uniform float fragY;
-out vec3 seaFragPos;
+out vec3 sea_FragPos;
 void main() {
 	vec2 t = corner * 0.5 + 0.5;
-	seaFragPos = vec3(mix(area.x, area.z, t.x), fragY, mix(area.y, area.w, t.y));
+	sea_FragPos = vec3(mix(area.x, area.z, t.x), fragY, mix(area.y, area.w, t.y));
 	gl_Position = vec4(corner, 0.0, 1.0);
 }
 ";
@@ -475,16 +475,16 @@ void main() {
             float[] b = { clip.HalfLength, clip.FloodUniform, (float)clip.WaterY, clip.CentreOffset };
             float[] c = { clip.SlopeAlong, clip.SlopeAcross, 0, 0 };
             float[] d = { clip.DryInset, clip.DryDepth, clip.DryHeight, clip.HasDryProfile ? 2 : 1 };
-            GL.Uniform1(GL.GetUniformLocation(prog, "seaClipCount"), 1);
-            GL.Uniform4(GL.GetUniformLocation(prog, "seaClipA"), 1, a);
-            GL.Uniform4(GL.GetUniformLocation(prog, "seaClipB"), 1, b);
-            GL.Uniform4(GL.GetUniformLocation(prog, "seaClipC"), 1, c);
-            GL.Uniform4(GL.GetUniformLocation(prog, "seaClipD"), 1, d);
-            GL.Uniform4(GL.GetUniformLocation(prog, "seaClipP"), 4, clip.Profile);
+            GL.Uniform1(GL.GetUniformLocation(prog, "sea_ClipCount"), 1);
+            GL.Uniform4(GL.GetUniformLocation(prog, "sea_ClipA"), 1, a);
+            GL.Uniform4(GL.GetUniformLocation(prog, "sea_ClipB"), 1, b);
+            GL.Uniform4(GL.GetUniformLocation(prog, "sea_ClipC"), 1, c);
+            GL.Uniform4(GL.GetUniformLocation(prog, "sea_ClipD"), 1, d);
+            GL.Uniform4(GL.GetUniformLocation(prog, "sea_ClipP"), 4, clip.Profile);
             if (clip.HasDryProfile)
             {
-                GL.Uniform4(GL.GetUniformLocation(prog, "seaDryE"), 1, new[] { clip.DryLevel0, clip.DryLevelStep, clip.HalfLength - clip.DryInset, clip.DryRake });
-                GL.Uniform4(GL.GetUniformLocation(prog, "seaDryP"), clip.DryProfile.Length / 4, clip.DryProfile);
+                GL.Uniform4(GL.GetUniformLocation(prog, "sea_DryE"), 1, new[] { clip.DryLevel0, clip.DryLevelStep, clip.HalfLength - clip.DryInset, clip.DryRake });
+                GL.Uniform4(GL.GetUniformLocation(prog, "sea_DryP"), clip.DryProfile.Length / 4, clip.DryProfile);
             }
             double x0 = clip.X - radius, z0 = clip.Z - radius, x1 = clip.X + radius, z1 = clip.Z + radius;
             GL.Uniform4(GL.GetUniformLocation(prog, "area"), (float)x0, (float)z0, (float)x1, (float)z1);

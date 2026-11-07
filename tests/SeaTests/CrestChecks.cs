@@ -39,7 +39,7 @@ namespace SeaTests
             single.SetTrains(0,24,kx,kz,a,ph);worst=0;
             for(int n=0;n<200;n++) {var at=single.SurfaceAt((n-100)*0.025,0);worst=Math.Max(worst,Math.Abs(single.HeightAt(at.X,at.Z)-at.Y));}
             check(worst<0.001,$"all 24 custom crests aligned at the .65 compression cap: inverse error {worst:E3} blocks");
-            check(!CelestialShader.FoamDeclarations.Contains("seaWindRow") && !CelestialShader.FoamDeclarations.Contains("seaWindStreaks"),
+            check(!CelestialShader.FoamDeclarations.Contains("sea_WindRow") && !CelestialShader.FoamDeclarations.Contains("sea_WindStreaks"),
                 "downwind layer functions removed from the shared production/GPU foam source");
         }
     }

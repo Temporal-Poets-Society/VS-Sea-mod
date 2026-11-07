@@ -428,12 +428,12 @@ namespace Sea
                 // Uniforms keep their last values, so switch the effects off explicitly.
                 try
                 {
-                    if (p.HasUniform("seaNightFloor")) p.Uniform("seaNightFloor", 0f, 0f, 0f);
-                    if (p.HasUniform("seaNightEnabled")) p.Uniform("seaNightEnabled", 0f);
-                    if (p.HasUniform("seaSkyReflect")) p.Uniform("seaSkyReflect", 0f);
-                    if (p.HasUniform("seaEffects")) p.Uniform("seaEffects", 0f, 0f);
-                    if (p.HasUniform("seaSunset")) p.Uniform("seaSunset", 0f, 0f, 0f, 0f);
-                    if (p.HasUniform("seaGlint")) p.Uniform("seaGlint", 0f);
+                    if (WaterShader.Has(p, "sea_NightFloor")) p.Uniform(WaterShader.N(p, "sea_NightFloor"), 0f, 0f, 0f);
+                    if (WaterShader.Has(p, "sea_NightEnabled")) p.Uniform(WaterShader.N(p, "sea_NightEnabled"), 0f);
+                    if (WaterShader.Has(p, "sea_SkyReflect")) p.Uniform(WaterShader.N(p, "sea_SkyReflect"), 0f);
+                    if (WaterShader.Has(p, "sea_Effects")) p.Uniform(WaterShader.N(p, "sea_Effects"), 0f, 0f);
+                    if (WaterShader.Has(p, "sea_Sunset")) p.Uniform(WaterShader.N(p, "sea_Sunset"), 0f, 0f, 0f, 0f);
+                    if (WaterShader.Has(p, "sea_Glint")) p.Uniform(WaterShader.N(p, "sea_Glint"), 0f);
                 }
                 catch { }
                 return;
@@ -444,42 +444,42 @@ namespace Sea
 
         static void SetUniforms(CelestialRenderer c, IShaderProgram p)
         {
-            if (p.HasUniform("seaNightFloor"))
+            if (WaterShader.Has(p, "sea_NightFloor"))
             {
                 c.FarPatched = true;
-                p.Uniform("seaNightFloor", c.floor * 0.78f, c.floor * 0.88f, c.floor);
-                if (p.HasUniform("seaNightEnabled")) p.Uniform("seaNightEnabled", c.NightStrength > 0 ? 1f : 0f);
-                if (p.HasUniform("seaSkyReflect")) p.Uniform("seaSkyReflect", c.api.World?.Player?.Entity?.Pos.Dimension == 0 ? c.SkyStrength : 0f);
+                p.Uniform(WaterShader.N(p, "sea_NightFloor"), c.floor * 0.78f, c.floor * 0.88f, c.floor);
+                if (WaterShader.Has(p, "sea_NightEnabled")) p.Uniform(WaterShader.N(p, "sea_NightEnabled"), c.NightStrength > 0 ? 1f : 0f);
+                if (WaterShader.Has(p, "sea_SkyReflect")) p.Uniform(WaterShader.N(p, "sea_SkyReflect"), c.api.World?.Player?.Entity?.Pos.Dimension == 0 ? c.SkyStrength : 0f);
                 // (0.4.7) Wmap's far haze and far-sea reflection take the same sunset glow as the dome and the near water
-                if (p.HasUniform("seaSunset")) p.Uniform("seaSunset", c.sunset.X, c.sunset.Y, c.sunset.Z, c.sunset.W);
+                if (WaterShader.Has(p, "sea_Sunset")) p.Uniform(WaterShader.N(p, "sea_Sunset"), c.sunset.X, c.sunset.Y, c.sunset.Z, c.sunset.W);
                 // (0.4.7-pre.7) the glitter path on Wmap's far sea: the near water's glint, the same numbers (issue 14)
-                if (p.HasUniform("seaGlint"))
+                if (WaterShader.Has(p, "sea_Glint"))
                 {
-                    p.Uniform("seaGlint", c.api.World?.Player?.Entity?.Pos.Dimension == 0 ? c.GlintStrength : 0f);
-                    p.Uniform("seaSun", c.sun.X, c.sun.Y, c.sun.Z, 1.6f);
-                    p.Uniform("seaMoon", c.moon.X, c.moon.Y, c.moon.Z, 0.75f * c.phase * c.night);
-                    p.Uniform("seaSunColor", c.sunR, c.sunG, c.sunB);
-                    p.Uniform("seaWeather", c.clear, c.night, c.api.Ambient.BlendedCloudDensity, c.roughness);
+                    p.Uniform(WaterShader.N(p, "sea_Glint"), c.api.World?.Player?.Entity?.Pos.Dimension == 0 ? c.GlintStrength : 0f);
+                    p.Uniform(WaterShader.N(p, "sea_Sun"), c.sun.X, c.sun.Y, c.sun.Z, 1.6f);
+                    p.Uniform(WaterShader.N(p, "sea_Moon"), c.moon.X, c.moon.Y, c.moon.Z, 0.75f * c.phase * c.night);
+                    p.Uniform(WaterShader.N(p, "sea_SunColor"), c.sunR, c.sunG, c.sunB);
+                    p.Uniform(WaterShader.N(p, "sea_Weather"), c.clear, c.night, c.api.Ambient.BlendedCloudDensity, c.roughness);
                 }
             }
-            if (!p.HasUniform("seaEffects")) return;
+            if (!WaterShader.Has(p, "sea_Effects")) return;
             c.WaterPatched = true;
             bool enabled = c.api.World?.Player?.Entity?.Pos.Dimension == 0;
-            p.Uniform("seaEffects", enabled ? c.GlintStrength : 0, enabled ? c.SkyStrength : 0);
-            p.Uniform("seaEye", c.eye);
-            p.Uniform("seaSun", c.sun.X, c.sun.Y, c.sun.Z, 1.6f);  // saturates the glint core, as vanilla's does
-            p.Uniform("seaMoon", c.moon.X, c.moon.Y, c.moon.Z, 0.75f * c.phase * c.night);
+            p.Uniform(WaterShader.N(p, "sea_Effects"), enabled ? c.GlintStrength : 0, enabled ? c.SkyStrength : 0);
+            p.Uniform(WaterShader.N(p, "sea_Eye"), c.eye);
+            p.Uniform(WaterShader.N(p, "sea_Sun"), c.sun.X, c.sun.Y, c.sun.Z, 1.6f);  // saturates the glint core, as vanilla's does
+            p.Uniform(WaterShader.N(p, "sea_Moon"), c.moon.X, c.moon.Y, c.moon.Z, 0.75f * c.phase * c.night);
             // (0.4.7) The drawn sun's colour (SunAndGlow)
-            p.Uniform("seaSunColor", c.sunR, c.sunG, c.sunB);
-            p.Uniform("seaAboveSea", c.aboveSea);
-            p.Uniform("seaSunset", c.sunset.X, c.sunset.Y, c.sunset.Z, c.sunset.W);
+            p.Uniform(WaterShader.N(p, "sea_SunColor"), c.sunR, c.sunG, c.sunB);
+            p.Uniform(WaterShader.N(p, "sea_AboveSea"), c.aboveSea);
+            p.Uniform(WaterShader.N(p, "sea_Sunset"), c.sunset.X, c.sunset.Y, c.sunset.Z, c.sunset.W);
             var am = c.api.Ambient;
-            p.Uniform("seaWeather", c.clear, c.night, am.BlendedCloudDensity, c.roughness);
+            p.Uniform(WaterShader.N(p, "sea_Weather"), c.clear, c.night, am.BlendedCloudDensity, c.roughness);
             var su = c.api.Render.ShaderUniforms;
-            p.Uniform("seaSky", c.skyLight, su.SunsetMod, am.BlendedFogMin, am.BlendedFogDensity);
+            p.Uniform(WaterShader.N(p, "sea_Sky"), c.skyLight, su.SunsetMod, am.BlendedFogMin, am.BlendedFogDensity);
             GL.GetInteger(GetPName.ActiveTexture, out int active);
-            p.BindTexture2D("seaSkyTex", su.SkyTextureId, 10);
-            p.BindTexture2D("seaGlowTex", su.GlowTextureId, 11);
+            p.BindTexture2D("sea_SkyTex", su.SkyTextureId, 10);
+            p.BindTexture2D("sea_GlowTex", su.GlowTextureId, 11);
             GL.ActiveTexture((TextureUnit)active);
         }
 

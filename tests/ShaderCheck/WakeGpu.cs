@@ -14,13 +14,13 @@ namespace ShaderCheck
         {
             const int size=512;
             const string vertex=@"#version 330 core
-out vec3 seaFragPos;
+out vec3 sea_FragPos;
 uniform float testRest;
 uniform float testWave;
 void main() {
     vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);
     vec2 xz=(p*2.0-1.0)*128.0;
-    seaFragPos=vec3(xz.x,testRest + testWave * xz.x / 128.0,xz.y);
+    sea_FragPos=vec3(xz.x,testRest + testWave * xz.x / 128.0,xz.y);
     gl_Position=vec4(p*2.0-1.0,0.0,1.0);
 }";
             string fragment=WaterShader.InjectFragment(@"#version 330 core
@@ -29,7 +29,7 @@ uniform float testRest;
 uniform float testView;
 out vec4 outColor;
 void main() {
-    float foam=seaWakeFoam(seaFragPos.xz,testRest,testView);
+    float foam=seaWakeFoam(sea_FragPos.xz,testRest,testView);
     outColor=vec4(foam,foam,foam,1.0);
 }");
             int prog=Build("wake atlas + production dry cut diagnostic",vertex,fragment,new Dictionary<string,int>());
@@ -88,19 +88,19 @@ void main() {
             int peak=Array.IndexOf(on,on.Max());float hx=(peak%size+0.5f)*0.5f-128,hz=(peak/size+0.5f)*0.5f-128;
             var clip=new WaterClipBox { X=hx,Z=hz,WaterY=0,Yaw=0.4,HalfLength=8,HalfWidth=4,Dry=true,DryInset=0,
                 DryDepth=8,DryHeight=8,SlopeAlong=0.1f,SlopeAcross=-0.2f };
-            GL.Uniform1(GL.GetUniformLocation(prog,"seaClipCount"),1);
-            GL.Uniform4(GL.GetUniformLocation(prog,"seaClipA"),1,new[]{hx,hz,(float)Math.Cos(clip.Yaw),(float)Math.Sin(clip.Yaw)});
-            GL.Uniform4(GL.GetUniformLocation(prog,"seaClipB"),1,new[]{8f,-1000f,0f,0f});
-            GL.Uniform4(GL.GetUniformLocation(prog,"seaClipC"),1,new[]{0.1f,-0.2f,0f,0f});
-            GL.Uniform4(GL.GetUniformLocation(prog,"seaClipD"),1,new[]{0f,8f,8f,1f});
-            GL.Uniform4(GL.GetUniformLocation(prog,"seaClipP"),4,Enumerable.Repeat(4f,16).ToArray());
+            GL.Uniform1(GL.GetUniformLocation(prog,"sea_ClipCount"),1);
+            GL.Uniform4(GL.GetUniformLocation(prog,"sea_ClipA"),1,new[]{hx,hz,(float)Math.Cos(clip.Yaw),(float)Math.Sin(clip.Yaw)});
+            GL.Uniform4(GL.GetUniformLocation(prog,"sea_ClipB"),1,new[]{8f,-1000f,0f,0f});
+            GL.Uniform4(GL.GetUniformLocation(prog,"sea_ClipC"),1,new[]{0.1f,-0.2f,0f,0f});
+            GL.Uniform4(GL.GetUniformLocation(prog,"sea_ClipD"),1,new[]{0f,8f,8f,1f});
+            GL.Uniform4(GL.GetUniformLocation(prog,"sea_ClipP"),4,Enumerable.Repeat(4f,16).ToArray());
             var cut=Draw(1,0,0,512,5);int leaks=0,removed=0;
             for(int z=0;z<size;z++)for(int x=0;x<size;x++) {
                 double px=(x+0.5)*0.5-128,pz=(z+0.5)*0.5-128,y=5*px/128;
                 if(clip.InDryHull(px,y,pz) && on[z*size+x]>0.01) {removed++;if(cut[z*size+x]>0)leaks++;}
             }
             Check(leaks==0 && removed>20,$"GPU: production dry cut removes wake foam in a pitched/heeled hold under 5-block wave displacement ({removed} foamy pixels, {leaks} leaks)");
-            GL.Uniform1(GL.GetUniformLocation(prog,"seaClipCount"),0);
+            GL.Uniform1(GL.GetUniformLocation(prog,"sea_ClipCount"),0);
             Directory.CreateDirectory("obj");
             SaveWakeImage("obj/wakes-before.ppm",off,size);
             SaveWakeImage("obj/wakes-after.ppm",on,size);

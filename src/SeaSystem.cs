@@ -325,7 +325,7 @@ namespace Sea
         /// <summary>
         /// How much of the open-sea waves reaches this place: 1 on the open ocean, down to a fifth in sheltered water, the same
         /// divisor the water shader applies there (from the world's ocean map). 0.5.3: none on inland water (oceanity 0:
-        /// rivers, rapids, lakes), rising to the full sheltered share by oceanity 0.25 (WaterShader's seaOpenWater).
+        /// rivers, rapids, lakes), rising to the full sheltered share by oceanity 0.25 (WaterShader's sea_OpenWater).
         /// With horizontal waves, reads the map at the inverse mesh coordinate, where the shader's flag was packed.
         /// </summary>
         public double WaveFactorAt(double x, double z)

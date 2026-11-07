@@ -21,9 +21,9 @@ namespace ShaderCheck
         static void WaveUpload(int prog, WavePlace p, double x=0, double z=0, bool before=false)
         {
             float[] u=new float[96];int count=p.FillUniforms(u,x,z);
-            GL.UseProgram(prog);GL.Uniform1(GL.GetUniformLocation(prog,"seaWaveCount"),count);
-            if(count>0)GL.Uniform4(GL.GetUniformLocation(prog,"seaWave"),count,u);
-            GL.Uniform1(GL.GetUniformLocation(prog,"seaWaveShape"),before?0:(float)p.Shape);
+            GL.UseProgram(prog);GL.Uniform1(GL.GetUniformLocation(prog,"sea_WaveCount"),count);
+            if(count>0)GL.Uniform4(GL.GetUniformLocation(prog,"sea_Wave"),count,u);
+            GL.Uniform1(GL.GetUniformLocation(prog,"sea_WaveShape"),before?0:(float)p.Shape);
         }
         static void FoamGpu()
         {
@@ -34,8 +34,8 @@ void main(){
     vec2 cell=vec2(gl_VertexID%16,gl_VertexID/16);
     vec2 q=(cell-7.5)*7.3;
     float factor=testGradient!=0?clamp(0.6+q.x*0.004+q.y*0.002,0.2,1.0):testFactor;
-    vec3 p=seaSurface(q,factor);vec2 slope;float rough;vec3 crest;
-    seaDifferential(q,factor,0.0,slope,rough,crest);
+    vec3 p=sea_Surface(q,factor);vec2 slope;float rough;vec3 crest;
+    sea_Differential(q,factor,0.0,slope,rough,crest);
     result=testMode==0?vec4(p,1):vec4(slope,crest.y,1);
     gl_Position=vec4((cell+0.5)/16.0*2.0-1.0,0,1);gl_PointSize=1.0;
 }";
@@ -88,19 +88,19 @@ void main(){
         }
         static void CrestDryGpu(string vertex)
         {
-            vertex=vertex.Replace("flat out vec4 result;","flat out vec4 result;out vec3 seaFragPos;")
-                .Replace("result=testMode==0?","seaFragPos=p;result=testMode==0?");
+            vertex=vertex.Replace("flat out vec4 result;","flat out vec4 result;out vec3 sea_FragPos;")
+                .Replace("result=testMode==0?","sea_FragPos=p;result=testMode==0?");
             string fragment=WaterShader.InjectFragment("#version 330 core\nflat in vec4 result;out vec4 color;void main(){color=result;}");
             int prog=Build("issue 37: displaced Gerstner vertices + production dry cut",vertex,fragment,new Dictionary<string,int>());if(prog==0)return;
             var place=CrestPlace(1.5);WaveUpload(prog,place);GL.Uniform1(GL.GetUniformLocation(prog,"testFactor"),1f);
             GL.Uniform1(GL.GetUniformLocation(prog,"testMode"),0);
             var clip=new WaterClipBox {HalfLength=24,HalfWidth=12,Dry=true,DryDepth=20,DryHeight=20,Yaw=.4,SlopeAlong=.1f,SlopeAcross=-.2f};
-            GL.Uniform1(GL.GetUniformLocation(prog,"seaClipCount"),1);
-            GL.Uniform4(GL.GetUniformLocation(prog,"seaClipA"),1,new[]{0f,0f,(float)Math.Cos(clip.Yaw),(float)Math.Sin(clip.Yaw)});
-            GL.Uniform4(GL.GetUniformLocation(prog,"seaClipB"),1,new[]{24f,-1000f,0f,0f});
-            GL.Uniform4(GL.GetUniformLocation(prog,"seaClipC"),1,new[]{.1f,-.2f,0f,0f});
-            GL.Uniform4(GL.GetUniformLocation(prog,"seaClipD"),1,new[]{0f,20f,20f,1f});
-            GL.Uniform4(GL.GetUniformLocation(prog,"seaClipP"),4,Enumerable.Repeat(12f,16).ToArray());
+            GL.Uniform1(GL.GetUniformLocation(prog,"sea_ClipCount"),1);
+            GL.Uniform4(GL.GetUniformLocation(prog,"sea_ClipA"),1,new[]{0f,0f,(float)Math.Cos(clip.Yaw),(float)Math.Sin(clip.Yaw)});
+            GL.Uniform4(GL.GetUniformLocation(prog,"sea_ClipB"),1,new[]{24f,-1000f,0f,0f});
+            GL.Uniform4(GL.GetUniformLocation(prog,"sea_ClipC"),1,new[]{.1f,-.2f,0f,0f});
+            GL.Uniform4(GL.GetUniformLocation(prog,"sea_ClipD"),1,new[]{0f,20f,20f,1f});
+            GL.Uniform4(GL.GetUniformLocation(prog,"sea_ClipP"),4,Enumerable.Repeat(12f,16).ToArray());
             GL.ClearColor(0,0,0,0);GL.Clear(ClearBufferMask.ColorBufferBit);GL.DrawArrays(PrimitiveType.Points,0,256);
             var data=new float[1024];GL.ReadPixels(0,0,16,16,PixelFormat.Rgba,PixelType.Float,data);
             int inside=0,mismatch=0;
@@ -118,13 +118,13 @@ uniform float testFactor;uniform float testCoverage;uniform float testSpan;unifo
 out vec4 color;
 void main(){
     vec2 q=(gl_FragCoord.xy/512.0-0.5)*testSpan;
-    vec2 slope;float rough;vec3 crest;seaDifferential(q,testFactor,0.0,slope,rough,crest);
-    float foam=seaWindFoam(q,crest,testCoverage);
-    if(testMode==1)foam=seaFoamCells(q,0.12);
-    if(testMode==2)foam=seaFoamCells(q,1.0);
-    if(testMode==3)foam=seaWindFoam(q,vec3(2.0,0.5,0.0),testCoverage);
-    if(testMode==4)foam=seaWindFoam(q,vec3(2.0,0.0,0.0),testCoverage);
-    if(testMode==5)foam=seaWindFoam(q,vec3(2.0,0.5,2.0),testCoverage);
+    vec2 slope;float rough;vec3 crest;sea_Differential(q,testFactor,0.0,slope,rough,crest);
+    float foam=sea_WindFoam(q,crest,testCoverage);
+    if(testMode==1)foam=sea_FoamCells(q,0.12);
+    if(testMode==2)foam=sea_FoamCells(q,1.0);
+    if(testMode==3)foam=sea_WindFoam(q,vec3(2.0,0.5,0.0),testCoverage);
+    if(testMode==4)foam=sea_WindFoam(q,vec3(2.0,0.0,0.0),testCoverage);
+    if(testMode==5)foam=sea_WindFoam(q,vec3(2.0,0.5,2.0),testCoverage);
     color=vec4(foam,crest.x,crest.y,1);
 }";
             int prog=Build("issue 37: crest-only production foam",full,fragment,new Dictionary<string,int>());if(prog==0)return;
@@ -172,7 +172,7 @@ void main(){
     vec2 q;
     if(testSide!=0) q=vec2(float(cell)+c.x-testSpan*0.5,0.0);
     else q=(vec2(cell%int(testSpan),cell/int(testSpan))+c)-testSpan*0.5;
-    vec3 p=seaSurface(q,1.0);float rough;seaDifferential(q,1.0,0.0,slope,rough,crest);position=p;
+    vec3 p=sea_Surface(q,1.0);float rough;sea_Differential(q,1.0,0.0,slope,rough,crest);position=p;
     if(testSide!=0){if(c.y==0.0)p.y=-testHeight;gl_Position=vec4(p.x/(testSpan*.5),p.y/testHeight,0,1);}
     else gl_Position=testView*vec4(p,1);
 }";
@@ -187,7 +187,7 @@ void main(){
     vec3 water=vec3(.035,.20,.24)*light;
     vec3 sky=mix(vec3(.85,.48,.28),vec3(.18,.34,.47),clamp(reflect(-eye,normal).y,0.0,1.0));
     water=mix(water,sky,fres*.8);
-    float foam=seaWindFoam(position.xz,crest,testCoverage);
+    float foam=sea_WindFoam(position.xz,crest,testCoverage);
     // Before geometry render isolates shape; the removed pre.10 windrow code is not retained as a fixture.
     if(testBefore!=0)foam=0.0;
     if(testSide!=0)water=mix(vec3(.025,.17,.22),vec3(.1,.42,.46),.5+.5*normal.y);

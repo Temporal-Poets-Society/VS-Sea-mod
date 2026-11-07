@@ -518,7 +518,7 @@ namespace Sea
         }
 
         /// <summary>
-        /// The shader's seaWave[] uniform for a camera at (camX, camZ): per train (kx, kz, phase at the camera,
+        /// The shader's sea_Wave[] uniform for a camera at (camX, camZ): per train (kx, kz, phase at the camera,
         /// amplitude). Phases are worked out here in doubles, so the shader only sees small numbers.
         /// </summary>
         public int FillUniforms(float[] u, double camX, double camZ)
