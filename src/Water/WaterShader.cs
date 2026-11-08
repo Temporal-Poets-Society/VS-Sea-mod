@@ -25,6 +25,8 @@ namespace Sea
         public const int ProfileStations = 16;
         /// <summary>A detailed dry outline: half-widths at this many stations along the hull, at <see cref="DryLevels"/> heights.</summary>
         public const int DryStations = 32, DryLevels = 4;
+        /// <summary>(0.6.0) A detailed dry outline's tops: how high the cut reaches at this many stations from stern to bow.</summary>
+        public const int DryTopStations = 16;
         /// <summary>How many of the nearest dry hulls get their detailed outline (the others use the footprint's).</summary>
         public const int MaxDryShapes = 4;
         public const int MaxWaves = WavePlace.MaxWaves;
@@ -399,12 +401,27 @@ uniform vec4 sea_ClipD[8];
 uniform vec4 sea_ClipP[32];
 uniform vec4 sea_DryE[4];
 uniform vec4 sea_DryP[128];
+// (0.6.0) sea_DryT: 16 tops per outline (4 vec4), stern to bow: how far above the waterline the cut reaches there
+uniform vec4 sea_DryT[16];
 in vec3 sea_FragPos;
 " + HullOutline + @"
 float sea_DryPick(int k, int i) {
 	vec4 v = sea_DryP[k * 32 + i / 4];
 	int c = i - (i / 4) * 4;
 	return c == 0 ? v.x : (c == 1 ? v.y : (c == 2 ? v.z : v.w));
+}
+
+float sea_DryTop(int k, float u) {
+	float s = clamp((u + 1.0) * 7.5, 0.0, 15.0);
+	int i = int(floor(s));
+	int i2 = min(i + 1, 15);
+	vec4 a = sea_DryT[k * 4 + i / 4];
+	vec4 b = sea_DryT[k * 4 + i2 / 4];
+	int ca = i - (i / 4) * 4;
+	int cb = i2 - (i2 / 4) * 4;
+	float ta = ca == 0 ? a.x : (ca == 1 ? a.y : (ca == 2 ? a.z : a.w));
+	float tb = cb == 0 ? b.x : (cb == 1 ? b.y : (cb == 2 ? b.z : b.w));
+	return mix(ta, tb, s - float(i));
 }
 
 float sea_DryHalfWidth(int k, float u, float hl) {
@@ -449,6 +466,8 @@ bool sea_Dry(vec3 p) {
 			int k = int(d.w - 1.5);
 			float len = sea_DryE[k].z;
 			if (len <= 0.0 || sea_DryE[k].y <= 0.0) continue;
+			// (0.6.0) up to the rail there: her bow and stern castles stand higher than her waist
+			if (hl > sea_DryTop(k, along / len)) continue;
 			if (along > len || along < sea_DryE[k].w * hl - len || across > sea_DryHalfWidth(k, along / len, hl)) continue;
 			return true;
 		}
@@ -551,6 +570,51 @@ bool sea_Dry(vec3 p) {
         public float[] DryProfile;
         public float DryLevel0, DryLevelStep;
         /// <summary>
+        /// (0.6.0) The detailed outline's tops, or null: <see cref="WaterShader.DryTopStations"/> heights above the waterline
+        /// (in the hull's frame) from stern to bow over the detailed outline's stations, interpolated between them. With
+        /// them the cut reaches the rail at each station (a raised bow or stern castle), not one height all along; without
+        /// them it reaches <see cref="DryHeight"/> everywhere. Used with the detailed outline only: the far hulls cut by the
+        /// footprint's outline keep <see cref="DryHeight"/>.
+        /// </summary>
+        public float[] DryTops;
+
+        /// <summary>Has usable tops (all finite) for its detailed outline.</summary>
+        public bool HasDryTops
+        {
+            get
+            {
+                if (DryTops == null || DryTops.Length != WaterShader.DryTopStations) return false;
+                foreach (float t in DryTops) if (!float.IsFinite(t)) return false;
+                return true;
+            }
+        }
+
+        /// <summary>The cut's top at u along the detailed outline (-1 stern .. 1 bow), as the shader interpolates it.</summary>
+        public double DryTopAt(double u)
+        {
+            if (!HasDryTops) return DryHeight;
+            double s = Math.Clamp((u + 1) * 7.5, 0, 15);
+            int i = (int)Math.Floor(s), j = Math.Min(i + 1, 15);
+            return DryTops[i] + (DryTops[j] - DryTops[i]) * (s - i);
+        }
+
+        /// <summary>What the shader gets for its tops (sea_DryT): the tops, or <see cref="DryHeight"/> at every station.</summary>
+        public float[] DryTopsUniform()
+        {
+            var t = new float[WaterShader.DryTopStations];
+            for (int i = 0; i < t.Length; i++) t[i] = HasDryTops ? DryTops[i] : DryHeight;
+            return t;
+        }
+
+        /// <summary>The highest the cut reaches (sea_ClipD.z): the highest top with the detailed outline, else <see cref="DryHeight"/>.</summary>
+        public float DryCeiling(bool detailed)
+        {
+            if (!detailed || !HasDryProfile || !HasDryTops) return DryHeight;
+            float m = float.MinValue;
+            foreach (float t in DryTops) m = Math.Max(m, t);
+            return m;
+        }
+        /// <summary>
         /// The detailed outline's stern end is a plane across the hull, raked: at the waterline it's the stern station
         /// (-(HalfLength - DryInset) along the keel), and it moves this far along the keel per block up in the hull's frame
         /// (negative: aft, a transom leaning out over the water). Aft of its first station the outline holds the first
@@ -624,12 +688,14 @@ bool sea_Dry(vec3 p) {
             double fwd = dx * sn + dz * cs, side = dz * sn - dx * cs;
             HullFrame(SlopeAlong, SlopeAcross, fwd, dy, side, out double lx, out double hl, out double lz);
             double along = lx - CentreOffset, across = Math.Abs(lz);
-            if (hl < -DryDepth || hl > DryHeight) return false;
+            if (hl < -DryDepth || hl > DryCeiling(detailed)) return false;
             // (no outline left: nothing is dry; dividing by it below would give NaN, and an index from that throws)
             if (HalfLength <= 0 || HalfLength - DryInset <= 0) return false;
             if (detailed && HasDryProfile)
             {
                 double len = HalfLength - DryInset;
+                // (0.6.0) up to the rail at this station (the shader's sea_DryTop)
+                if (HasDryTops && hl > DryTopAt(along / len)) return false;
                 return along <= len && along >= DryRake * hl - len && across <= DryHalfWidthAt(along / len, hl);
             }
             return Math.Abs(along) <= HalfLength - DryInset && across <= HalfWidthAt(along / HalfLength) - DryInset;

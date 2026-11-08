@@ -337,7 +337,7 @@ namespace Sea
             e["unregisterDry"] = new Action<string>(UnregisterDry);
             e["isDry"] = new Func<double, double, double, bool>((x, y, z) => sys.IsDry(x, y, z));
             // (7 November) the longest record Sea reads: a mod that sees it may hand the detailed record (section 8)
-            e["recordLength"] = SeaContractMath.HullRecordWithDryProfile;
+            e["recordLength"] = SeaContractMath.HullRecordWithDryTops;
             return e;
         }
 

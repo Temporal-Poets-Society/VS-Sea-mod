@@ -13,7 +13,9 @@ namespace Sea
             // calm level beside her, the calm ring, the footprint's margin, the stern's rake and the dry outline by levels
             HCalmSlopeAcross = HullRecordWithProfile, HCalmZone = HCalmSlopeAcross + 1, HDryInset = HCalmZone + 1,
             HDryRake = HDryInset + 1, HDryLevel0 = HDryRake + 1, HDryLevelStep = HDryLevel0 + 1, HDryProfile = HDryLevelStep + 1,
-            HullRecordDetailed = HDryProfile, HullRecordWithDryProfile = HDryProfile + WaterShader.DryStations * WaterShader.DryLevels;
+            HullRecordDetailed = HDryProfile, HullRecordWithDryProfile = HDryProfile + WaterShader.DryStations * WaterShader.DryLevels,
+            // (8 November) the dry outline's tops: how high the cut reaches at 16 stations (a raised bow or stern)
+            HDryTops = HullRecordWithDryProfile, HullRecordWithDryTops = HDryTops + WaterShader.DryTopStations;
 
         /// <summary>The pose on any surface: heights at the hull's ends and sides, turned into how she lies on them.</summary>
         public static (double Hold, double Lift, double Roll, double Pitch) PoseOn(Func<double, double, double> height, double hold,
@@ -67,6 +69,11 @@ namespace Sea
                 if (r.Length >= HullRecordWithDryProfile && !double.IsNaN(r[HDryProfile]))
                 {
                     if (!(c.DryLevelStep > 0) || !Floats(r, HDryProfile, WaterShader.DryStations * WaterShader.DryLevels, out c.DryProfile)) return false;
+                    // its tops; NaN at the first: none (DryHeight all along)
+                    if (r.Length >= HullRecordWithDryTops && !double.IsNaN(r[HDryTops]))
+                    {
+                        if (!Floats(r, HDryTops, WaterShader.DryTopStations, out c.DryTops)) return false;
+                    }
                 }
             }
             return c.HalfLength > 0 && c.HalfWidth > 0;
@@ -92,7 +99,7 @@ namespace Sea
         /// </summary>
         public static double[] ToRecord(in WaterClipBox c)
         {
-            var r = new double[c.HasDryProfile ? HullRecordWithDryProfile : HullRecordDetailed];
+            var r = new double[c.HasDryProfile ? (c.HasDryTops ? HullRecordWithDryTops : HullRecordWithDryProfile) : HullRecordDetailed];
             r[HX] = c.X; r[HZ] = c.Z; r[HWaterY] = c.WaterY; r[HYaw] = c.Yaw;
             r[HHalfLength] = c.HalfLength; r[HHalfBeam] = c.HalfWidth; r[HCentreOffset] = c.CentreOffset;
             r[HSlopeAlong] = c.SlopeAlong; r[HSlopeAcross] = c.SlopeAcross; r[HDry] = c.Dry ? 1 : 0;
@@ -103,6 +110,7 @@ namespace Sea
             r[HCalmSlopeAcross] = c.CalmSlopeAcross; r[HCalmZone] = c.CalmZone; r[HDryInset] = c.DryInset;
             r[HDryRake] = c.DryRake; r[HDryLevel0] = c.DryLevel0; r[HDryLevelStep] = c.DryLevelStep;
             if (c.HasDryProfile) for (int i = 0; i < c.DryProfile.Length; i++) r[HDryProfile + i] = c.DryProfile[i];
+            if (c.HasDryProfile && c.HasDryTops) for (int i = 0; i < c.DryTops.Length; i++) r[HDryTops + i] = c.DryTops[i];
             return r;
         }
 

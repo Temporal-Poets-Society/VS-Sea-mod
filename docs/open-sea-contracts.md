@@ -167,8 +167,9 @@ A hull record is a `double[]` with these indices:
 | 32 | `DryRake` | the stern's rake: m along the keel per m up (negative: a transom leaning out aft) |
 | 33, 34 | `DryLevel0`, `DryLevelStep` | the detailed dry outline's lowest level above the waterline and the step between levels |
 | 35–162 (optional) | `DryProfile` | the dry outline in detail: 4 levels of 32 half-widths, the lowest first, stations from stern to bow over the footprint less the inset; NaN at 35: none |
+| 163–178 (optional, with 35–162) | `DryTops` | how high the cut reaches above the waterline at 16 stations from stern to bow over the same span (the rail there: a raised bow or stern castle stands higher than the waist); NaN at 163: none, `DryHeight` all along. *Since 8 November* |
 
-A hull cut owner publishes `recordLength` (`int`), the longest record it reads; Sea's is 163. A mod hands the detailed record (29 values or more) only to an owner that publishes it; any other owner gets the first 13 or 29, so a dry hull's record there is the footprint already less the inset.
+A hull cut owner publishes `recordLength` (`int`), the longest record it reads; Sea's is 179 (163 before 8 November, without `DryTops`). A mod hands `DryTops` only to an owner whose `recordLength` takes them. A mod hands the detailed record (29 values or more) only to an owner that publishes it; any other owner gets the first 13 or 29, so a dry hull's record there is the footprint already less the inset.
 
 **Today:** `AddWaterClipSource(IWaterClipSource)` with `WaterClipBox` (`src/Water/WaterShader.cs:281`), and `AddDrySpaces(IDrySpaces)`. The typed form stays. Since 7 November the record carries the same detail (dry outline, rake, inset, calm zone): read back through Sea it is the typed box field for field, and it cuts the same. Rough Seas' boats today use vanilla's `hidewatersurface` lid (a mesh drawn into depth just before the water); that keeps working, and registering a record is an optional upgrade for a hull that tilts or floods.
 

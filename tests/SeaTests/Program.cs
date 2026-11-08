@@ -366,6 +366,15 @@ namespace SeaTests
                     "a detailed outline gives the hull's width at each height (between rows it's interpolated, beyond them the nearest row holds)");
                 Check(detailed.InDryHull(1013.9, 102, 2000) && !detailed.InDryHull(1014.1, 102, 2000) && detailed.InDryHull(1000, 100, 2003, false),
                     "its stations run from stern to bow (the footprint less the inset); the shader's fallback for far hulls is the footprint's outline");
+                // (8 November) tops: the cut reaches 4 above the waterline all along, and 6 at her bow (a raised bow)
+                var topped = detailed;
+                topped.DryHeight = 4;
+                topped.DryTops = new float[WaterShader.DryTopStations];
+                for (int i = 0; i < topped.DryTops.Length; i++) topped.DryTops[i] = i < 12 ? 4 : 6;
+                Check(topped.HasDryTops && topped.InDryHull(1013.5, 104.9, 2000) && !detailed.InDryHull(1013.5, 104.9, 2000)
+                      && !topped.InDryHull(1000, 104.9, 2000) && topped.InDryHull(1000, 103.9, 2000) && !topped.InDryHull(1013.5, 106.1, 2000)
+                      && !topped.InDryHull(1013.5, 104.9, 2000, false) && topped.DryCeiling(true) == 6 && topped.DryCeiling(false) == 4,
+                    "the outline's tops: the cut reaches the rail at each station (higher at a raised bow, only there); far hulls keep DryHeight");
                 var raked = detailed;
                 raked.DryRake = -0.5f;   // a transom leaning out aft: its stern end 0.5 further aft per block up
                 Check(raked.InDryHull(986.1, 100, 2000) && !raked.InDryHull(985.9, 100, 2000) && raked.InDryHull(985.1, 102, 2000) &&

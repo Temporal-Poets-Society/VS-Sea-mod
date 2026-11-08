@@ -66,7 +66,7 @@ namespace ShaderCheck
                     {
                         // Sea's uniforms must survive the driver's optimiser, or its uploads would miss
                         var missing = new List<string>();
-                        foreach (string u in new[] { "sea_ClipCount", "sea_ClipA", "sea_ClipB", "sea_ClipC", "sea_ClipD", "sea_ClipP", "sea_DryE", "sea_DryP", "sea_WaveCount", "sea_Wave", "sea_WaveShape" })
+                        foreach (string u in new[] { "sea_ClipCount", "sea_ClipA", "sea_ClipB", "sea_ClipC", "sea_ClipD", "sea_ClipP", "sea_DryE", "sea_DryP", "sea_DryT", "sea_WaveCount", "sea_Wave", "sea_WaveShape" })
                             if (GL.GetUniformLocation(prog, u) < 0 && GL.GetUniformLocation(prog, u + "[0]") < 0) missing.Add(u);
                         Check(missing.Count == 0, pass + ": Sea's uniforms are live" + (missing.Count > 0 ? " (missing " + string.Join(", ", missing) + ")" : ""));
                         GL.DeleteProgram(prog);
@@ -394,6 +394,11 @@ void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); outColor=vec4(sea_L
             var raked = detailed;
             raked.DryRake = -0.35f;   // the transom leans out aft going up
             DryCutMatches("pitched and rolled, a detailed outline ending at a raked transom", raked);
+            // (8 November) tops: the cut reaches the rail at each station, higher at a raised bow and stern castle
+            var topped = raked;
+            topped.DryTops = new float[WaterShader.DryTopStations];
+            for (int i = 0; i < topped.DryTops.Length; i++) topped.DryTops[i] = i < 3 ? 4.3f : (i < 11 ? 2.1f : 2.1f + 0.5f * (i - 10));
+            DryCutMatches("pitched and rolled, a detailed outline with its tops (a raised stern and bow)", topped);
             // flooded: under the water in her hold (a level plane) the sea isn't cut away
             var flooded = clip;
             flooded.Flooded = true;
@@ -474,7 +479,7 @@ void main() {
             float[] a = { (float)clip.X, (float)clip.Z, (float)Math.Cos(clip.Yaw), (float)Math.Sin(clip.Yaw) };
             float[] b = { clip.HalfLength, clip.FloodUniform, (float)clip.WaterY, clip.CentreOffset };
             float[] c = { clip.SlopeAlong, clip.SlopeAcross, 0, 0 };
-            float[] d = { clip.DryInset, clip.DryDepth, clip.DryHeight, clip.HasDryProfile ? 2 : 1 };
+            float[] d = { clip.DryInset, clip.DryDepth, clip.DryCeiling(clip.HasDryProfile), clip.HasDryProfile ? 2 : 1 };
             GL.Uniform1(GL.GetUniformLocation(prog, "sea_ClipCount"), 1);
             GL.Uniform4(GL.GetUniformLocation(prog, "sea_ClipA"), 1, a);
             GL.Uniform4(GL.GetUniformLocation(prog, "sea_ClipB"), 1, b);
@@ -485,6 +490,7 @@ void main() {
             {
                 GL.Uniform4(GL.GetUniformLocation(prog, "sea_DryE"), 1, new[] { clip.DryLevel0, clip.DryLevelStep, clip.HalfLength - clip.DryInset, clip.DryRake });
                 GL.Uniform4(GL.GetUniformLocation(prog, "sea_DryP"), clip.DryProfile.Length / 4, clip.DryProfile);
+                GL.Uniform4(GL.GetUniformLocation(prog, "sea_DryT"), WaterShader.DryTopStations / 4, clip.DryTopsUniform());
             }
             double x0 = clip.X - radius, z0 = clip.Z - radius, x1 = clip.X + radius, z1 = clip.Z + radius;
             GL.Uniform4(GL.GetUniformLocation(prog, "area"), (float)x0, (float)z0, (float)x1, (float)z1);

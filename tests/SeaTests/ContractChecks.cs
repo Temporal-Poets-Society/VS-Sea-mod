@@ -79,6 +79,17 @@ namespace SeaTests
             noProfiles[SeaContractMath.HProfile] = double.NaN; noProfiles[SeaContractMath.HDryProfile] = double.NaN; noProfiles[SeaContractMath.HCalmSlopeAcross] = double.NaN;
             check(SeaContractMath.ToClip(noProfiles, out var plain) && plain.Profile == null && !plain.HasDryProfile && plain.CalmSlopeAcross == plain.SlopeAcross && plain.DryInset == full.DryInset,
                 "hulls: NaN marks the footprint, the dry outline or the calm level as not given");
+            // (8 November) the dry outline's tops: the cut reaches the rail at each station (a raised bow), both ways
+            var topped = full;
+            topped.DryTops = new float[WaterShader.DryTopStations];
+            for (int i = 0; i < topped.DryTops.Length; i++) topped.DryTops[i] = i < 12 ? 0.6f : 0.6f + 0.25f * (i - 11);
+            var tr = SeaContractMath.ToRecord(topped);
+            check(tr.Length == SeaContractMath.HullRecordWithDryTops && SeaContractMath.ToClip(tr, out var tback) && tback.HasDryTops
+                && System.Linq.Enumerable.SequenceEqual(tback.DryTops, topped.DryTops) && SeaContractMath.ToClip(fr, out var untopped) && !untopped.HasDryTops,
+                "hulls: a record carries the dry outline's tops (16 heights stern to bow); one without them has none");
+            var nanTops = (double[])tr.Clone();
+            nanTops[SeaContractMath.HDryTops] = double.NaN;
+            check(SeaContractMath.ToClip(nanTops, out var nt) && !nt.HasDryTops && nt.HasDryProfile, "hulls: NaN at the first top means no tops (DryHeight all along)");
             var badStep = (double[])fr.Clone();
             badStep[SeaContractMath.HDryLevelStep] = 0;
             check(!SeaContractMath.ToClip(badStep, out _), "hulls: a dry outline with no step between its levels is left out");

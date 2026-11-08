@@ -32,6 +32,7 @@ namespace Sea
         readonly float[] clipP = new float[WaterShader.MaxClips * WaterShader.ProfileStations];
         readonly float[] dryE = new float[WaterShader.MaxDryShapes * 4];
         readonly float[] dryP = new float[WaterShader.MaxDryShapes * WaterShader.DryStations * WaterShader.DryLevels];
+        readonly float[] dryT = new float[WaterShader.MaxDryShapes * WaterShader.DryTopStations];
         public readonly float[] WaveUniform = new float[WaterShader.MaxWaves * 4];
         // (0.6.0) the coast: its map around the camera and each train's clock (sea_WaveClock)
         readonly CoastTexture coastTexture = new();
@@ -224,6 +225,9 @@ namespace Sea
                         dryE[shapes * 4 + 2] = c.HalfLength - c.DryInset;
                         dryE[shapes * 4 + 3] = c.DryRake;
                         Array.Copy(c.DryProfile, 0, dryP, shapes * DP, DP);
+                        // (0.6.0) its tops (up to the rail at each station), and the highest of them for the first test
+                        Array.Copy(c.DryTopsUniform(), 0, dryT, shapes * WaterShader.DryTopStations, WaterShader.DryTopStations);
+                        clipD[n * 4 + 2] = c.DryCeiling(true);
                         shapes++;
                     }
                 }
@@ -334,6 +338,7 @@ namespace Sea
                 {
                     prog.Uniforms4(WaterShader.N(prog, "sea_DryE"), shapes, dryE);
                     prog.Uniforms4(WaterShader.N(prog, "sea_DryP"), shapes * DP / 4, dryP);
+                    if (WaterShader.Has(prog, "sea_DryT")) prog.Uniforms4(WaterShader.N(prog, "sea_DryT"), shapes * WaterShader.DryTopStations / 4, dryT);
                 }
             }
             if (WaterShader.Has(prog, "sea_WaveCount"))
