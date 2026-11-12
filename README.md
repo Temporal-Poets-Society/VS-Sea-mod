@@ -54,9 +54,11 @@ removed from this release, including their renderer, shader path, commands and w
 crest foam remains. Older wake settings are ignored. The previous 0.5.0 snapshot is preserved.
 
 Sea was developed primarily for [Earth](https://mods.vintagestory.at/earth). Following discussion with
-[hoblin](https://mods.vintagestory.at/show/user/99CD92DD551C516918AE), the plan is to merge
-[Rough Seas](https://mods.vintagestory.at/roughseas) with Sea. That work is planned; this release is the current
-separate Sea implementation for Earth and also works without Earth.
+[hoblin](https://mods.vintagestory.at/show/user/99CD92DD551C516918AE), [Rough Seas](https://mods.vintagestory.at/roughseas)
+and Sea stay separate mods: Sea keeps its own wave surface and hull water cut, and instead publishes open contracts
+(weather, sea state, wave surface, hull cut; [spec](docs/open-sea-contracts.md), a proposal not yet agreed with hoblin)
+that his mod and others can read without referencing ours. On Earth worlds the weather is Earth's, published through
+the same contracts. Sea works with or without Earth.
 [Publication description](docs/moddb-description.html), [release record](docs/release-0.5.1.md).
 
 **0.4.7-pre.15:** vanilla rafts/sailboats follow Sea without Ships. The sailboat automatically braces its yard
