@@ -2,7 +2,7 @@
   "type": "code",
   "modid": "sea",
   "name": "Sea",
-  "version": "0.6.0-pre.1",
+  "version": "0.6.0-rc.1",
   "description": "Developed primarily for Earth: wind-driven waves, storm seas, water reflections and wave-following vanilla boats with wind-driven sailing and flooding. Uses Earth's wind when available; Earth is optional.",
   "authors": [
     "Andris"

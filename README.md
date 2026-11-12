@@ -1,5 +1,10 @@
 # Sea — waves that follow the wind, the same sea for everyone (Vintage Story 1.22)
 
+**0.6.0-rc.1 (release candidate, 13 November 2026, not released):** 0.6.0-pre.1 below, plus the open findings of the
+0.4.2 code review fixed (SEA-D72: client and server wave heights agree, no state mixed across threads, vanilla's wind
+read on the main thread, listeners removed on dispose, calendar changes followed); Earth's weather role read through the
+open sea contracts, seen in game with Earth 2.0.
+
 **0.6.0-pre.1 (development, not released; checked in game on one client, 7 November 2026; [wiki](https://github.com/Temporal-Poets-Society/VS-Sea-mod/wiki)):**
 - **Waves on beaches.** Sea reads the depth under the water near coasts from the blocks and works out how long a wave
   takes to reach the shore from each column. Over shallow water the swell turns until its crests run along the beach,
