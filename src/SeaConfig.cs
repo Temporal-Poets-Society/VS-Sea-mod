@@ -175,11 +175,43 @@ namespace Sea
                 old.EndHours = activeHours;
                 kept.Add(old);
             }
+            // (SE-0020) too many: first join ended ones that run on into each other with the same wind (one changed to
+            // itself), which reads the same for every hour and sample; only then drop the oldest
+            if (kept.Count > MaxHistory) Coalesce(kept);
             int overflow = System.Math.Max(0, kept.Count - MaxHistory);
             if (overflow > 0) kept.RemoveRange(0, overflow);
             history = kept.ToArray();
             current = next;
             return overflow;
+        }
+
+        /// <summary>
+        /// (SE-0020) Can ended fixed wind `a` and the next one, `b` (both in the history, b right after a), be one? Only
+        /// when every hour and sample reads the same either way: the same wind; b took over at the sample a ended at,
+        /// starting no earlier than a and no later than the hour a ended; both ran on for good (no hours given); and b
+        /// ended no earlier than a.
+        /// </summary>
+        internal static bool Joins(WindOverride a, WindOverride b) =>
+            a != null && b != null && a.Ended && a.FromDegrees == b.FromDegrees && a.Strength == b.Strength
+            && b.ActiveSample == a.EndSample && a.ActiveSample <= b.ActiveSample
+            && b.StartHours >= a.StartHours && b.StartHours <= a.EndHours && a.UntilHours <= 0 && b.UntilHours <= 0
+            && (!b.Ended || b.EndSample >= a.EndSample && b.EndHours >= a.EndHours);
+
+        /// <summary>(SE-0020) a and b as one fixed wind (<see cref="Joins"/>): a's start, b's end.</summary>
+        internal static WindOverride Joined(WindOverride a, WindOverride b) => new()
+        {
+            FromDegrees = a.FromDegrees, Strength = a.Strength, StartHours = a.StartHours, UntilHours = b.UntilHours,
+            ActiveSample = a.ActiveSample, Ended = b.Ended, EndSample = b.EndSample, EndHours = b.EndHours
+        };
+
+        static void Coalesce(System.Collections.Generic.List<WindOverride> list)
+        {
+            for (int i = list.Count - 2; i >= 0; i--)
+                if (Joins(list[i], list[i + 1]))
+                {
+                    list[i] = Joined(list[i], list[i + 1]);
+                    list.RemoveAt(i + 1);
+                }
         }
     }
 

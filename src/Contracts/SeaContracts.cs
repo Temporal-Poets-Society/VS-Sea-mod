@@ -216,7 +216,7 @@ namespace Sea
                 for (int k = 0; k < 16; k++)
                 {
                     double a = k * Math.PI / 8, px = x + d * Math.Cos(a), pz = z + d * Math.Sin(a);
-                    double own = Height(px, pz), drawn = sys.WaveHeightAt(px, pz);
+                    double own = Height(px, pz), drawn = sys.DrawnHeightAt(px, pz);
                     most = Math.Max(most, Math.Abs(own - drawn));
                     wave = Math.Max(wave, Math.Abs(own));
                     if (d == 0) break;

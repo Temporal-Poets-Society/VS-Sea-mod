@@ -238,6 +238,7 @@ namespace Sea
         {
             sample = long.MinValue;
             gridSample = long.MinValue;
+            blendValid = false;
             Count = 0;
         }
 
@@ -277,6 +278,7 @@ namespace Sea
             for (int c = 0; c < 4; c++) { gridPrev[c] = new double[n]; gridNext[c] = new double[n]; }
             sample = long.MinValue;
             gridSample = long.MinValue;
+            blendValid = false;
         }
 
         void Advance(WaveSpectrum spec, double t, in SeaState sea, in Wind wind, bool bothEnds, in SeaState prevSea, in Wind prevWind)
@@ -286,6 +288,7 @@ namespace Sea
             long n = SampleIndex(t);
             if (spec != spectrum) Attach(spec);
             gridSample = long.MinValue;   // (the grid's buffers are left as they are; Sample starts them over)
+            blendValid = false;
             if (n != sample)
             {
                 if (bothEnds)
@@ -327,8 +330,19 @@ namespace Sea
 
         // the trains' amplitudes at the four corners of the cell, at both ends of the sample: 0 (x0, z0), 1 (x1, z0), 2 (x0, z1), 3 (x1, z1)
         double[][] gridPrev, gridNext;
-        long gridSample = long.MinValue, gridCx, gridCz, gridRevision;
-        double gridHours = double.NaN;
+        // gridSample: the sample both ends are worked out for (long.MinValue: nothing usable), at these hours, from these
+        // inputs (IWaveSource.Inputs), as of this revision (IWaveSource.Revision)
+        long gridSample = long.MinValue, gridCx, gridCz, gridRevision, gridInputs;
+        double gridHours0 = double.NaN, gridHours1 = double.NaN;
+        // (SE-0021) the sea state and wind at the corners at the sample's end, blended by position into Sea and Wind
+        readonly SeaState[] cornerSea = new SeaState[4];
+        readonly Wind[] cornerWind = new Wind[4];
+        // (SE-0026) the blend last made from the grid: Kx..Amp hold it while nothing changed
+        bool blendValid;
+        double blendU, blendV, blendF;
+
+        /// <summary>(SE-0014) How many times a sample is worked out again at once when another thread changed the sea meanwhile.</summary>
+        public const int SampleRetries = 3;
 
         /// <summary>
         /// (0.4.2) Bring the place at (x, z) to wave time t: the sea state and wind are sampled at the corners of the
@@ -356,34 +370,49 @@ namespace Sea
             double u = Math.Clamp(gx / cell - fx, 0, 1), v = Math.Clamp(z / cell - fz, 0, 1);
             // (a new second or cell, or the sea's past or the samples' hours may read differently now: even mid-second,
             // so a place sampled before the change and one new to it agree)
-            long revision = source.Revision;
-            if (n != gridSample || cx != gridCx || cz != gridCz || revision != gridRevision)
+            bool changed = false;
+            for (int attempt = 0; attempt < SampleRetries; attempt++)
             {
+                long revision = source.Revision;
+                if (n == gridSample && cx == gridCx && cz == gridCz && revision == gridRevision) break;
+                changed = true;
+                long inputs = source.Inputs;
                 double h0 = source.HoursOf(n - 1, t), h1 = source.HoursOf(n, t);
-                // the second's start is the last second's end: the same cell, nothing changed since, at the same hour
-                bool kept = gridSample == n - 1 && gridCx == cx && gridCz == cz && gridRevision == revision && gridHours == h0;
+                // (SE-0025) an end already worked out here for the same hour, from the same inputs, is kept: the second's
+                // start is the last second's end, and a new anchor that leaves this second's hours alone changes nothing
+                bool same = gridSample != long.MinValue && gridCx == cx && gridCz == cz && gridInputs == inputs;
+                bool keepNext = same && gridSample == n && gridHours1 == h1;
+                bool keepPrev = same && gridSample == n && gridHours0 == h0;
+                bool shift = !keepPrev && same && gridSample == n - 1 && gridHours1 == h0;
                 gridSample = long.MinValue;
-                if (kept) (gridPrev, gridNext) = (gridNext, gridPrev);
-                int nearest = (u >= 0.5 ? 1 : 0) | (v >= 0.5 ? 2 : 0);
+                if (shift) (gridPrev, gridNext) = (gridNext, gridPrev);
                 double x0 = spec.Circumference > 0 ? ringStart : 0;
                 for (int c = 0; c < 4; c++)
                 {
                     double px = x0 + (fx + (c & 1)) * cell, pz = (fz + (c >> 1)) * cell;
-                    if (!kept) spec.Amplitudes(source.SeaAt(px, pz, h0, n - 1), source.WindAt(px, pz, h0, n - 1), gridPrev[c]);
+                    if (!keepPrev && !shift) spec.Amplitudes(source.SeaAt(px, pz, h0, n - 1), source.WindAt(px, pz, h0, n - 1), gridPrev[c]);
+                    if (keepNext) continue;
                     var sea = source.SeaAt(px, pz, h1, n);
                     var wind = source.WindAt(px, pz, h1, n);
                     spec.Amplitudes(sea, wind, gridNext[c]);
-                    if (c == nearest) { Sea = sea; Wind = wind; }
+                    cornerSea[c] = sea;
+                    cornerWind[c] = wind;
                 }
                 gridCx = cx;
                 gridCz = cz;
+                gridInputs = inputs;
+                gridHours0 = h0;
+                gridHours1 = h1;
                 gridRevision = revision;
-                gridHours = h1;
-                // (something changed while this was worked out, from another thread: work it out again next time)
-                gridSample = source.Revision == revision ? n : long.MinValue;
+                // (SE-0014) something changed while this was worked out, from another thread: what was read may mix the old
+                // and the new, so it's worked out again at once (and, should changes keep coming, at the next call)
+                if (source.Revision == revision) { gridSample = n; break; }
             }
             double f = Math.Clamp(t / SampleSeconds - n, 0, 1);
+            // (SE-0026) the same place in the same moment as last time, nothing new from the grid: the trains are as they are
+            if (!changed && blendValid && u == blendU && v == blendV && f == blendF) return;
             double w0 = (1 - u) * (1 - v), w1 = u * (1 - v), w2 = (1 - u) * v, w3 = u * v;
+            BlendCorners(w0, w1, w2, w3);
             double[] p0 = gridPrev[0], p1 = gridPrev[1], p2 = gridPrev[2], p3 = gridPrev[3];
             double[] n0 = gridNext[0], n1 = gridNext[1], n2 = gridNext[2], n3 = gridNext[3];
             int count = 0;
@@ -397,6 +426,39 @@ namespace Sea
                 order[count++] = i;
             }
             Keep(spec, count);
+            blendValid = gridSample == n;
+            blendU = u;
+            blendV = v;
+            blendF = f;
+        }
+
+        /// <summary>
+        /// (SE-0021) <see cref="Sea"/> and <see cref="Wind"/> at the place: the corners' (at the sample's end) blended by
+        /// position like the amplitudes, not the nearest corner's, so they don't jump half-way across a cell.
+        /// </summary>
+        void BlendCorners(double w0, double w1, double w2, double w3)
+        {
+            Span<double> w = stackalloc double[] { w0, w1, w2, w3 };
+            double h = 0, dx = 0, dz = 0, period = 0, blend = 0, wx = 0, wz = 0;
+            bool shaped = true;
+            int nearest = 0;
+            for (int c = 0; c < 4; c++)
+            {
+                var s = cornerSea[c];
+                h += w[c] * s.Height;
+                dx += w[c] * s.DirX;
+                dz += w[c] * s.DirZ;
+                period += w[c] * s.Period;
+                if (s.SpectrumBlend < 0) shaped = false;
+                else blend += w[c] * s.SpectrumBlend;
+                wx += w[c] * cornerWind[c].X;
+                wz += w[c] * cornerWind[c].Z;
+                if (w[c] > w[nearest]) nearest = c;
+            }
+            double dl = Math.Sqrt(dx * dx + dz * dz);
+            if (dl < 1e-9) { dx = cornerSea[nearest].DirX; dz = cornerSea[nearest].DirZ; dl = 1; }
+            Sea = new SeaState(h, dx / dl, dz / dl, period, shaped ? blend : -1);
+            Wind = new Wind(wx, wz);
         }
 
         /// <summary>The trains blended[order[0..c]] go to the shader's list (the strongest, when there are too many).</summary>
@@ -443,6 +505,7 @@ namespace Sea
         {
             Time = t;
             spectrum = null;
+            blendValid = false;
             Count = Math.Min(count, MaxWaves);
             for (int i = 0; i < Count; i++)
             {
@@ -824,6 +887,12 @@ namespace Sea
         /// hours): places sampled before then sample again.
         /// </summary>
         long Revision { get; }
+        /// <summary>
+        /// (SE-0025) Changes whenever the answers for the same place, hour and sample may change (a provider, a fixed wind,
+        /// a model), but not when only the samples' hours do: an end a place already worked out for the same hour is
+        /// then kept. By default <see cref="Revision"/> (every change starts the place over).
+        /// </summary>
+        long Inputs => Revision;
     }
 
     /// <summary>
@@ -856,6 +925,7 @@ namespace Sea
 
         public double HoursOf(long n, double t) => source.HoursOf(n, t);
         public long Revision => source.Revision;
+        public long Inputs => source.Inputs;
         public SeaState SeaAt(double x, double z, double hours, long n)
         {
             long now = inputs();

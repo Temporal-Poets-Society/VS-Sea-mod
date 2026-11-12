@@ -218,7 +218,7 @@ namespace Sea
             var ep = capi.World.Player.Entity;
             sb.Append($"\nDrawn waves: {cw.SignificantHeight:0.00} blocks from {cw.Count} wave trains ({sys.DrawnWaveCount} in the shader), here × {sys.WaveFactorAt(ep.Pos.X, ep.Pos.Z):0.00} (open sea 1, sheltered 0.2, inland 0).");
             sb.Append($"\nWave clock: {sys.WaveTime:0.0} s, {(sys.WaveClockSynced ? $"{sys.WaveClockError * 1000:+0;-0} ms from the server's" : "not heard from the server yet")}.");
-            sb.Append($"\nWater shader: Sea code {(WaterRenderer.Injected ? "in" : "MISSING")}, Sea waves {(WaterRenderer.WavesInjected ? "in" : "MISSING (vanilla waves)")}, hulls kept dry this frame: {sys.DrawnHullCount}.");
+            sb.Append($"\nWater shader: Sea code {(WaterRenderer.Injected ? "in" : "MISSING")}, Sea waves {(WaterRenderer.WavesInjected ? "in" : "MISSING (vanilla waves)")} ({Hooks.PassWavesReport()}), hulls kept dry this frame: {sys.DrawnHullCount}.");
             var eye = capi.World.Player.Entity.CameraPos.AddCopy(capi.World.Player.Entity.LocalEyePos);
             if (Hooks.WaterCodeLevel > 0) sb.Append($"\nYour graphics driver didn't take all of Sea's water code: {(Hooks.WaterCodeLevel == 1 ? "no dry-hull cut" : "vanilla water")} (see the client log).");
             sb.Append($"\nDry hulls: water cut out {(Hooks.DryHullsInjected ? "in the shader" : "MISSING")}, {sys.DrawnDryHullCount} drawn this frame, {sys.DrySpaceSources} mod(s) with dry places; your eyes are {(sys.IsDry(eye.X, eye.Y, eye.Z) ? "in a dry place" : "not in a dry place")}; {DryParticles.Dropped} water specks, splashes and spray kept out of dry places so far.");

@@ -425,6 +425,7 @@ namespace SeaTests
             WaveBudget();
             GridSampling();
             AdminChanges();
+            ReviewChecks.Run(Check);
 
             Console.WriteLine(failures == 0 ? "ALL OK" : $"{failures} FAILED");
             return failures == 0 ? 0 : 1;

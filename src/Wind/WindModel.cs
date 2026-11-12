@@ -117,10 +117,10 @@ namespace Sea
         public const double MaxStrength = 1.5;
 
         /// <summary>Does Sea's wind (a provider's, or an admin's fixed one) decide the wind at this time?</summary>
-        public bool Decides(double hours)
-        {
-            return Provider != null || FixedAt(hours) != null;
-        }
+        public bool Decides(double hours) => Decides(hours, long.MaxValue);
+
+        /// <summary>(SE-0015) The same, a fixed wind as worked out for wave sample `sample` (<see cref="FixedAt(double, long)"/>).</summary>
+        public bool Decides(double hours, long sample) => Provider != null || FixedAt(hours, sample) != null;
 
         /// <summary>The fixed steady wind the sea follows without a provider (from the config).</summary>
         public Wind SteadySeaWind => Wind.FromCompass(Config.SeaWindFrom, Math.Clamp(Config.SeaWindStrength, 0, MaxStrength));
@@ -132,9 +132,12 @@ namespace Sea
         public Wind At(double x, double z, double hours) => At(x, z, hours, true);
 
         /// <summary>The wind at a place and game time: an admin's fixed wind, else the provider's, else calm (vanilla's then; see <see cref="SeaSystem.WindAt"/>).</summary>
-        public Wind At(double x, double z, double hours, bool gusts)
+        public Wind At(double x, double z, double hours, bool gusts) => At(x, z, hours, gusts, long.MaxValue);
+
+        /// <summary>(SE-0015) The same, a fixed wind as worked out for wave sample `sample` (<see cref="long.MaxValue"/>: as known now).</summary>
+        public Wind At(double x, double z, double hours, bool gusts, long sample)
         {
-            var ov = FixedAt(hours);
+            var ov = FixedAt(hours, sample);
             if (ov != null) return Wind.FromCompass(ov.FromDegrees, ov.Strength);
             return Provider?.At(x, z, hours, gusts) ?? default;
         }

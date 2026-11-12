@@ -179,6 +179,8 @@ namespace Sea
                     // between (a graphics setting changed in the main menu), and the next world must then reload them with it
                     WaterRenderer.Injected = WaterRenderer.WavesInjected = DryHullsInjected = false;
                     injectedLevel = -1;
+                    lock (passWaves) passWaves.Clear();
+                    WavesOff = false;
                 }
                 if (users > 0 && --users == 0 && harmony != null)
                 {
@@ -212,16 +214,21 @@ namespace Sea
             {
                 // this machine's driver wouldn't take Sea's water code: vanilla water
                 WaterRenderer.Injected = WaterRenderer.WavesInjected = DryHullsInjected = false;
+                lock (passWaves) passWaves.Clear();
                 return;
             }
             bool dry = WaterCodeLevel == 0;
-            string code = WaterShader.Inject(p.VertexShader.Code, out bool waves, dry);
+            string code = WaterShader.Inject(p.VertexShader.Code, out bool waves, dry, !WavesOff);
             if (code == null)
             {
-                if (!p.VertexShader.Code.Contains(WaterShader.Marker)) log?.Warning("Water shader {0} has changed; Sea can't add its water code", p.PassName);
+                if (!p.VertexShader.Code.Contains(WaterShader.Marker))
+                {
+                    log?.Warning("Water shader {0} has changed; Sea can't add its water code", p.PassName);
+                    PassWaves(p.PassName, false);   // (this pass draws vanilla's waves)
+                }
                 return;
             }
-            if (!waves) log?.Warning("Water shader {0}: vanilla's wave call has changed; it keeps vanilla's waves", p.PassName);
+            if (!waves && !WavesOff) log?.Warning("Water shader {0}: vanilla's wave call has changed; it keeps vanilla's waves", p.PassName);
             p.VertexShader.Code = code;
             if (p.PassName == "chunkliquid" && waves && !CelestialDisabled)
             {
@@ -234,7 +241,7 @@ namespace Sea
                 else log?.Warning("[sea] Celestial reflection anchors missing; keeping vanilla highlights.");
             }
             WaterRenderer.Injected = true;
-            if (waves) WaterRenderer.WavesInjected = true;
+            PassWaves(p.PassName, waves);
             if (!dry)
             {
                 DryHullsInjected = false;
@@ -252,6 +259,45 @@ namespace Sea
 
         /// <summary>Set once a water fragment shader was loaded with the dry-hull cut.</summary>
         public static bool DryHullsInjected;
+
+        // (SE-0016) whether each water pass loaded so far took Sea's waves
+        static readonly Dictionary<string, bool> passWaves = new();
+
+        /// <summary>
+        /// (SE-0016) Set when the water passes disagreed (one took Sea's waves, another kept vanilla's after a game update):
+        /// the shaders are then reloaded with vanilla's waves in every pass, so the depth pass and the drawn water agree.
+        /// </summary>
+        public static bool WavesOff;
+
+        /// <summary>(SE-0016) A water pass loaded with or without Sea's waves: Sea's waves count as in only while every pass seen has them.</summary>
+        static void PassWaves(string pass, bool waves)
+        {
+            bool any = false, all = true;
+            lock (passWaves)
+            {
+                passWaves[pass] = waves;
+                foreach (var kv in passWaves) { any |= kv.Value; all &= kv.Value; }
+            }
+            WaterRenderer.WavesInjected = any && all;
+            if (any && !all && !WavesOff)
+            {
+                WavesOff = true;
+                log?.Warning("The water shaders disagree: some took Sea's waves, some kept vanilla's; reloading them all with vanilla's waves");
+                RequestShaderReload?.Invoke();
+            }
+        }
+
+        /// <summary>(SE-0016) The water passes seen, with whether each took Sea's waves (for <c>.sea</c>).</summary>
+        public static string PassWavesReport()
+        {
+            lock (passWaves)
+            {
+                if (passWaves.Count == 0) return "no water pass loaded";
+                var parts = new List<string>();
+                foreach (var kv in passWaves) parts.Add(kv.Key + (kv.Value ? " Sea's" : " vanilla's"));
+                return string.Join(", ", parts) + (WavesOff ? " (Sea's waves off: the passes disagreed)" : "");
+            }
+        }
 
         /// <summary>
         /// How much of Sea's water code this machine's graphics driver takes: 0 all of it, 1 all but the dry-hull cut,

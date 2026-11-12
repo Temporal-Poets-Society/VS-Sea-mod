@@ -489,7 +489,9 @@ bool sea_Dry(vec3 p) {
         /// <param name="waves">whether vanilla's wave warp was found and replaced (the hull clip works either way)</param>
         /// <param name="dry">also pass each vertex's position on for the fragment stage's dry-hull cut
         /// (<see cref="InjectFragment"/>); off when that failed to compile on this machine</param>
-        public static string Inject(string code, out bool waves, bool dry = true)
+        /// <param name="allowWaves">(SE-0016) replace vanilla's wave call with Sea's; off when another water pass couldn't
+        /// take them, so both keep vanilla's waves alike</param>
+        public static string Inject(string code, out bool waves, bool dry = true, bool allowWaves = true)
         {
             waves = false;
             if (code == null || code.Contains(Marker)) return null;
@@ -497,7 +499,7 @@ bool sea_Dry(vec3 p) {
             int c = code.IndexOf(CallAnchor, StringComparison.Ordinal);
             if (m < 0 || c < m) return null;
             code = code.Insert(c, "worldPos = " + Marker + "(worldPos, xyz + origin);\n\t" + (dry ? "sea_FragPos = worldPos.xyz;\n\t" : ""));
-            int w = code.IndexOf(WarpCall, m, StringComparison.Ordinal);
+            int w = allowWaves ? code.IndexOf(WarpCall, m, StringComparison.Ordinal) : -1;
             if (w >= 0)
             {
                 code = code.Remove(w, "applyLiquidWarping".Length).Insert(w, "sea_Waves");

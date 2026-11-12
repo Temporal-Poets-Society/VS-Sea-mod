@@ -25,6 +25,7 @@
     <Compile Include="BoatChecks.cs" />
     <Compile Include="ContractChecks.cs" />
     <Compile Include="CoastChecks.cs" />
+    <Compile Include="ReviewChecks.cs" />
     <Compile Include="..\..\src\Coast\CoastMath.cs" Link="Coast\CoastMath.cs" />
     <Compile Include="..\..\src\Contracts\ContractMath.cs" Link="Contracts\ContractMath.cs" />
     <Compile Include="..\..\src\Boats\BoatWaveMath.cs" Link="Boats\BoatWaveMath.cs" />

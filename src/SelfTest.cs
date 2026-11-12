@@ -290,6 +290,10 @@ namespace Sea
             var w = sys.WindAt(x, z);
             Check(m.Mode == WindMode.Off && !sys.Controls(h) && Math.Abs(w.X - v.X) < 1e-9 && w.Z == 0,
                 $"no provider: vanilla's wind ({w.X:0.000} toward the east, vanilla says {v.X:0.000})");
+            // (SE-0017) another thread gets the main thread's reading for that region, not a block accessor read of its own
+            var off = System.Threading.Tasks.Task.Run(() => (sys.WindAt(x, z), sys.WindAt(x + 3, z - 5))).Result;
+            Check(Math.Abs(off.Item1.X - w.X) < 1e-9 && Math.Abs(off.Item2.X - w.X) < 1e-9,
+                $"no provider, from another thread: the wind the main thread read there ({off.Item1.X:0.000})");
             var steady = m.SteadySeaWind;
             var st = m.SeaAt(x, z, h);
             var sw0 = m.SeaWind(x, z, h);

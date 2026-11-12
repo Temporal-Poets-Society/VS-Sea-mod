@@ -73,6 +73,11 @@ namespace ShaderCheck
                     }
                     int fallback = Build(pass + ": with Sea's code but no dry-hull cut (the fallback)", WaterShader.Inject(v, out _, false), f, defs);
                     if (fallback != 0) GL.DeleteProgram(fallback);
+                    // (SE-0016) the passes disagreed about the wave call: Sea's code with vanilla's waves in each
+                    string vw = WaterShader.Inject(v, out bool tookWaves, true, false);
+                    Check(vw != null && !tookWaves && vw.Contains("applyLiquidWarping"), pass + ": Sea's code can go in keeping vanilla's waves");
+                    int vanillaWaves = Build(pass + ": with Sea's code and vanilla's waves (the passes disagreed)", vw, WaterShader.InjectFragment(f), defs);
+                    if (vanillaWaves != 0) GL.DeleteProgram(vanillaWaves);
                     if (pass == "chunkliquid")
                     {
                         foreach (bool dry in new[] { true, false })
