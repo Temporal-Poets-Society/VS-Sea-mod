@@ -26,6 +26,7 @@
     <Compile Include="ContractChecks.cs" />
     <Compile Include="CoastChecks.cs" />
     <Compile Include="ReviewChecks.cs" />
+    <Compile Include="FlowLookChecks.cs" />
     <Compile Include="..\..\src\Coast\CoastMath.cs" Link="Coast\CoastMath.cs" />
     <Compile Include="..\..\src\Contracts\ContractMath.cs" Link="Contracts\ContractMath.cs" />
     <Compile Include="..\..\src\Boats\BoatWaveMath.cs" Link="Boats\BoatWaveMath.cs" />
@@ -33,6 +34,7 @@
     <Compile Include="..\..\src\Wind\*.cs" Link="Wind\%(Filename).cs" />
     <Compile Include="..\..\src\Water\WaterShader.cs" Link="Water\WaterShader.cs" />
     <Compile Include="..\..\src\Water\CelestialShader.cs" Link="Water\CelestialShader.cs" />
+    <Compile Include="..\..\src\Water\FlowLook.cs" Link="Water\FlowLook.cs" />
     <Compile Include="..\..\src\Water\NightSkyMath.cs" Link="Water\NightSkyMath.cs" />
     <Compile Include="..\..\src\Water\WaveField.cs" Link="Water\WaveField.cs" />
     <Compile Include="..\..\src\SeaConfig.cs" Link="SeaConfig.cs" />

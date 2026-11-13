@@ -222,6 +222,7 @@ namespace Sea
             var eye = capi.World.Player.Entity.CameraPos.AddCopy(capi.World.Player.Entity.LocalEyePos);
             if (Hooks.WaterCodeLevel > 0) sb.Append($"\nYour graphics driver didn't take all of Sea's water code: {(Hooks.WaterCodeLevel == 1 ? "no dry-hull cut" : "vanilla water")} (see the client log).");
             sb.Append($"\nDry hulls: water cut out {(Hooks.DryHullsInjected ? "in the shader" : "MISSING")}, {sys.DrawnDryHullCount} drawn this frame, {sys.DrySpaceSources} mod(s) with dry places; your eyes are {(sys.IsDry(eye.X, eye.Y, eye.Z) ? "in a dry place" : "not in a dry place")}; {DryParticles.Dropped} water specks, splashes and spray kept out of dry places so far.");
+            sb.Append($"\nFlowing water: {(Hooks.FlowLookInjected ? "drawn alike in every direction" : Hooks.FlowLookDisabled ? "vanilla's (Sea's even flow didn't compile)" : "vanilla's (MISSING)")}.");
             sb.Append($"\nPatches in: {string.Join(", ", Hooks.Active)}.");
             sb.Append("\n" + sys.CelestialStatus);
             sb.Append("\n" + sys.FoamStatus);

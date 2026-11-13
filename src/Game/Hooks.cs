@@ -177,7 +177,7 @@ namespace Sea
                     UniformsOnUse = false;
                     // (0.4.2) what the shaders hold is found out again next time: the game may reload them without Sea's patch in
                     // between (a graphics setting changed in the main menu), and the next world must then reload them with it
-                    WaterRenderer.Injected = WaterRenderer.WavesInjected = DryHullsInjected = false;
+                    WaterRenderer.Injected = WaterRenderer.WavesInjected = DryHullsInjected = FlowLookInjected = false;
                     injectedLevel = -1;
                     lock (passWaves) passWaves.Clear();
                     WavesOff = false;
@@ -239,6 +239,13 @@ namespace Sea
                     p.FragmentShader.Code = cf;
                 }
                 else log?.Warning("[sea] Celestial reflection anchors missing; keeping vanilla highlights.");
+            }
+            // (EA-0050, SEA-D73) flowing water drawn alike whichever way it flows (the drawn pass only: the depth pass has no flow)
+            if (p.PassName == "chunkliquid" && !FlowLookDisabled && p.FragmentShader?.Code != null)
+            {
+                string even = FlowLook.Inject(p.FragmentShader.Code);
+                if (even != null) { p.FragmentShader.Code = even; FlowLookInjected = true; }
+                else if (!p.FragmentShader.Code.Contains(FlowLook.Marker)) log?.Warning("Water shader {0}: vanilla's flowing-water opacity has changed; flowing water keeps vanilla's look", p.PassName);
             }
             WaterRenderer.Injected = true;
             PassWaves(p.PassName, waves);
@@ -307,6 +314,10 @@ namespace Sea
         public static int WaterCodeLevel;
         public static bool CelestialDisabled;
         public static bool CelestialFarDisabled;
+        /// <summary>(EA-0050) Set when the water shader would not compile with Sea's even flow (<see cref="FlowLook"/>): vanilla's flowing water.</summary>
+        public static bool FlowLookDisabled;
+        /// <summary>(EA-0050) Set once the drawn water's fragment stage was loaded with Sea's even flow.</summary>
+        public static bool FlowLookInjected;
         static int injectedLevel = -1;
         /// <summary>Set by the client: recompile the shaders soon (on the main thread).</summary>
         public static Action RequestShaderReload;
@@ -326,6 +337,13 @@ namespace Sea
             {
                 CelestialDisabled = true;
                 log?.Warning("[sea] Celestial water shader failed; reloading with vanilla highlights and keeping Sea's waves/dry hulls.");
+                RequestShaderReload?.Invoke();
+                return;
+            }
+            if (!FlowLookDisabled && p.FragmentShader?.Code?.Contains(FlowLook.Marker) == true)
+            {
+                FlowLookDisabled = true;
+                log?.Warning("[sea] Even flowing water failed to compile; reloading with vanilla's flowing water and keeping the rest of Sea's water.");
                 RequestShaderReload?.Invoke();
                 return;
             }
