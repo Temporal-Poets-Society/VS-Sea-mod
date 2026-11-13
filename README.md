@@ -1,5 +1,9 @@
 # Sea — waves that follow the wind, the same sea for everyone (Vintage Story 1.22)
 
+**0.6.0-rc.2 (release candidate, 13 November 2026, not released):** flowing water is drawn alike whichever way it
+flows, so rivers no longer show colour patches by flow direction (SEA-D73; vanilla draws diagonal flow twice as
+opaque); the drawn water runs one loop over the wave trains for surface and slope (SEA-D74); `.sea cost`.
+
 **0.6.0-rc.1 (release candidate, 13 November 2026, not released):** 0.6.0-pre.1 below, plus the open findings of the
 0.4.2 code review fixed (SEA-D72: client and server wave heights agree, no state mixed across threads, vanilla's wind
 read on the main thread, listeners removed on dispose, calendar changes followed); Earth's weather role read through the
