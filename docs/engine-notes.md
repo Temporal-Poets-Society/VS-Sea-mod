@@ -163,6 +163,12 @@ notes on what Sea did are kept as the record for that port.
   The clip's height is a plane (height at the hull's origin, rise per block along the keel and across it) measured
   level from the origin, so a pitching, rolling hull clips along its own tilted waterline.
 - **Uniform arrays:** `seaWave[24]`, `seaClipA/B/C[8]`, `seaClipP[32]`, all vec4. Pre.11 also uploads `seaWaveShape`.
+- **Flowing water's flow vector (EA-0050):** `LiquidTesselator` gives each liquid face a flow vector: for a level-7 top
+  face the label's `Cardinal` normal (components ±1, times the block's `flowSpeed` attribute) / 2 × `PushSpeed` / 0.00075,
+  where `PushSpeed` is the length of the type's `pushVector` (water 0.0015 per axis, rapid water 0.004). So ordinary water
+  flows at length 1 straight and 2 diagonally, rapid water 5.3 and 10.7; still water has none. Side faces get (0, −1) times
+  at most 0.65. `chunkliquid.fsh` scrolls the texture and foam noise by the vector and multiplies the texture's opacity by
+  `1.2 × length` for any flow: diagonal water was twice as opaque as straight water. Sea evens both out (`FlowLook`).
 
 ## Splashes in dry places
 

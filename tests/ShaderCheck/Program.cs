@@ -93,7 +93,16 @@ namespace ShaderCheck
                                     Check(GL.GetUniformLocation(cp, u) < 0, "removed wake uniform absent: " + u);
                                 GL.DeleteProgram(cp);
                             }
+                            // (EA-0050) as the game loads it: sky reflections, then even flowing water, then the dry cut
+                            string ef = FlowLook.Inject(CelestialShader.Fragment(f));
+                            Check(ef != null, "even flowing water goes in after the sky reflections");
+                            if (ef != null && dry) ef = WaterShader.InjectFragment(ef);
+                            int ep = Build("celestial water with even flowing water, dry cut " + dry, cv, ef, defs);
+                            if (ep != 0) GL.DeleteProgram(ep);
                         }
+                        // the fallback when the sky reflections did not compile
+                        int eo = Build("even flowing water without the sky reflections", WaterShader.Inject(v, out _, true), WaterShader.InjectFragment(FlowLook.Inject(f)), defs);
+                        if (eo != 0) GL.DeleteProgram(eo);
                     }
                 }
                 // Wmap's working tree next door, or another checkout of it (WMAP_ROOT, its project folder).
@@ -145,6 +154,7 @@ namespace ShaderCheck
             SkyReflection();
             FarGlintMatchesNear();
             FoamGpu();
+            FlowLookGpu();
 
             Console.WriteLine(failures == 0 ? "ALL OK" : $"{failures} FAILED");
             return failures == 0 ? 0 : 1;
