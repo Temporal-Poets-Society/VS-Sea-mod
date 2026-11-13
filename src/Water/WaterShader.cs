@@ -84,6 +84,11 @@ uniform sampler2D sea_CoastTex;
 const float sea_MaxDepth = 32.0;
 const float sea_Step = 0.02;
 float sea_Surf = 0.0; // whitewater at the last sea_Differential (0.6.0)
+// (SE-0024) one loop for the surface and its slope: while sea_KeepSurface is set, sea_Differential also adds up the surface
+// at q (its height before the factor) into sea_Kept, and sea_Surface at the same q takes it instead of its own loop
+bool sea_KeepSurface = false;
+vec2 sea_KeptQ = vec2(3.0e38);
+vec3 sea_Kept = vec3(0.0);
 struct sea_Coast { vec4 c; vec4 la; vec4 lb; vec4 t3; vec4 br; vec2 v; };
 sea_Coast sea_K;
 vec2 sea_SideStep(int s) {
@@ -233,15 +238,17 @@ float sea_TrainY(int i, vec2 q, sea_Coast K, out float ao, out float as, out flo
     return y;
 }
 vec3 sea_Surface(vec2 q, float factor) {
+    if (sea_KeptQ == q) return vec3(sea_Kept.x, sea_Kept.y * factor, sea_Kept.z);
     vec3 p = vec3(q.x,0.0,q.y);
     sea_CoastAt(q);
     bool coast = sea_Affects(sea_K);
     for (int i=0; i<sea_WaveCount; i++) {
         vec4 w=sea_Wave[i];
         float k=length(w.xy), phase=dot(w.xy,q)+w.z, ao=w.w, as, ths;
-        if (coast) p.y += sea_TrainY(i,q,sea_K,ao,as,ths)*factor; else p.y += w.w*sin(phase)*factor;
+        if (coast) p.y += sea_TrainY(i,q,sea_K,ao,as,ths); else p.y += w.w*sin(phase);
         if (k>0.0000001) p.xz += sea_WaveShape*sea_ShapeWeight(k)*ao*w.xy/k*cos(phase);
     }
+    p.y *= factor;   // (the height summed, then scaled, as the CPU's Elevation(q) * factor)
     return p;
 }
 // Parametric derivatives: Eulerian height gradient = transpose(inverse(J)) * dY/dq (J is symmetric on the open sea,
@@ -265,14 +272,23 @@ void sea_Differential(vec2 q, float factor, float footprint, out vec2 slope, out
         sea_K = here;
     }
     float surfSum = 0.0, surfCrest = 0.0;
+    vec3 kept = vec3(q.x, 0.0, q.y);
     for(int i=0;i<sea_WaveCount;i++) {
         vec4 w=sea_Wave[i]; float k=length(w.xy);
-        if(k<0.0000001) continue;
+        if(k<0.0000001) {
+            // (SE-0024) a train with no length still lifts the surface, as in sea_Surface
+            if (sea_KeepSurface) { float a0=w.w, s0, t0; kept.y += coastal ? sea_TrainY(i,q,sea_K,a0,s0,t0) : w.w*sin(dot(w.xy,q)+w.z); }
+            continue;
+        }
         float phase=dot(w.xy,q)+w.z, sn=sin(phase), cs=cos(phase);
         float keep=1.0-smoothstep(0.25,0.75,k*footprint);
         vec2 direction=w.xy/k;
-        float ao=w.w, as=0.0, ths=0.0;
-        if (coastal) sea_TrainY(i,q,sea_K,ao,as,ths);
+        float ao=w.w, as=0.0, ths=0.0, y=w.w*sn;
+        if (coastal) y=sea_TrainY(i,q,sea_K,ao,as,ths);
+        if (sea_KeepSurface) {
+            kept.y += y;
+            if (k>0.0000001) kept.xz += sea_WaveShape*sea_ShapeWeight(k)*ao*w.xy/k*cs;
+        }
         jac -= sea_WaveShape*sea_ShapeWeight(k)*ao*k*sn*keep*outerProduct(direction,direction);
         gradient += keep*ao*w.xy*cs*factor;
         if (coastal) {
@@ -303,6 +319,7 @@ void sea_Differential(vec2 q, float factor, float footprint, out vec2 slope, out
         fallVariance += 0.5*pow(longWave*ao*omega,2.0);
     }
     sea_Surf = surfSum > 0.0001 ? sea_K.br.y * (0.2 + 0.8 * smoothstep(0.35, 0.85, surfCrest / surfSum)) : 0.0;
+    if (sea_KeepSurface) { sea_Kept = kept; sea_KeptQ = q; }
     // where the size changes within a block or two (a cliff's foot, a rip's edge) the drawn surface can fold over itself:
     // take as much of the size's part as keeps the surface from folding
     float size = 1.0;

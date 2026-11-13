@@ -23,6 +23,8 @@ contracts: `docs\open-sea-contracts.md`; engine facts: `docs\engine-notes.md`.
 - `dotnet run --project tests\SeaTests` (offline: waves, wind, sea state, shader injection, dry hulls, configs).
 - `dotnet run --project tests\ShaderCheck`: compiles the water shaders on this GPU and compares the dry cut
   pixel by pixel; needs a desktop session. Run it after any shader change (the offline tests only see the text).
+  `-- --vertex-cost` adds GPU timings of the water's vertex stage (SEA-D74); in game `.sea cost` times Sea's Use
+  postfixes.
 - `dotnet run --project tests\SkyIntegrationCheck -- --vanilla`, and without `--vanilla` against the installed
   AstraTerra DLL. `tests\ShipClipCheck` needs `HANSA_ROOT` set to a Ships checkout.
 - Server: `tools/run_selftest.sh [--with-cworld]` in Git Bash after a Release build (data in `testserver\`); exits

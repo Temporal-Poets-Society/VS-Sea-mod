@@ -153,6 +153,10 @@ namespace Sea
                     .WithArgs(parsers.OptionalDouble("x", double.NaN), parsers.OptionalDouble("z", double.NaN), parsers.OptionalDouble("t", double.NaN))
                     .HandleWith(args => TextCommandResult.Success(Probe(sys, capi.World.Player.Entity.Pos, (double)args[0], (double)args[1], (double)args[2])))
                 .EndSubCommand()
+                .BeginSubCommand("cost")
+                    .WithDescription("(checks) Start measuring what Sea's shader-use postfixes cost a frame; again to stop and see it")
+                    .HandleWith(args => TextCommandResult.Success(UseCost.Toggle()))
+                .EndSubCommand()
                 .BeginSubCommand("drawn")
                     .WithDescription("(0.6.0, checks) How far the drawn water is from the contracts' per-place height, 0 to 512 blocks from you")
                     .HandleWith(args =>

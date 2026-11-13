@@ -421,6 +421,13 @@ namespace Sea
 
         static void UsePostfix(object __instance)
         {
+            long t0 = UseCost.Begin();
+            try { OnUse(__instance); }
+            finally { UseCost.End(t0); }
+        }
+
+        static void OnUse(object __instance)
+        {
             var c = current;
             if (c == null || __instance is not IShaderProgram p) return;
             if (usesFailed)

@@ -155,6 +155,9 @@ namespace ShaderCheck
             FarGlintMatchesNear();
             FoamGpu();
             FlowLookGpu();
+            KeptSurfaceGpu();
+            // (SE-0024) timing on request only: it adds seconds and checks nothing
+            if (Array.IndexOf(Environment.GetCommandLineArgs(), "--vertex-cost") >= 0) VertexCost();
 
             Console.WriteLine(failures == 0 ? "ALL OK" : $"{failures} FAILED");
             return failures == 0 ? 0 : 1;

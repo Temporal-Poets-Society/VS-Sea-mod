@@ -157,7 +157,9 @@ namespace Sea
 
         static void UsePostfix(object __instance)
         {
+            long t0 = UseCost.Begin();
             if (__instance is IShaderProgram p) WaterRenderer.OnUse(p);
+            UseCost.End(t0);
         }
 
         static FieldInfo Need(Type t, string name) => AccessTools.Field(t, name) ?? throw new Exception("field " + name + " not found");

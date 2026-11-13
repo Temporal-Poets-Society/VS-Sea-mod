@@ -54,6 +54,28 @@ namespace SeaTests
             FixedByNowSample();
             JoinedFixedWinds();
             WavesOffInject();
+            OneLoopInject();
+        }
+
+        /// <summary>
+        /// (SE-0024) In the drawn water the slope is worked out where vanilla's main starts on the water's position, keeping
+        /// the surface for Sea's waves (one loop over the trains); the calming round hulls still scales it after the surface.
+        /// </summary>
+        static void OneLoopInject()
+        {
+            string shaders = System.IO.Path.Combine(Environment.GetEnvironmentVariable("VINTAGE_STORY") ?? System.IO.Path.Combine(Environment.GetEnvironmentVariable("APPDATA") ?? "", "Vintagestory"), "assets", "game", "shaders");
+            string file = System.IO.Path.Combine(shaders, "chunkliquid.vsh");
+            if (!System.IO.File.Exists(file)) { Console.WriteLine("  skip  chunkliquid.vsh not found"); return; }
+            string v = CelestialShader.Vertex(WaterShader.Inject(System.IO.File.ReadAllText(file)));
+            int keep = v?.IndexOf("sea_KeepSurface = true;") ?? -1, diff = v?.IndexOf("sea_Differential((xyz+origin).xz") ?? -1;
+            int waves = v?.IndexOf("worldPos = sea_Waves(") ?? -1, calm = v?.IndexOf("sea_SurfaceSlope *= sea_WaveCalm;") ?? -1;
+            int water = v?.IndexOf("worldPos = sea_Water(worldPos, xyz + origin);") ?? -1;
+            Check(keep >= 0 && keep < diff && diff < waves && waves < water && water < calm,
+                "the drawn water works out the slope before the surface, keeping it (one loop), and calms it round hulls after");
+            // without vanilla's start line it falls back to the slope at the normal, apart from the surface
+            string old = CelestialShader.Vertex(WaterShader.Inject(System.IO.File.ReadAllText(file).Replace("vec4 worldPos = truePos;", "vec4 worldPos = vec4(truePos);")));
+            Check(old != null && old.Contains("sea_KeepSurface = false;") && !old.Contains("sea_KeepSurface = true;"),
+                "without vanilla's start line the slope stays at the normal, with the surface worked out apart");
         }
 
         /// <summary>(SE-0014) A change from another thread in the middle of a sample: the sample comes out as after it, at once.</summary>

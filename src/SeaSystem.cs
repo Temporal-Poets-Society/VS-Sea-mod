@@ -1016,6 +1016,7 @@ namespace Sea
         /// <summary>First thing every frame: the wave clock moves on and the waves at the camera are worked out.</summary>
         void OnFrameStart(float dt)
         {
+            UseCost.Frame();
             clock.Advance(dt);
             clientWaveTime = clock.Now(LocalSeconds);
             var ep = capi.World?.Player?.Entity;

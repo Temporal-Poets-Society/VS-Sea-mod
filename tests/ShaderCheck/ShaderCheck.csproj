@@ -22,6 +22,7 @@
     <Compile Include="FoamGpu.cs" />
     <Compile Include="CoastGpu.cs" />
     <Compile Include="FlowLookGpu.cs" />
+    <Compile Include="VertexCost.cs" />
     <Compile Include="..\..\src\Coast\CoastMath.cs" Link="Coast\CoastMath.cs" />
     <Compile Include="..\..\src\Water\WaterShader.cs" Link="Water\WaterShader.cs" />
     <Compile Include="..\..\src\Water\CelestialShader.cs" Link="Water\CelestialShader.cs" />

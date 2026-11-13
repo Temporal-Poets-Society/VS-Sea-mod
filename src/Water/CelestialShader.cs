@@ -43,7 +43,35 @@ namespace Sea
         {
             const string anchor = "fragNormal = unpackNormal(renderFlags);";
             if (code == null || code.Contains("out vec2 sea_SurfaceSlope;") || !code.Contains(anchor)) return null;
-            code = code.Replace(anchor, anchor + @"
+            // (SE-0024) where vanilla's main starts on the water's position, the slope is worked out first, keeping the surface
+            // it passes by for Sea's waves at the same place a few lines on (one loop over the trains, not two); the calming
+            // round hulls, known only after the surface, is applied at the anchor. Without that line, all at the anchor.
+            const string start = "vec4 worldPos = truePos;";
+            bool early = code.IndexOf(start, StringComparison.Ordinal) is int at && at >= 0 && at < code.IndexOf(anchor, StringComparison.Ordinal)
+                && code.IndexOf(start, at + 1, StringComparison.Ordinal) < 0;
+            string slope = SlopeCode(early);
+            if (early)
+            {
+                code = code.Replace(start, start + slope);
+                code = code.Replace(anchor, anchor + @"
+    sea_SurfaceSlope *= sea_WaveCalm;
+    sea_FoamCrest.y *= sea_WaveCalm;
+    sea_SurfFoam = sea_Storm.w > 0.0 ? sea_Surf * sea_WaveCalm : 0.0;");
+            }
+            else code = code.Replace(anchor, anchor + slope + @"
+        sea_SurfaceSlope *= sea_WaveCalm;
+        sea_FoamCrest.y *= sea_WaveCalm;
+        sea_SurfFoam = sea_Storm.w > 0.0 ? sea_Surf * sea_WaveCalm : 0.0;
+    }");
+            // (sea_Effects and sea_Eye as the fragment stage declares them: one uniform of the program)
+            return code.Insert(code.IndexOf("void main(", StringComparison.Ordinal),
+                "out vec2 sea_SurfaceSlope;\nout float sea_SurfaceRough;\nout vec3 sea_FoamCrest;\nout float sea_SurfFoam;\nuniform vec4 sea_Storm = vec4(0.0);\nuniform vec2 sea_Effects = vec2(0.0);\nuniform vec3 sea_Eye;\nuniform float sea_Pixel = 0.0;\n");
+        }
+
+        /// <summary>The slope's code; early: before the surface, keeping it for Sea's waves (closed here; the calming follows at the anchor).</summary>
+        static string SlopeCode(bool early)
+        {
+            string code = @"
     sea_SurfaceSlope = vec2(0.0);
     sea_SurfaceRough = 0.0;
     sea_FoamCrest = vec3(0.0);
@@ -57,14 +85,10 @@ namespace Sea
         float sea_Dist = length(sea_FromEye);
         float sea_Graze = max(abs(sea_FromEye.y) / max(sea_Dist, 0.001), 0.01);
         float sea_Footprint = sea_Pixel * sea_Dist * sqrt(1.0 + 1.0 / (sea_Graze * sea_Graze));
+        sea_KeepSurface = " + (early ? "true" : "false") + @";
         sea_Differential((xyz+origin).xz, sea_OpenWater(div)/div, sea_Footprint, sea_SurfaceSlope, sea_SurfaceRough, sea_FoamCrest);
-        sea_SurfaceSlope *= sea_WaveCalm;
-        sea_FoamCrest.y *= sea_WaveCalm;
-        sea_SurfFoam = sea_Storm.w > 0.0 ? sea_Surf * sea_WaveCalm : 0.0;
-    }");
-            // (sea_Effects and sea_Eye as the fragment stage declares them: one uniform of the program)
-            return code.Insert(code.IndexOf("void main(", StringComparison.Ordinal),
-                "out vec2 sea_SurfaceSlope;\nout float sea_SurfaceRough;\nout vec3 sea_FoamCrest;\nout float sea_SurfFoam;\nuniform vec4 sea_Storm = vec4(0.0);\nuniform vec2 sea_Effects = vec2(0.0);\nuniform vec3 sea_Eye;\nuniform float sea_Pixel = 0.0;\n");
+        sea_KeepSurface = false;";
+            return early ? code + "\n    }" : code;
         }
 
         public static string Fragment(string code)
