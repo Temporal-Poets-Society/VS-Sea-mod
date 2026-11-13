@@ -1,15 +1,10 @@
 # Sea — waves that follow the wind, the same sea for everyone (Vintage Story 1.22)
 
-**0.6.0-rc.2 (release candidate, 13 November 2026, not released):** flowing water is drawn alike whichever way it
-flows, so rivers no longer show colour patches by flow direction (SEA-D73; vanilla draws diagonal flow twice as
-opaque); the drawn water runs one loop over the wave trains for surface and slope (SEA-D74); `.sea cost`.
-
-**0.6.0-rc.1 (release candidate, 13 November 2026, not released):** 0.6.0-pre.1 below, plus the open findings of the
-0.4.2 code review fixed (SEA-D72: client and server wave heights agree, no state mixed across threads, vanilla's wind
-read on the main thread, listeners removed on dispose, calendar changes followed); Earth's weather role read through the
-open sea contracts, seen in game with Earth 2.0.
-
-**0.6.0-pre.1 (development, not released; checked in game on one client, 7 November 2026; [wiki](https://github.com/Temporal-Poets-Society/VS-Sea-mod/wiki)):**
+**0.6.0-rc.2 (release candidate, 13 November 2026; [wiki](https://github.com/Temporal-Poets-Society/VS-Sea-mod/wiki)):**
+waves on coasts (surf, lee, reflection, longshore currents and swash), steeper storms, spray off the open sea's crests,
+the open sea contracts, and the open findings of the 0.4.2 code review fixed. Requires Vintage Story 1.22.0 or later.
+Earth is optional; Earth's weather role is read through the open sea contracts (seen in game with Earth 2.0).
+The coast and storm features were checked in game on one client.
 - **Waves on beaches.** Sea reads the depth under the water near coasts from the blocks and works out how long a wave
   takes to reach the shore from each column. Over shallow water the swell turns until its crests run along the beach,
   grows as the water shallows, is held to a height the depth allows (significant height at most 0.6 × depth) and
@@ -45,6 +40,13 @@ open sea contracts, seen in game with Earth 2.0.
 - **The coast map follows the blocks.** A dug channel, a pier or a sea wall: the chunk is scanned again and the tiles
   that see it are solved again. Tiles are solved on a background thread (about 15–25 ms each offline); `.sea coast`
   shows what the map has cost.
+- **Flowing water is drawn alike whichever way it flows** (SEA-D73), so rivers show no colour patches by flow
+  direction (vanilla draws diagonal flow twice as opaque).
+- **The drawn water runs one loop over the wave trains** for surface and slope (SEA-D74); `.sea cost` times Sea's
+  shader work in game.
+- **Code review fixes** (SEA-D72, the open findings of the 0.4.2 review): client and server wave heights agree, no
+  state is mixed across threads, vanilla's wind is read on the main thread, listeners are removed on dispose, and
+  calendar changes are followed.
 - **Open sea contracts** ([spec](docs/open-sea-contracts.md)): Sea publishes `seacontracts:seastate`, `surface` and
   `hulls` in `api.ObjectCache` with .NET base types only, so other mods (Rough Seas' boats among them) can read the
   waves, pose a boat on them and have water cut from hulls without referencing `Sea.dll`. It follows a published
