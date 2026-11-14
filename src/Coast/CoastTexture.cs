@@ -150,7 +150,7 @@ namespace Sea
                 return;
             }
             GL.GetInteger(GetPName.ActiveTexture, out int active);
-            try { prog.BindTexture2D("sea_CoastTex", texture, 12); }
+            try { prog.BindTexture2D("sea_CoastTex", texture, WaterShader.CoastTextureUnit); }
             finally { GL.ActiveTexture((TextureUnit)active); }
             prog.Uniform("sea_CoastArea", (float)(ox + 0.5 - camX), (float)(oz + 0.5 - camZ), Size, 1f);
             // (SE-0068) where in the ring of tile slots the window's first column is

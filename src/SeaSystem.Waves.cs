@@ -190,26 +190,12 @@ namespace Sea
         // Caller holds probes' lock. Keep the same bounded per-cell cache for heights and inverse shelter lookups.
         WavePlace ProbeAt(double x, double z)
         {
-            var key = ((long)Math.Floor(x / WavePlace.GridCell), (long)Math.Floor(z / WavePlace.GridCell));
-            if (!probes.TryGetValue(key, out var probe))
-            {
-                if (probes.Count >= MaxProbes)
-                {
-                    var oldest = key; long used = long.MaxValue;
-                    foreach (var kv in probes) if (kv.Value.Used < used) { used = kv.Value.Used; oldest = kv.Key; }
-                    probes.Remove(oldest);
-                }
-                probes[key] = probe = new Probe();
-            }
-            probe.Used = ++probeUses;
-            SampleWaves(probe.Place, x, z);
-            return probe.Place;
+            var place = probes.For(x, z);
+            SampleWaves(place, x, z);
+            return place;
         }
 
-        sealed class Probe { public readonly WavePlace Place = new(); public long Used; }
-        readonly System.Collections.Generic.Dictionary<(long, long), Probe> probes = new();
-        long probeUses;
-        const int MaxProbes = 32;
+        readonly PlaceCache probes = new();
 
         void BuildSpectrum(long key, double circumference, double waveScale)
         {

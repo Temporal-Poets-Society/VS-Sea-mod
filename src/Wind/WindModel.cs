@@ -162,8 +162,16 @@ namespace Sea
             return p != null ? p.At(x, z, hours, gusts) : SteadySeaWind;
         }
 
+        /// <summary>(SE-0071 R6) A fully developed sea's significant height (blocks) for a steady wind of this strength, without
+        /// <c>StormHeightScale</c>: (0.1 + 2.4 s²) × WaveScale. Its inverse is <see cref="StrengthForHeight"/>.</summary>
+        internal static double BaseHeight(double strength, double waveScale) => (0.1 + 2.4 * strength * strength) * waveScale;
+
+        /// <summary>(SE-0071 R6) The steady wind's strength whose developed sea (without StormHeightScale) is this high.</summary>
+        internal static double StrengthForHeight(double height, double waveScale) =>
+            Math.Sqrt(Math.Max(0, (height / Math.Max(0.1, waveScale) - 0.1) / 2.4));
+
         /// <summary>Fully developed significant wave height (blocks) for a steady wind.</summary>
-        public double DevelopedHeight(double strength) => (0.1 + 2.4 * strength * strength) * Config.WaveScale
+        public double DevelopedHeight(double strength) => BaseHeight(strength, Config.WaveScale)
             * (1 + (Config.StormHeightScale - 1) * WaveSpectrum.StormBlend(strength));
 
         /// <summary>
@@ -194,7 +202,9 @@ namespace Sea
         public SeaState SeaAt(double x, double z, double hours, long sample)
         {
             double fast = 0, slow = 0, baseFast = 0, baseSlow = 0, dx = 0, dz = 0;
-            // (one look at what may change meanwhile, for all 16 hours: a change can't land half-way through them)
+            // (one look at what may change meanwhile, for all 16 hours. A change can land between the reads of Override and
+            // History below; it is safe because a writer sets History before Override and this reads Override first, so it
+            // never sees a new Override with the old History; a sample worked out across a change is redone, SE-0014)
             WindOverride current = Override;
             WindOverride[] history = History;
             WindProvider provider = Provider;
@@ -205,7 +215,7 @@ namespace Sea
                 double wf = FastWeight[k], ws = SlowWeight[k];
                 fast += wf * h;
                 slow += ws * h;
-                double baseHeight = (0.1 + 2.4 * s * s) * Config.WaveScale;
+                double baseHeight = BaseHeight(s, Config.WaveScale);
                 baseFast += wf * baseHeight;
                 baseSlow += ws * baseHeight;
                 if (s > 1e-6) { dx += wf * h * w.X / s; dz += wf * h * w.Z / s; }
@@ -226,13 +236,13 @@ namespace Sea
         /// </summary>
         internal static double StormLengthRatio(double referenceHeight, double waveScale)
         {
-            double s = Math.Sqrt(Math.Max(0, (referenceHeight / Math.Max(0.1, waveScale) - 0.1) / 2.4));
+            double s = StrengthForHeight(referenceHeight, waveScale);
             double t = Math.Clamp((s - 0.8) / 0.7, 0, 1);
             return 30 - 12 * t * t * (3 - 2 * t);
         }
 
         internal static double StormForHeight(double height, double waveScale) =>
-            WaveSpectrum.StormBlend(Math.Sqrt(Math.Max(0, (height / Math.Max(0.1, waveScale) - 0.1) / 2.4)));
+            WaveSpectrum.StormBlend(StrengthForHeight(height, waveScale));
 
         internal static double PeriodForHeight(double height, double waveScale, double referenceHeight = -1)
         {

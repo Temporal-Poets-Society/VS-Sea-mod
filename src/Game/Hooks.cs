@@ -241,12 +241,8 @@ namespace Sea
         static void LoadShaderProgram(object program)
         {
             if (!(program is IShaderProgram p) || p.VertexShader == null) return;
-            if (p.PassName == "farterrain" && p.AssetDomain == "wmap" && p.FragmentShader != null && !CelestialFarDisabled)
-            {
-                string far = CelestialRenderer.FarFragment(p.FragmentShader.Code);
-                if (far != null) p.FragmentShader.Code = far;
-                return;
-            }
+            // (SE-0071 R4) World Map's far terrain is left alone: since its 0.5 it declares the far-water uniforms itself and
+            // Sea only sets them (the text patch for World Map 0.4.x is gone)
             if (Array.IndexOf(WaterShader.Passes, p.PassName) < 0) return;
             injectedLevel = WaterCodeLevel;
             // (SE-0065) what this load puts in is reported afresh: after a step-down `.sea` showed what was no longer in
@@ -354,7 +350,6 @@ namespace Sea
         /// </summary>
         public static int WaterCodeLevel;
         public static bool CelestialDisabled;
-        public static bool CelestialFarDisabled;
         /// <summary>(EA-0050) Set when the water shader would not compile with Sea's even flow (<see cref="FlowLook"/>): vanilla's flowing water.</summary>
         public static bool FlowLookDisabled;
         /// <summary>(SE-0039) What of Sea's shader code is stepped down for the rest of this game session, or null: these are
@@ -365,7 +360,6 @@ namespace Sea
             if (WaterCodeLevel == 1) parts.Add("water code without the dry-hull cut");
             if (WaterCodeLevel >= 2) parts.Add("vanilla water (no Sea waves)");
             if (CelestialDisabled) parts.Add("no sky reflections or glints");
-            if (CelestialFarDisabled) parts.Add("World Map's far terrain not patched");
             if (FlowLookDisabled) parts.Add("vanilla flowing water");
             return parts.Count == 0 ? null : string.Join("; ", parts);
         }
@@ -399,15 +393,6 @@ namespace Sea
 
         static void Compiled(IShaderProgram p)
         {
-            // (SE-0065) only Sea's own patch of an older World Map (its 0.5 shaders declare the far uniforms themselves, and
-            // their failure is World Map's)
-            if (!CelestialFarDisabled && p.PassName == "farterrain" && p.AssetDomain == "wmap" && p.FragmentShader?.Code is string farCode && farCode.Contains("uniform vec3 sea_NightFloor = vec3(0.0);"))
-            {
-                CelestialFarDisabled = true;
-                log?.Warning("[sea] Wmap night floor shader failed; reloading Wmap without Sea's optional brightness adjustment.");
-                RequestShaderReload?.Invoke();
-                return;
-            }
             if (Array.IndexOf(WaterShader.Passes, p.PassName) < 0) return;
             // (SE-0065) blame only code in the stage that failed (both compiled: the link failed, all of it is in question).
             // A failed vertex stage: the sky code's vertex part, else Sea's waves; never the even flow or the dry cut's
@@ -495,7 +480,7 @@ namespace Sea
                 if (mode == EnumGameMode.Creative || mode == EnumGameMode.Spectator) return;
             }
             var sys = SeaSystem.For(EnumAppSide.Server);
-            if (sys == null || sys.DrySpaceSources == 0) return;
+            if (sys == null) return;
             var pos = e.Pos;
             if (pos.Dimension != 0) return;   // dry places are in the world itself (IDrySpaces gets no dimension)
             double eyeY = pos.Y + (e.Swimming ? e.Properties.SwimmingEyeHeight : e.Properties.EyeHeight);
@@ -517,7 +502,7 @@ namespace Sea
             var e = __instance;
             if (e?.World == null) return true;
             var sys = SeaSystem.For(e.World.Side);
-            if (sys == null || sys.DrySpaceSources == 0) return true;
+            if (sys == null) return true;
             var pos = e.Pos;
             return pos.Dimension != 0 || !sys.IsDry(pos.X, pos.Y + 0.1, pos.Z);
         }
@@ -533,14 +518,14 @@ namespace Sea
         static bool ClientDry(double x, double y, double z)
         {
             var sys = SeaSystem.For(EnumAppSide.Client);
-            return sys != null && sys.DrySpaceSources > 0 && ClientInWorld() && sys.IsDry(x, y, z);
+            return sys != null && ClientInWorld() && sys.IsDry(x, y, z);
         }
 
         /// <summary>For <see cref="DryParticles"/>: dry at any moment of a particle's life (the client's particle thread; 0.3.5).</summary>
         static bool ClientDryWithin(double x, double y, double z, double seconds)
         {
             var sys = SeaSystem.For(EnumAppSide.Client);
-            return sys != null && sys.DrySpaceSources > 0 && ClientInWorld() && sys.IsDryWithin(x, y, z, seconds);
+            return sys != null && ClientInWorld() && sys.IsDryWithin(x, y, z, seconds);
         }
     }
 }

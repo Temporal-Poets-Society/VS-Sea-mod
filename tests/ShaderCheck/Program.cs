@@ -119,7 +119,6 @@ namespace ShaderCheck
                     // (0.4.7) Wmap 0.5 declares the far-water uniforms and shades its distant sea itself, in every far program:
                     // Sea leaves its shaders unpatched and only sets the uniforms (and the waves).
                     foreach (string f in Directory.GetFiles(Path.Combine(wm, "shaderincludes"))) includes[Path.GetFileName(f)] = File.ReadAllText(f);
-                    Check(CelestialShader.FarFragment(Load(Path.Combine(wm, "shaders"), "farterrain.fsh")) == null, "Wmap 0.5 working tree: Sea leaves its far-water shader unpatched");
                     foreach (string far in new[] { "farterrain", "farcells" })
                     {
                         int fp = Build("Wmap 0.5 " + far + " with its far-water contract", Load(Path.Combine(wm, "shaders"), far + ".vsh"), Load(Path.Combine(wm, "shaders"), far + ".fsh"), defs);
@@ -133,27 +132,8 @@ namespace ShaderCheck
                         GL.DeleteProgram(fp);
                     }
                 }
-                else if (Directory.Exists(wm))
-                {
-                    foreach (string f in Directory.GetFiles(Path.Combine(wm, "shaderincludes"))) includes[Path.GetFileName(f)] = File.ReadAllText(f);
-                    string farf = CelestialShader.FarFragment(Load(Path.Combine(wm, "shaders"), "farterrain.fsh"));
-                    Check(farf != null && farf.Contains(CelestialShader.FarSkyReflection), "Wmap working tree: Sea's distant-sea sky reflection goes in");
-                    int wp = Build("Wmap distant terrain with Sea night floor and sky reflection", Load(Path.Combine(wm, "shaders"), "farterrain.vsh"), farf, defs);
-                    if (wp != 0)
-                    {
-                        Check(GL.GetUniformLocation(wp, "sea_SkyReflect") >= 0 && GL.GetUniformLocation(wp, "sea_NightFloor") >= 0, "Wmap: sea_SkyReflect and sea_NightFloor are live");
-                        GL.DeleteProgram(wp);
-                    }
-                    const string installed = "obj/sky-inspection/installed-farterrain.fsh";
-                    if (File.Exists(installed))
-                    {
-                        includes["wmapfartiles.ash"] = File.ReadAllText("obj/sky-inspection/installed-wmapfartiles.ash");
-                        int ip = Build("installed Wmap 0.4.1 with Sea night floor and haze correction",
-                            Includes(File.ReadAllText("obj/sky-inspection/installed-farterrain.vsh"), new HashSet<string>()),
-                            CelestialShader.FarFragment(Includes(File.ReadAllText(installed), new HashSet<string>())), defs);
-                        if (ip != 0) GL.DeleteProgram(ip);
-                    }
-                }
+                // (SE-0071 R4) World Map before 0.5 (no far-water contract) is not supported any more
+                else if (Directory.Exists(wm)) Check(false, "the World Map tree next door declares the far-water uniforms (World Map 0.5 or later)");
             }
 
             Console.WriteLine("the dry-hull cut, run on the GPU");

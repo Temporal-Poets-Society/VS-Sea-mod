@@ -302,21 +302,6 @@ namespace SeaTests
                 Check(cf.Contains("if (sea_Effects.x <= 0.0)") && cf.Contains("cameraUnderwater < 0.01") && cf.Contains("skyExposed > 0") && cf.Contains("c.a = max(c.a, max(sun, moon))") && cf.Contains("texColor = sea_Glints(")
                     && cf.Contains("texColor = sea_SkyReflect(texColor, ray, fres, rgbaFog.rgb);") && !cf.Replace("flatFogStart", "").Contains("Star") && !cf.Contains("texColor.a += added"),
                     "vanilla highlight retained behind disable; water-only sky gates; glints and the Fresnel sky reflection raise alpha (premultiplied OIT); no star reflections");
-                const string haze = "    haze = min(haze, clamp(dayLight, 0.0, 1.0));\n    color.rgb = mix(color.rgb, sky.rgb, haze);\n}";
-                string sunLit = "void main()\n{\n    vec4 color = vec4(albedo * max(vec3(0.05), sun) * (0.55 + 0.45 * light), 1.0);\n" + haze;
-                string ambientLit = "void main()\n{\n    vec4 color = vec4(albedo * clamp(wmapAmbient, 0.0, 1.0) * nb, 1.0);\n" + haze;
-                string fs = CelestialShader.FarFragment(sunLit), fa = CelestialShader.FarFragment(ambientLit);
-                Check(fs != null && fs.Contains("albedo * max(max(vec3(0.05), sun), sea_NightFloor)") && CelestialShader.FarFragment(fs) == null
-                    && fa != null && fa.Contains("albedo * max(clamp(wmapAmbient, 0.0, 1.0), sea_NightFloor) * nb") && CelestialShader.FarFragment(fa) == null,
-                    "Wmap night floor applies once to sun-lit (0.4.1/0.4.2) and ambient-lit (0.4.3) far terrain");
-                string waterLit = "in vec3 wmapPos;\nvoid main()\n{\n    bool water = true;\n    vec4 color = vec4(albedo * clamp(wmapAmbient, 0.0, 1.0) * nb, 1.0);\n" + haze;
-                string fw = CelestialShader.FarFragment(waterLit);
-                Check(fw != null && fw.Contains(CelestialShader.FarSkyReflection) && fw.Contains("uniform float sea_SkyReflect")
-                    && !fa.Contains(CelestialShader.FarSkyReflection) && CelestialShader.FarFragment(fw) == null,
-                    "Wmap's distant sea gets the same Fresnel sky reflection after its sky blend; a shader without its water flag gets the floor only");
-                Check(CelestialShader.FarFragment(ambientLit.Replace("albedo * clamp", "albedo2 * clamp")) == null && CelestialShader.FarFragment(sunLit.Replace("void main()", "void main(void)")) == null
-                    && CelestialShader.FarFragment(sunLit.Replace(haze, "}")) == null && CelestialShader.FarFragment(null) == null,
-                    "Wmap night floor: missing anchors leave the shader alone");
             }
 
             Console.WriteLine("water shader");

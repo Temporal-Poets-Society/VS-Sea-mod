@@ -213,7 +213,6 @@ namespace Sea
             var patched = new[]
             {
                 AccessTools.Method(typeof(WeatherSimulationRegion), nameof(WeatherSimulationRegion.GetWindSpeed)),
-                AccessTools.Method(typeof(WeatherSimulationParticles), "asyncParticleSpawn"),
                 AccessTools.Method(AccessTools.TypeByName("Vintagestory.GameContent.CloudRenderer"), "CloudTick"),
             }.Where(mi => mi != null && Harmony.GetPatchInfo(mi)?.Owners.Contains("sea") == true).Select(mi => mi.Name).ToList();
             Check(patched.Count == 0 && typeof(SeaSystem).GetMethod("OnGetWindSpeed", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic) == null,

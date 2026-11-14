@@ -2,7 +2,8 @@ using System;
 
 namespace Sea
 {
-    /// <summary>Presentation only. Never alters calendar light, block light or gameplay light levels.</summary>
+    /// <summary>Presentation only: no block light or gameplay light levels. The client calendar's rendered day light is lowered
+    /// by real twilight (CelestialRenderer.Twilight); the server's calendar and GetDayLightStrength are never touched.</summary>
     public static class NightSkyMath
     {
         public static float Smooth(float a, float b, float x)

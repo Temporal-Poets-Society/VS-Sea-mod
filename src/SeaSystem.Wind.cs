@@ -100,7 +100,7 @@ namespace Sea
             // no model yet: a sea fully built for the wind right away
             var w = WindAt(x, z, hours);
             double s = w.Strength;
-            double referenceHeight = (0.1 + 2.4 * s * s) * Config.WaveScale;
+            double referenceHeight = WindModel.BaseHeight(s, Config.WaveScale);
             double height = referenceHeight * (1 + (Config.StormHeightScale - 1) * WaveSpectrum.StormBlend(s));
             return new SeaState(height, s > 1e-6 ? w.X / s : 1, s > 1e-6 ? w.Z / s : 0,
                 WindModel.PeriodForHeight(height, Config.WaveScale, referenceHeight), WindModel.StormForHeight(referenceHeight, Config.WaveScale));
@@ -216,7 +216,5 @@ namespace Sea
         }
 
         long revision;
-
-        // ---------------------------------------------------------------- waves
     }
 }

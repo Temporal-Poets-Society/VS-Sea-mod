@@ -37,6 +37,7 @@
     <Compile Include="..\..\src\Water\FoamMath.cs" Link="Water\FoamMath.cs" />
     <Compile Include="..\..\src\Wind\*.cs" Link="Wind\%(Filename).cs" />
     <Compile Include="..\..\src\Water\WaterShader.cs" Link="Water\WaterShader.cs" />
+    <Compile Include="..\..\src\Water\WaterClip.cs" Link="Water\WaterClip.cs" />
     <Compile Include="..\..\src\Water\CelestialShader.cs" Link="Water\CelestialShader.cs" />
     <Compile Include="..\..\src\Water\FlowLook.cs" Link="Water\FlowLook.cs" />
     <Compile Include="..\..\src\Water\NightSkyMath.cs" Link="Water\NightSkyMath.cs" />

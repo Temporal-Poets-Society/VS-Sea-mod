@@ -26,6 +26,7 @@
     <Compile Include="ThirdParty.cs" />
     <Compile Include="..\..\src\Coast\CoastMath.cs" Link="Coast\CoastMath.cs" />
     <Compile Include="..\..\src\Water\WaterShader.cs" Link="Water\WaterShader.cs" />
+    <Compile Include="..\..\src\Water\WaterClip.cs" Link="Water\WaterClip.cs" />
     <Compile Include="..\..\src\Water\CelestialShader.cs" Link="Water\CelestialShader.cs" />
     <Compile Include="..\..\src\Water\FlowLook.cs" Link="Water\FlowLook.cs" />
     <Compile Include="..\..\src\Water\WaveField.cs" Link="Water\WaveField.cs" />
