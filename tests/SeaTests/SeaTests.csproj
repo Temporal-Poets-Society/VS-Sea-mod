@@ -27,6 +27,7 @@
     <Compile Include="CoastChecks.cs" />
     <Compile Include="ReviewChecks.cs" />
     <Compile Include="ContractSnapshot.cs" />
+    <Compile Include="CoastBench.cs" />
     <Compile Include="FlowLookChecks.cs" />
     <Compile Include="..\..\src\Coast\CoastMath.cs" Link="Coast\CoastMath.cs" />
     <Compile Include="..\..\src\Contracts\ContractMath.cs" Link="Contracts\ContractMath.cs" />
@@ -54,7 +55,7 @@
   </ItemGroup>
   <ItemGroup>
     <!-- (SE-0044) the contracts snapshot publishes the built mod's own roles; the alias keeps its types apart from the sources compiled here -->
-    <ProjectReference Include="..\..\Sea.csproj" Aliases="SeaDll" />
+    <ProjectReference Include="..\..\Sea.csproj" Aliases="SeaDll" SetConfiguration="Configuration=Debug" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\worldconfig.json" Link="worldconfig.json" CopyToOutputDirectory="PreserveNewest" />

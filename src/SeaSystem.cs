@@ -615,7 +615,8 @@ namespace Sea
         double ShelteredHeight(WavePlace place,double x,double z)
         {
             var q=place.ParameterAt(x,z);
-            return place.SurfaceAt(q.X,q.Z,MeshWaveFactorAt(q.X,q.Z)).Y;
+            // (SE-0041) the height only: SurfaceAt worked out the horizontal displacement too, to drop it
+            return place.ElevationAt(q.X,q.Z,MeshWaveFactorAt(q.X,q.Z));
         }
 
         // Caller holds probes' lock. Keep the same bounded per-cell cache for heights and inverse shelter lookups.

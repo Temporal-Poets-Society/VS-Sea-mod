@@ -569,6 +569,10 @@ namespace Sea
             return true;
         }
 
+        /// <summary>(SE-0041) The height drawn from mesh coordinate q now, times factor: <see cref="SurfaceAt"/>'s Y without its
+        /// horizontal displacement.</summary>
+        public double ElevationAt(double qx, double qz, double factor = 1) => Elevation(qx, qz, Time) * factor;
+
         /// <summary>
         /// (0.6.0) Train i's height at mesh coordinate q on a coast (WaterShader's sea_TrainY): its open part (the share that
         /// isn't surf), its surf part, which meets the shore where the sea's own crests do and turns in the longshore
