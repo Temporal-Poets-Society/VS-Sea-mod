@@ -1,10 +1,11 @@
 # Sea — waves that follow the wind, the same sea for everyone (Vintage Story 1.22)
 
-**0.6.0-rc.4 (release candidate, 14 November 2026; [wiki](https://github.com/Temporal-Poets-Society/VS-Sea-mod/wiki)):**
+**0.6.0 (14 November 2026; [wiki](https://github.com/Temporal-Poets-Society/VS-Sea-mod/wiki)):**
 waves on coasts (surf, lee, reflection, longshore currents and swash), steeper storms, spray off the open sea's crests,
-the open sea contracts, and the open findings of the 0.4.2 code review fixed. Requires Vintage Story 1.22.0 or later.
-Earth is optional; Earth's weather role is read through the open sea contracts (seen in game with Earth 2.0).
-The coast and storm features were checked in game on one client.
+the open sea contracts, and the findings of three code reviews fixed. Requires Vintage Story 1.22.0 or later.
+Earth is optional; Earth's weather role is read through the open sea contracts (seen in game with Earth 2.0). World
+Map's far sea needs World Map 0.5 or later: Sea no longer patches World Map 0.4's far terrain. The coast and storm
+features were checked in game on one client.
 - **Waves on beaches.** Sea reads the depth under the water near coasts from the blocks and works out how long a wave
   takes to reach the shore from each column. Over shallow water the swell turns until its crests run along the beach,
   grows as the water shallows, is held to a height the depth allows (significant height at most 0.6 × depth) and
@@ -38,8 +39,11 @@ The coast and storm features were checked in game on one client.
   crest. Local and cosmetic; off with `.sea foam off`. Before this only surf on beaches threw spray. In game at
   force 12: 59 fps with the spray at its limit.
 - **The coast map follows the blocks.** A dug channel, a pier or a sea wall: the chunk is scanned again and the tiles
-  that see it are solved again. Tiles are solved on a background thread (about 15–25 ms each offline); `.sea coast`
-  shows what the map has cost.
+  that see it are solved again, before any new tile. Tiles are solved on a background thread (about 15–25 ms each
+  offline); the drawn map is a ring of tiles, so moving uploads only the new ones; `.sea coast` shows what the map has
+  cost. The drawn coast reaches 110 blocks from you and eases into the open sea from 94.
+- **Coasts on Earth and Cylinder World rings.** The coast map wraps round a ring, so surf, lee and swash are on for
+  every Earth world (up to the release candidates a ring turned them off).
 - **Flowing water is drawn alike whichever way it flows** (SEA-D73), so rivers show no colour patches by flow
   direction (vanilla draws diagonal flow twice as opaque).
 - **The drawn water runs one loop over the wave trains** for surface and slope (SEA-D74); `.sea cost` times Sea's
@@ -48,10 +52,13 @@ The coast and storm features were checked in game on one client.
 - **Glints and foam fade by your view distance setting** (SEA-D75), not by the shaders' `viewDistance`, which some LOD
   mods raise; they no longer stop at a hard edge there. LOD mods other than World Map's far terrain are still not
   supported on the suite's worlds.
-- **Code review fixes, 14 November, after rc.4** (SEA-D77): the coastal water's vertex stage costs about 40% less on the GPU; a
-  vanilla boat's pose can't be torn between the particle and render threads; leaving a world switches World Map's far
-  sea off too; errors Sea answers safely are logged once; the coast map uploads only what changed; idle boats ease to
-  the surf's current.
+- **Code review fixes** (SEA-D77, SEA-D79): the coastal water's vertex stage costs about 40% less on the GPU; a
+  vanilla boat's pose can't be torn between the particle and render threads, and boats take their height and shelter
+  from the waves they are posed on; errors Sea answers safely are logged once; idle boats ease to the surf's current;
+  crest spray costs a quarter of what it did; the surf no longer tears between two shores across a channel; water seen
+  from below no longer shows the sky; `sea.json` with an error is left as it is; `/sea setwind` takes a decimal comma
+  and works from the server console; a joining player gets the wave clock at once; the server self-test runs only when
+  asked for (`SEA_SELFTEST=1`).
 - **A new world's storm height** (the Earth tab's `seaStormHeight`) is the server's `sea.json` by default (SEA-D78); worlds
   made before keep their choice.
 - **SheyderMod:** Sea's water code goes into its water shader, and Sea keeps the water's reflections: SheyderMod's own
@@ -402,7 +409,7 @@ Nothing about the wind or the waves is sent while you play, except a clock:
 | `SeaWindStrength` | 0.3 | without a wind provider: that steady wind's strength, 0–1.5 (0 = a calm sea) (0.4.0) |
 | `CelestialReflections` | 1 | sun/moon trails; 0 restores vanilla highlights; range 0–2 |
 | `SkyReflections` | 1 | the sky reflected by Fresnel, near and on Wmap's distant sea (0.4.4; no star reflections); 1 physical; 0 disables; range 0–2 |
-| `Surf` | true | (0.6.0) waves feel the sea floor near coasts: they turn toward the beach, steepen, break (whitewater, spray) and drive a longshore current. Off on a Cylinder World ring |
+| `Surf` | true | (0.6.0) waves feel the sea floor near coasts: they turn toward the beach, steepen, break (whitewater, spray) and drive a longshore current. On a Cylinder World ring too |
 | `NightVisibility` | 1 | outdoor ambient night floor, real twilight and local-moon correction on the client's rendering ([night light](docs/night-light.md)); 1 = clear moonless 0.10, high full moon 0.40 (0.4.7-night; 0.4.4–0.4.7-pre: 0.15 / 0.45, now 1.5); 0 keeps the game's own night and twilight; range 0–2 |
 
 A negative, NaN or infinite number goes back to its default when the server loads the file (0.3.7); `SeaWindFrom` may
