@@ -44,7 +44,10 @@ namespace Sea
         /// Sea's uniforms themselves under the names before 0.6.0 (Wmap 0.5's far sea: <c>seaWave</c>,
         /// <c>seaNightFloor</c>…) still get them: <see cref="N"/> gives the name the program has.
         /// </summary>
-        public static string Legacy(string name) => name.StartsWith("sea_", StringComparison.Ordinal) ? "sea" + name.Substring(4) : name;
+        public static string Legacy(string name) => name.StartsWith("sea_", StringComparison.Ordinal) ? legacyNames.GetOrAdd(name, n => "sea" + n.Substring(4)) : name;
+
+        // (SE-0035) each name worked out once: Has and N run in every program's Use, and a new string each time was garbage
+        static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> legacyNames = new();
 
         /// <summary>(0.6.0) Does the program declare this Sea uniform, under its name or its name before 0.6.0?</summary>
         public static bool Has(Vintagestory.API.Client.IShaderProgram p, string name) => p.HasUniform(name) || p.HasUniform(Legacy(name));

@@ -320,9 +320,20 @@ namespace Sea
             if (WaterShader.Has(prog, "sea_WaveFactor")) prog.Uniform(WaterShader.N(prog, "sea_WaveFactor"), waveFactor);
         }
 
+        /// <summary>(SE-0012, .sea uploaderror) The next upload throws, to check the fallback after an upload error.</summary>
+        public static bool FailNextUpload;
+
+        /// <summary>The client's water numbers were switched off after an upload error (for .sea).</summary>
+        public static bool UploadFailed => current?.uploadFailed == true;
+
         /// <summary>This frame's numbers into a program that's in use.</summary>
         void Upload(IShaderProgram prog)
         {
+            if (FailNextUpload)
+            {
+                FailNextUpload = false;
+                throw new InvalidOperationException("upload error asked for by .sea uploaderror");
+            }
             const int P = WaterShader.ProfileStations, DP = WaterShader.DryStations * WaterShader.DryLevels;
             int n = clipCount, shapes = shapeCount, wn = waveCount;
             prog.Uniform(WaterShader.N(prog, "sea_ClipCount"), n);

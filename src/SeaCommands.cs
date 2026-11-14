@@ -157,6 +157,14 @@ namespace Sea
                     .WithDescription("(checks) Start measuring what Sea's shader-use postfixes cost a frame; again to stop and see it")
                     .HandleWith(args => TextCommandResult.Success(UseCost.Toggle()))
                 .EndSubCommand()
+                .BeginSubCommand("uploaderror")
+                    .WithDescription("(checks) Make Sea's next water upload fail, to see the fallback: vanilla waves, no hull cuts and no wave foam until you leave the world")
+                    .HandleWith(args =>
+                    {
+                        WaterRenderer.FailNextUpload = true;
+                        return TextCommandResult.Success("Sea's next water upload will fail: from then on vanilla waves (moving, not frozen), no hull cuts and no wave foam until you leave the world; the sky reflection and glints stay, on vanilla's flatter water.");
+                    })
+                .EndSubCommand()
                 .BeginSubCommand("drawn")
                     .WithDescription("(0.6.0, checks) How far the drawn water is from the contracts' per-place height, 0 to 512 blocks from you")
                     .HandleWith(args =>
@@ -223,6 +231,7 @@ namespace Sea
             sb.Append($"\nDrawn waves: {cw.SignificantHeight:0.00} blocks from {cw.Count} wave trains ({sys.DrawnWaveCount} in the shader), here × {sys.WaveFactorAt(ep.Pos.X, ep.Pos.Z):0.00} (open sea 1, sheltered 0.2, inland 0).");
             sb.Append($"\nWave clock: {sys.WaveTime:0.0} s, {(sys.WaveClockSynced ? $"{sys.WaveClockError * 1000:+0;-0} ms from the server's" : "not heard from the server yet")}.");
             sb.Append($"\nWater shader: Sea code {(WaterRenderer.Injected ? "in" : "MISSING")}, Sea waves {(WaterRenderer.WavesInjected ? "in" : "MISSING (vanilla waves)")} ({Hooks.PassWavesReport()}), hulls kept dry this frame: {sys.DrawnHullCount}.");
+            if (WaterRenderer.UploadFailed) sb.Append(" Sea's water numbers are OFF after an upload error (see the log): vanilla waves, no hull cuts, until you leave the world.");
             var eye = capi.World.Player.Entity.CameraPos.AddCopy(capi.World.Player.Entity.LocalEyePos);
             if (Hooks.WaterCodeLevel > 0) sb.Append($"\nYour graphics driver didn't take all of Sea's water code: {(Hooks.WaterCodeLevel == 1 ? "no dry-hull cut" : "vanilla water")} (see the client log).");
             sb.Append($"\nDry hulls: water cut out {(Hooks.DryHullsInjected ? "in the shader" : "MISSING")}, {sys.DrawnDryHullCount} drawn this frame, {sys.DrySpaceSources} mod(s) with dry places; your eyes are {(sys.IsDry(eye.X, eye.Y, eye.Z) ? "in a dry place" : "not in a dry place")}; {DryParticles.Dropped} water specks, splashes and spray kept out of dry places so far.");
