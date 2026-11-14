@@ -108,10 +108,13 @@ namespace ShaderCheck
                 // (SE-0034) shader mods that replace the water shader files: Sea's code still goes in and compiles
                 ThirdPartyWater(shaders, defs);
                 // Wmap's working tree next door, or another checkout of it (WMAP_ROOT, its project folder).
-                string wm = Path.GetFullPath(Path.Combine(Environment.GetEnvironmentVariable("WMAP_ROOT") ?? "../Wmap", "assets/wmap"));
+                string wm = Path.Combine(WmapRoot() ?? "", "assets", "wmap");
                 // Wmap's includes first: from 0.5 its far shading is in them.
                 if (Directory.Exists(wm)) foreach (string f in Directory.GetFiles(Path.Combine(wm, "shaderincludes"))) includes[Path.GetFileName(f)] = File.ReadAllText(f);
-                if (Directory.Exists(wm) && Load(Path.Combine(wm, "shaders"), "farterrain.fsh").Contains("sea_NightFloor"))
+                // (SE-0036) Wmap 0.5 declares the far-water uniforms in its includes, under Sea's names (sea_NightFloor) or the
+                // names before SEA-D57 (seaNightFloor): either means the far-water contract
+                string farText = Directory.Exists(wm) ? Load(Path.Combine(wm, "shaders"), "farterrain.fsh") : "";
+                if (Directory.Exists(wm) && (farText.Contains("sea_NightFloor") || farText.Contains("seaNightFloor")))
                 {
                     // (0.4.7) Wmap 0.5 declares the far-water uniforms and shades its distant sea itself, in every far program:
                     // Sea leaves its shaders unpatched and only sets the uniforms (and the waves).
@@ -122,7 +125,11 @@ namespace ShaderCheck
                         int fp = Build("Wmap 0.5 " + far + " with its far-water contract", Load(Path.Combine(wm, "shaders"), far + ".vsh"), Load(Path.Combine(wm, "shaders"), far + ".fsh"), defs);
                         if (fp == 0) continue;
                         foreach (string u in new[] { "sea_NightFloor", "sea_SkyReflect", "sea_WaveCount", "sea_Wave", "sea_WaveFactor", "sea_Sunset", "sea_Glint", "sea_Sun", "sea_SunColor", "sea_Weather" })
-                            Check(GL.GetUniformLocation(fp, u) >= 0 || GL.GetUniformLocation(fp, u + "[0]") >= 0, "Wmap 0.5 " + far + ": " + u + " is live");
+                        {
+                            string old = WaterShader.Legacy(u);
+                            Check(GL.GetUniformLocation(fp, u) >= 0 || GL.GetUniformLocation(fp, u + "[0]") >= 0
+                                || GL.GetUniformLocation(fp, old) >= 0 || GL.GetUniformLocation(fp, old + "[0]") >= 0, "Wmap 0.5 " + far + ": " + u + " is live");
+                        }
                         GL.DeleteProgram(fp);
                     }
                 }
@@ -289,15 +296,31 @@ void main(){ vec3 r=reflect(normalize(testEye),vec3(0,1,0)); vec4 c=sea_Glints(v
 
         // (0.4.7-pre.7, issue 14) Wmap's far sea carries the near water's glitter to the horizon: its wmapSeaGlints, taken from
         // the working tree's include, must give what Sea's sea_Glints gives for the same ray, roughness and uniforms.
+        /// <summary>(SE-0036) World Map's project folder: WMAP_ROOT, else a Wmap folder beside this Sea checkout or above it
+        /// (a worktree lives under Sea/.claude/worktrees), else null.</summary>
+        static string WmapRoot()
+        {
+            string env = Environment.GetEnvironmentVariable("WMAP_ROOT");
+            if (!string.IsNullOrEmpty(env)) return Path.GetFullPath(env);
+            for (var dir = new DirectoryInfo(Directory.GetCurrentDirectory()); dir != null; dir = dir.Parent)
+            {
+                string candidate = Path.Combine(dir.FullName, "Wmap");
+                if (Directory.Exists(Path.Combine(candidate, "assets", "wmap"))) return candidate;
+            }
+            return null;
+        }
+
         static void FarGlintMatchesNear()
         {
-            string wm = Path.GetFullPath(Path.Combine(Environment.GetEnvironmentVariable("WMAP_ROOT") ?? "../Wmap", "assets/wmap/shaderincludes/wmapfaralbedo.ash"));
+            string wm = Path.Combine(WmapRoot() ?? "", "assets", "wmap", "shaderincludes", "wmapfaralbedo.ash");
             if (!File.Exists(wm)) { Console.WriteLine("  --   Wmap's far glint not compared (no Wmap working tree)"); return; }
             string albedo = File.ReadAllText(wm);
             int from = albedo.IndexOf("float wmapLobe(", StringComparison.Ordinal), to = albedo.IndexOf("// Land this many blocks", StringComparison.Ordinal);
             if (from < 0 || to <= from) { Console.WriteLine("  --   Wmap's far glint not compared (this Wmap has none)"); return; }
             const string v = "#version 330 core\nvoid main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0,1); }";
-            string f = "#version 330 core\nuniform float flatFogDensity;\nuniform float flatFogStart;\nuniform float sea_Glint;\nin float sea_SurfaceRoughIn;\n"
+            // (SE-0036) Wmap's glint code reads the uniforms under their names before SEA-D57: the same uniforms here
+            string f = "#version 330 core\n#define seaGlint sea_Glint\n#define seaSun sea_Sun\n#define seaMoon sea_Moon\n#define seaSunColor sea_SunColor\n#define seaWeather sea_Weather\n"
+                + "uniform float flatFogDensity;\nuniform float flatFogStart;\nuniform float sea_Glint;\nin float sea_SurfaceRoughIn;\n"
                 + CelestialShader.Declarations.Replace("in float sea_SurfaceRough;", "float sea_SurfaceRough;") + albedo.Substring(from, to - from) + @"
 uniform vec3 testRay;
 uniform float testRough;

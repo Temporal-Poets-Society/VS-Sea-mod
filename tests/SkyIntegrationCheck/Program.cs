@@ -130,10 +130,12 @@ static class Program
             }, System.Text.RegularExpressions.RegexOptions.Multiline);
             string source = Expand(File.ReadAllText(farPath));
             string patched = (string)p.Invoke(null, new object[] { source });
-            if (source.Contains("seaNightFloor"))
+            // (SE-0036) Wmap 0.5 declares the far-water uniforms under the names before SEA-D57 (seaNightFloor) or Sea's own;
+            // Sea's own patch of an older Wmap declares sea_NightFloor (SEA-D57)
+            if (source.Contains("seaNightFloor") || source.Contains("sea_NightFloor"))
                 Check(patched == null, "workspace Wmap 0.5: its own far-water contract, left unpatched (Sea sets the uniforms)");
             else
-                Check(patched != null && patched.Contains("seaNightFloor") && patched.Contains(CelestialShader.FarSkyReflection) && CelestialRenderer.FarFragment(patched) == null,
+                Check(patched != null && patched.Contains("sea_NightFloor") && patched.Contains(CelestialShader.FarSkyReflection) && CelestialRenderer.FarFragment(patched) == null,
                     "workspace Wmap: distant night floor and sea sky reflection apply once");
         }
         else Check(false, "Wmap source available for the optional continuity check");
