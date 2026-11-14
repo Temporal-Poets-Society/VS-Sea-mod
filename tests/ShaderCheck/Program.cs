@@ -105,6 +105,8 @@ namespace ShaderCheck
                         if (eo != 0) GL.DeleteProgram(eo);
                     }
                 }
+                // (SE-0034) shader mods that replace the water shader files: Sea's code still goes in and compiles
+                ThirdPartyWater(shaders, defs);
                 // Wmap's working tree next door, or another checkout of it (WMAP_ROOT, its project folder).
                 string wm = Path.GetFullPath(Path.Combine(Environment.GetEnvironmentVariable("WMAP_ROOT") ?? "../Wmap", "assets/wmap"));
                 // Wmap's includes first: from 0.5 its far shading is in them.

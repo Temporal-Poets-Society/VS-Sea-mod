@@ -82,7 +82,7 @@ uniform vec4 sea_CoastArea = vec4(0.0);
 uniform vec4 sea_CoastSea = vec4(0.0);
 uniform sampler2D sea_CoastTex;
 const float sea_MaxDepth = 32.0;
-const float sea_Step = 0.02;
+const float sea_Step = 0.01;
 float sea_Surf = 0.0; // whitewater at the last sea_Differential (0.6.0)
 // (SE-0024) one loop for the surface and its slope: while sea_KeepSurface is set, sea_Differential also adds up the surface
 // at q (its height before the factor) into sea_Kept, and sea_Surface at the same q takes it instead of its own loop
@@ -262,13 +262,14 @@ void sea_Differential(vec2 q, float factor, float footprint, out vec2 slope, out
     sea_CoastAt(q);
     // (0.6.0) on a coast each train's size changes from place to place (the depth cap, the share handed to the surf, the
     // lee of land and the wind sea's fetch, a rip), and its surf and reflected parts follow the shore: the coast
-    // 1/50 block to either side, and each train's parts there, give their gradients by central differences (the open
-    // part's phase is exact)
+    // 1/50 block east and south, and each train's parts there, give their gradients by differences with the parts here
+    // (the open part's phase is exact). (SE-0035) Forward differences: two side points, not four (central differences
+    // up to 0.6.0-rc.2), about a third less work per coastal vertex; the step is far below anything the coast map varies over.
     bool coastal = sea_Affects(sea_K);
-    sea_Coast side[4];
+    sea_Coast side[2];
     if (coastal) {
         sea_Coast here = sea_K;
-        for (int s = 0; s < 4; s++) { sea_CoastAt(q + sea_SideStep(s)); side[s] = sea_K; }
+        for (int s = 0; s < 2; s++) { sea_CoastAt(q + sea_SideStep(2 * s)); side[s] = sea_K; }
         sea_K = here;
     }
     float surfSum = 0.0, surfCrest = 0.0;
@@ -292,21 +293,22 @@ void sea_Differential(vec2 q, float factor, float footprint, out vec2 slope, out
         jac -= sea_WaveShape*sea_ShapeWeight(k)*ao*k*sn*keep*outerProduct(direction,direction);
         gradient += keep*ao*w.xy*cs*factor;
         if (coastal) {
-            float aoS[4], restS[4], thsS[4];
-            for (int s = 0; s < 4; s++) {
-                vec2 p = q + sea_SideStep(s);
+            float aoS[2], restS[2], thsS[2];
+            for (int s = 0; s < 2; s++) {
+                vec2 p = q + sea_SideStep(2 * s);
                 float a1, s1, t1;
                 float y = sea_TrainY(i,p,side[s],a1,s1,t1);
                 aoS[s] = a1; restS[s] = y - a1*sin(dot(w.xy,p)+w.z); thsS[s] = t1;
             }
+            float rest = y - ao*sn;
             // the orbits and the height grow and shrink with the open part's size: J += (orbit direction) x grad(size)
-            vec2 dO = vec2(aoS[0]-aoS[1], aoS[2]-aoS[3])/(2.0*sea_Step);
+            vec2 dO = vec2(aoS[0]-ao, aoS[1]-ao)/sea_Step;
             jacSize += sea_WaveShape*sea_ShapeWeight(k)*cs*keep*outerProduct(direction,dO);
             gradient += keep*dO*sn*factor;
             // the surf and what the shore throws back, faded out where finer than the footprint
-            float ks = as>0.0 ? length(vec2(thsS[0]-thsS[1], thsS[2]-thsS[3]))/(2.0*sea_Step) : 0.0;
+            float ks = as>0.0 ? length(vec2(thsS[0]-ths, thsS[1]-ths))/sea_Step : 0.0;
             float keepS = 1.0-smoothstep(0.25,0.75,max(ks,k)*footprint);
-            gradient += keepS*vec2(restS[0]-restS[1], restS[2]-restS[3])/(2.0*sea_Step)*factor;
+            gradient += keepS*vec2(restS[0]-rest, restS[1]-rest)/sea_Step*factor;
             rough += (1.0-keepS*keepS)*0.5*pow(as*ks*factor,2.0);
             if (as>0.0) { vec3 sh=sea_Breaker(ths,sea_K.br.y); surfSum += as; surfCrest += as*sh.z*sh.z*sh.z; }
         }

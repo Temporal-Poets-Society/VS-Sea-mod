@@ -103,6 +103,7 @@ namespace Sea
             string old = code.Substring(s, e - s);
             code = code.Remove(s, e - s).Insert(s, "if (sea_Effects.x <= 0.0) {\n" + old + "}\n");
             code = code.Replace(finish, @"
+    float sea_Reach = sea_FadeDistance > 0.0 ? sea_FadeDistance : viewDistance;
     if (!isLava && fragNormal.y > 0.9 && skyExposed > 0 && cameraUnderwater < 0.01 && (sea_Effects.x > 0.0 || sea_Effects.y > 0.0)) {
         vec3 eyeDelta = fWorldPos - sea_Eye;
         vec3 eye = eyeDelta / max(length(eyeDelta), 0.001);
@@ -114,8 +115,9 @@ namespace Sea
         if (sea_Effects.y > 0.0) texColor = sea_SkyReflect(texColor, ray, fres, rgbaFog.rgb);
         // (0.4.7-pre.7) Glints go on until the game's water has faded (0.76 to 0.8 of the view distance); Wmap 0.5.0-pre.8's
         // far sea, from 0.75, carries the same glitter on to the horizon (sea_Glint). Up to pre.6 they stopped from half the
-        // view distance, leaving a calm band short of the horizon (issue 14).
-        float sea_Edge = 1.0 - smoothstep(viewDistance * 0.76, viewDistance * 0.80, length(fWorldPos.xz));
+        // view distance, leaving a calm band short of the horizon (issue 14). (SE-0033) Of Sea's own view distance, the
+        // game's setting: a mod that raises the program's viewDistance to push vanilla's fade out would cut them off.
+        float sea_Edge = 1.0 - smoothstep(sea_Reach * 0.76, sea_Reach * 0.80, length(fWorldPos.xz));
         // (0.4.7) Only rays turned well down into the sea are cut; the lobe already needs the ray on the body, and a
         // setting sun's reflected ray is level or a little below (0.4.6 needed it 4.6 degrees up for full strength).
         float exposed = sea_Edge * smoothstep(-0.06, -0.02, ray.y);
@@ -132,7 +134,7 @@ namespace Sea
         float foam = coverage > 0.0 ? sea_WindFoam(foamPos, sea_FoamCrest, coverage) : 0.0;
         // (0.6.0) whitewater on the breakers and the bores behind them, holed like the wind's foam
         if (sea_SurfFoam > 0.001) foam = max(foam, sea_SurfWater(foamPos, sea_SurfFoam));
-        float edge = 1.0 - smoothstep(viewDistance * 0.76, viewDistance * 0.80, length(fWorldPos.xz));
+        float edge = 1.0 - smoothstep(sea_Reach * 0.76, sea_Reach * 0.80, length(fWorldPos.xz));
         foam *= edge;
         texColor.rgb = mix(texColor.rgb, vec3(0.88, 0.94, 0.92) * rgba.rgb * shadowBright, foam);
         texColor.a = max(texColor.a, foam * 0.96);
@@ -229,6 +231,8 @@ uniform float sea_AboveSea; // (0.4.7) the eye above sea level (the game's playe
 uniform vec4 sea_Sunset = vec4(0.0); // (0.4.7) AstraTerra's sunset glow (SunsetScatter.Shown): sun colour x strength, strength
 uniform sampler2D sea_SkyTex;  // the game's sky colours (sky.png)
 uniform sampler2D sea_GlowTex; // the game's sun glow (sunlight.png)
+// (SE-0033) the game's view distance as Sea reads it from the settings; 0 (not set yet): the program's viewDistance
+uniform float sea_FadeDistance = 0.0;
 float sea_Celestial(float p, float width) { return exp(-max(0.0, 1.0-p) / width); }
 " + FoamDeclarations + @"
 // (0.4.7) AstraTerra's sunset glow for a direction v and the sun (its SunsetScatter.Shape, the same numbers): a halo round

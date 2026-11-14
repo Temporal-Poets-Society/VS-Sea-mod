@@ -975,6 +975,10 @@ namespace Sea
             swash = new SwashRenderer(api, this);
             api.Event.RegisterRenderer(swash, EnumRenderStage.Opaque, "sea-swash");
             SeaCommands.RegisterClient(api, this);
+            // (SE-0034) SheyderMod's screen-space water reflection, on by default, lays a mirror over Sea's water: a second sun
+            // on the glitter path, foam and sky reflection veiled. Sea's own code still goes into its water shader.
+            if (api.ModLoader.IsModEnabled("sheydermod"))
+                api.Logger.Notification("[sea] SheyderMod is installed: turn its Water reflections off (F8 menu, or Water.Enabled false in sheydermod.json) so Sea's sun, sky and foam show; the rest of it can stay on");
 
             // the water shaders were compiled before our patch existed: recompile them with Sea's code
             onLevelFinalize = () =>

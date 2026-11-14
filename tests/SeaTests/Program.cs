@@ -259,8 +259,12 @@ namespace SeaTests
                     && cf.Contains("1.0 - 1.0 / exp((skyPos.y - fogFrom - bias) * flatFogDensity)") && cf.Contains("0.25 * sea_AboveSea")
                     && cf.Contains("sea_SunsetShape(d, sea_Sun.xyz)") && cf.Contains("glint *= width / spread;"),
                     "near water: trains fade by the far sea's footprint rule; the sky reflection has flat fog, the eye's height and the sunset glow");
-                Check(cf.Contains("smoothstep(viewDistance * 0.76, viewDistance * 0.80, length(fWorldPos.xz))") && !cf.Contains("viewDistance * 0.50"),
+                Check(cf.Contains("smoothstep(sea_Reach * 0.76, sea_Reach * 0.80, length(fWorldPos.xz))") && !cf.Contains("viewDistance * 0.50"),
                     "near glints last until the game's water has faded (0.76-0.8 of the view distance), where Wmap's far sea takes the glitter on (issue 14)");
+                // (SE-0033) glints and foam fade by Sea's own view distance, the program's viewDistance only until Sea has set it
+                Check(cf.Contains("uniform float sea_FadeDistance = 0.0;") && cf.Contains("float sea_Reach = sea_FadeDistance > 0.0 ? sea_FadeDistance : viewDistance;")
+                    && !System.Text.RegularExpressions.Regex.IsMatch(cf, @"smoothstep\(viewDistance \* 0\.7"),
+                    "glints and foam fade by the game's view distance as Sea sets it, not the shader's viewDistance a LOD mod raises (SE-0033)");
                 Check(cf.Contains("if (sea_Effects.x <= 0.0)") && cf.Contains("cameraUnderwater < 0.01") && cf.Contains("skyExposed > 0") && cf.Contains("c.a = max(c.a, max(sun, moon))") && cf.Contains("texColor = sea_Glints(")
                     && cf.Contains("texColor = sea_SkyReflect(texColor, ray, fres, rgbaFog.rgb);") && !cf.Replace("flatFogStart", "").Contains("Star") && !cf.Contains("texColor.a += added"),
                     "vanilla highlight retained behind disable; water-only sky gates; glints and the Fresnel sky reflection raise alpha (premultiplied OIT); no star reflections");

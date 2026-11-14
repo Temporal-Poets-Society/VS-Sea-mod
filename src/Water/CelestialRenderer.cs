@@ -183,7 +183,12 @@ namespace Sea
             var view = api.Render.CameraMatrixOrigin;
             if (view != null && Mat4d.Invert(inverseView, view) != null)
                 eye.Set((float)inverseView[12], (float)inverseView[13], (float)inverseView[14]);
+            // (SE-0033) the view distance the player set, not the programs' viewDistance, which LOD mods (and World Map's
+            // planned fade removal, WM-0018) raise to push vanilla's fade past the chunks
+            fadeDistance = Math.Max(0, api.Settings.Int["viewDistance"]);
         }
+
+        float fadeDistance;
 
         long renderFrame, skyFrame = -1;
 
@@ -474,6 +479,7 @@ namespace Sea
             bool enabled = c.api.World?.Player?.Entity?.Pos.Dimension == 0;
             p.Uniform(WaterShader.N(p, "sea_Effects"), enabled ? c.GlintStrength : 0, enabled ? c.SkyStrength : 0);
             p.Uniform(WaterShader.N(p, "sea_Eye"), c.eye);
+            if (WaterShader.Has(p, "sea_FadeDistance")) p.Uniform("sea_FadeDistance", c.fadeDistance);
             p.Uniform(WaterShader.N(p, "sea_Sun"), c.sun.X, c.sun.Y, c.sun.Z, 1.6f);  // saturates the glint core, as vanilla's does
             p.Uniform(WaterShader.N(p, "sea_Moon"), c.moon.X, c.moon.Y, c.moon.Z, 0.75f * c.phase * c.night);
             // (0.4.7) The drawn sun's colour (SunAndGlow)
