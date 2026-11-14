@@ -1,6 +1,6 @@
 # Sea — waves that follow the wind, the same sea for everyone (Vintage Story 1.22)
 
-**0.6.0-rc.3 (release candidate, 14 November 2026; [wiki](https://github.com/Temporal-Poets-Society/VS-Sea-mod/wiki)):**
+**0.6.0-rc.4 (release candidate, 14 November 2026; [wiki](https://github.com/Temporal-Poets-Society/VS-Sea-mod/wiki)):**
 waves on coasts (surf, lee, reflection, longshore currents and swash), steeper storms, spray off the open sea's crests,
 the open sea contracts, and the open findings of the 0.4.2 code review fixed. Requires Vintage Story 1.22.0 or later.
 Earth is optional; Earth's weather role is read through the open sea contracts (seen in game with Earth 2.0).
@@ -48,8 +48,10 @@ The coast and storm features were checked in game on one client.
 - **Glints and foam fade by your view distance setting** (SEA-D75), not by the shaders' `viewDistance`, which some LOD
   mods raise; they no longer stop at a hard edge there. LOD mods other than World Map's far terrain are still not
   supported on the suite's worlds.
-- **SheyderMod:** Sea's water code goes into its water shader; turn its "Water" reflections off (F8 menu), or they lay a
-  second, sharp sun over Sea's glitter path. Sea logs a hint when SheyderMod is installed.
+- **SheyderMod:** Sea's water code goes into its water shader, and Sea keeps the water's reflections: SheyderMod's own
+  water reflection (a flat mirror over the water that laid a second, sharp sun over Sea's glitter path) is skipped
+  while Sea draws the water (SEA-D76). Its other features, its water ripples among them, stay on; nothing in its
+  settings is changed.
 - **Code review fixes** (SEA-D72, the open findings of the 0.4.2 review): client and server wave heights agree, no
   state is mixed across threads, vanilla's wind is read on the main thread, listeners are removed on dispose, and
   calendar changes are followed.

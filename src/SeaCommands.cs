@@ -157,6 +157,16 @@ namespace Sea
                     .WithDescription("(checks) Start measuring what Sea's shader-use postfixes cost a frame; again to stop and see it")
                     .HandleWith(args => TextCommandResult.Success(UseCost.Toggle()))
                 .EndSubCommand()
+                .BeginSubCommand("sheyderwater")
+                    .WithDescription("(checks) SheyderMod's water reflection over Sea's water: off (Sea's, the default) or on, until you leave the world")
+                    .WithArgs(parsers.OptionalWord("onoff"))
+                    .HandleWith(args =>
+                    {
+                        string v = args[0] as string;
+                        if (v == "on" || v == "off") Hooks.LetSheyderReflect = v == "on";
+                        return TextCommandResult.Success($"SheyderMod's water reflection: {(Hooks.LetSheyderReflect ? "on (drawn over Sea's water)" : "off, Sea's reflections only")}; skipped in {Hooks.SheyderSkipped} frames so far.");
+                    })
+                .EndSubCommand()
                 .BeginSubCommand("uploaderror")
                     .WithDescription("(checks) Make Sea's next water upload fail, to see the fallback: vanilla waves, no hull cuts and no wave foam until you leave the world")
                     .HandleWith(args =>

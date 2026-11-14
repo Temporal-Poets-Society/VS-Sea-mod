@@ -137,6 +137,14 @@ namespace Sea
                     transpiler: new HarmonyMethod(typeof(DryParticles), nameof(DryParticles.InWaterTranspiler)));
                 if (DryParticles.LastReplaced == 0) throw new Exception("no particle spawn found in it");
             });
+            // (SE-0034, SEA-D76) SheyderMod's screen-space water reflection, a flat mirror blended over the finished water,
+            // laid a second sun over Sea's glitter path and veiled its sky reflection and foam: while Sea's water code is in,
+            // its pass is skipped. Nothing of SheyderMod's config is changed or saved; its other features stay on.
+            var sheyderWater = AccessTools.TypeByName("SheyderMod.Features.WaterShader.WaterSsrRenderer");
+            if (sheyderWater != null)
+                Try("SheyderMod's water reflection left to Sea", () => harmony.Patch(
+                    AccessTools.Method(sheyderWater, "RenderPass") ?? throw new Exception("RenderPass not found"),
+                    prefix: new HarmonyMethod(typeof(Hooks), nameof(SheyderWaterPrefix))));
             Try("no rain splashes or spray in dry places", () =>
             {
                 // (0.4.2) both checked before either is patched: a feature reported off is off in both
@@ -150,6 +158,18 @@ namespace Sea
                 foreach (var m in methods)
                     harmony.Patch(m, transpiler: new HarmonyMethod(typeof(DryParticles), nameof(DryParticles.OnWaterTranspiler)));
             });
+        }
+
+        /// <summary>(SE-0034) .sea sheyderwater on: SheyderMod draws its water reflection again (for comparing).</summary>
+        public static bool LetSheyderReflect;
+        /// <summary>Frames SheyderMod's water reflection was skipped (for .sea).</summary>
+        public static long SheyderSkipped;
+
+        static bool SheyderWaterPrefix()
+        {
+            if (LetSheyderReflect || !WaterRenderer.Injected) return true;
+            SheyderSkipped++;
+            return false;
         }
 
         /// <summary>(0.4.2) Sea's water uniforms are uploaded as the game uses a water program (<see cref="UsePostfix"/>).</summary>
@@ -183,6 +203,7 @@ namespace Sea
                     injectedLevel = -1;
                     lock (passWaves) passWaves.Clear();
                     WavesOff = false;
+                    LetSheyderReflect = false;
                 }
                 if (users > 0 && --users == 0 && harmony != null)
                 {
