@@ -173,6 +173,7 @@ namespace SeaTests
             ContractChecks.Run(Check);
             ContractSnapshot.Run(Check);
             CoastBench.Run();
+            InjectionChecks.Run(Check);
             CoastChecks.Run(Check);
 
             Console.WriteLine("night sky presentation");

@@ -28,6 +28,7 @@
     <Compile Include="ReviewChecks.cs" />
     <Compile Include="ContractSnapshot.cs" />
     <Compile Include="CoastBench.cs" />
+    <Compile Include="InjectionChecks.cs" />
     <Compile Include="FlowLookChecks.cs" />
     <Compile Include="..\..\src\Coast\CoastMath.cs" Link="Coast\CoastMath.cs" />
     <Compile Include="..\..\src\Contracts\ContractMath.cs" Link="Contracts\ContractMath.cs" />

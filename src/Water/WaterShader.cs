@@ -50,6 +50,14 @@ namespace Sea
         static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> legacyNames = new();
 
         /// <summary>(0.6.0) Does the program declare this Sea uniform, under its name or its name before 0.6.0?</summary>
+        /// <summary>(SE-0048) The anchor is in the code exactly once: a repeated line would take Sea's code twice and fail to
+        /// compile (then step down), so an injector leaves such a shader alone instead.</summary>
+        public static bool Once(string code, string anchor)
+        {
+            int at = code.IndexOf(anchor, StringComparison.Ordinal);
+            return at >= 0 && code.IndexOf(anchor, at + anchor.Length, StringComparison.Ordinal) < 0;
+        }
+
         public static bool Has(Vintagestory.API.Client.IShaderProgram p, string name) => p.HasUniform(name) || p.HasUniform(Legacy(name));
 
         /// <summary>(0.6.0) The name the program declares this Sea uniform under (its own name when neither is declared).</summary>
@@ -498,7 +506,7 @@ bool sea_Dry(vec3 p) {
         public static string Inject(string code, out bool waves, bool dry = true, bool allowWaves = true)
         {
             waves = false;
-            if (code == null || code.Contains(Marker)) return null;
+            if (code == null || code.Contains(Marker) || !Once(code, MainAnchor) || !Once(code, CallAnchor)) return null;
             int m = code.IndexOf(MainAnchor, StringComparison.Ordinal);
             int c = code.IndexOf(CallAnchor, StringComparison.Ordinal);
             if (m < 0 || c < m) return null;
@@ -518,7 +526,7 @@ bool sea_Dry(vec3 p) {
         /// </summary>
         public static string InjectFragment(string code)
         {
-            if (code == null || code.Contains(DryMarker)) return null;
+            if (code == null || code.Contains(DryMarker) || !Once(code, MainAnchor)) return null;
             int m = code.IndexOf(MainAnchor, StringComparison.Ordinal);
             if (m < 0) return null;
             int brace = code.IndexOf('{', m);

@@ -470,10 +470,12 @@ namespace Sea
                 if (WaterShader.Has(p, "sea_Glint"))
                 {
                     p.Uniform(WaterShader.N(p, "sea_Glint"), c.api.World?.Player?.Entity?.Pos.Dimension == 0 ? c.GlintStrength : 0f);
-                    p.Uniform(WaterShader.N(p, "sea_Sun"), c.sun.X, c.sun.Y, c.sun.Z, 1.6f);
-                    p.Uniform(WaterShader.N(p, "sea_Moon"), c.moon.X, c.moon.Y, c.moon.Z, 0.75f * c.phase * c.night);
-                    p.Uniform(WaterShader.N(p, "sea_SunColor"), c.sunR, c.sunG, c.sunB);
-                    p.Uniform(WaterShader.N(p, "sea_Weather"), c.clear, c.night, c.api.Ambient.BlendedCloudDensity, c.roughness);
+                    // (SE-0048) each one only if the program has it: vanilla's Uniform throws on a name it doesn't know, and that
+                    // switched every celestial uniform off
+                    if (WaterShader.Has(p, "sea_Sun")) p.Uniform(WaterShader.N(p, "sea_Sun"), c.sun.X, c.sun.Y, c.sun.Z, 1.6f);
+                    if (WaterShader.Has(p, "sea_Moon")) p.Uniform(WaterShader.N(p, "sea_Moon"), c.moon.X, c.moon.Y, c.moon.Z, 0.75f * c.phase * c.night);
+                    if (WaterShader.Has(p, "sea_SunColor")) p.Uniform(WaterShader.N(p, "sea_SunColor"), c.sunR, c.sunG, c.sunB);
+                    if (WaterShader.Has(p, "sea_Weather")) p.Uniform(WaterShader.N(p, "sea_Weather"), c.clear, c.night, c.api.Ambient.BlendedCloudDensity, c.roughness);
                 }
             }
             if (!WaterShader.Has(p, "sea_Effects")) return;
@@ -481,7 +483,7 @@ namespace Sea
             bool enabled = c.api.World?.Player?.Entity?.Pos.Dimension == 0;
             p.Uniform(WaterShader.N(p, "sea_Effects"), enabled ? c.GlintStrength : 0, enabled ? c.SkyStrength : 0);
             p.Uniform(WaterShader.N(p, "sea_Eye"), c.eye);
-            if (WaterShader.Has(p, "sea_FadeDistance")) p.Uniform("sea_FadeDistance", c.fadeDistance);
+            if (WaterShader.Has(p, "sea_FadeDistance")) p.Uniform(WaterShader.N(p, "sea_FadeDistance"), c.fadeDistance);
             p.Uniform(WaterShader.N(p, "sea_Sun"), c.sun.X, c.sun.Y, c.sun.Z, 1.6f);  // saturates the glint core, as vanilla's does
             p.Uniform(WaterShader.N(p, "sea_Moon"), c.moon.X, c.moon.Y, c.moon.Z, 0.75f * c.phase * c.night);
             // (0.4.7) The drawn sun's colour (SunAndGlow)

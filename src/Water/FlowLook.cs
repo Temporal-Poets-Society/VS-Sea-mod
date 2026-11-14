@@ -59,7 +59,7 @@ float sea_FlowAlpha(float speed, float up) {
         /// </summary>
         public static string Inject(string code)
         {
-            if (code == null || code.Contains(Marker)) return null;
+            if (code == null || code.Contains(Marker) || !WaterShader.Once(code, MainAnchor)) return null;
             int m = code.IndexOf(MainAnchor, StringComparison.Ordinal);
             if (m < 0) return null;
             int brace = code.IndexOf('{', m);

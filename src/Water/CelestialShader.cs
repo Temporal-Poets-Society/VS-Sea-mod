@@ -42,7 +42,7 @@ namespace Sea
         public static string Vertex(string code)
         {
             const string anchor = "fragNormal = unpackNormal(renderFlags);";
-            if (code == null || code.Contains("out vec2 sea_SurfaceSlope;") || !code.Contains(anchor)) return null;
+            if (code == null || code.Contains("out vec2 sea_SurfaceSlope;") || !WaterShader.Once(code, anchor) || !WaterShader.Once(code, "void main(")) return null;
             // (SE-0024) where vanilla's main starts on the water's position, the slope is worked out first, keeping the surface
             // it passes by for Sea's waves at the same place a few lines on (one loop over the trains, not two); the calming
             // round hulls, known only after the surface, is applied at the anchor. Without that line, all at the anchor.
@@ -97,6 +97,8 @@ namespace Sea
             const string end = "texColor.rgb *= 1 + f;";
             const string finish = "texColor = applyFog(texColor, fogAmount);";
             if (code == null || code.Contains(Marker)) return null;
+            // (SE-0048) each anchor once: string.Replace would take a repeated line twice
+            if (!WaterShader.Once(code, start) || !WaterShader.Once(code, end) || !WaterShader.Once(code, finish) || !WaterShader.Once(code, "void main(")) return null;
             int s = code.IndexOf(start, StringComparison.Ordinal), e = code.IndexOf(end, StringComparison.Ordinal);
             if (s < 0 || e <= s || !code.Contains(finish)) return null;
             // Preserve vanilla verbatim behind a runtime switch; never layer two sun highlights.
