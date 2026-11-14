@@ -202,16 +202,17 @@ namespace Sea
         public const double MaxCompression = 0.65;
         public const int InverseIterations = 24;
         /// <summary>Concentrate horizontal crest shaping in the swell; keep the equilibrium chop as texture.</summary>
-        public static double ShapeWeight(double k) => 0.15 + 0.85 / (1 + k*k/0.09);
+        public static double ShapeWeight(double k) => 0.15 + 0.85 / (1 + k * k / 0.09);
         /// <summary>Orbit multiplier, before ShapeWeight. The current spectrum supplies steepness; never loops.</summary>
         public double Shape
         {
             get
             {
                 double sum = 0;
-                for (int i = 0; i < Count; i++) {
-                    double k=Math.Sqrt(Kx[i]*Kx[i]+Kz[i]*Kz[i]);
-                    sum += Math.Abs(Amp[i])*k*ShapeWeight(k);
+                for (int i = 0; i < Count; i++)
+                {
+                    double k = Math.Sqrt(Kx[i] * Kx[i] + Kz[i] * Kz[i]);
+                    sum += Math.Abs(Amp[i]) * k * ShapeWeight(k);
                 }
                 return Math.Min(4.0, MaxCompression / Math.Max(sum, 1e-12));
             }
@@ -522,8 +523,8 @@ namespace Sea
 
         public double HeightAt(double x, double z, double t)
         {
-            var q=ParameterAt(x,z,t);
-            return Elevation(q.X,q.Z,t);
+            var q = ParameterAt(x, z, t);
+            return Elevation(q.X, q.Z, t);
         }
 
         /// <summary>
@@ -582,19 +583,19 @@ namespace Sea
         double TrainOnCoast(int i, double qx, double qz, double t, in CoastSample c, double cap, double b, double vx, double vz,
             double hs, double reach, out double open, out double surfAmp, out double surfPhase)
         {
-            double th = Kx[i]*qx+Kz[i]*qz-Omega[i]*t+Phase[i];
-            double s = CoastMath.SurfShare(Math.Sqrt(Kx[i]*Kx[i]+Kz[i]*Kz[i]), c), a = Amp[i]*cap*reach;
-            open = a*(1-s);
-            double y = open*Math.Sin(th);
+            double th = Kx[i] * qx + Kz[i] * qz - Omega[i] * t + Phase[i];
+            double s = CoastMath.SurfShare(Math.Sqrt(Kx[i] * Kx[i] + Kz[i] * Kz[i]), c), a = Amp[i] * cap * reach;
+            open = a * (1 - s);
+            double y = open * Math.Sin(th);
             surfAmp = 0; surfPhase = 0;
             if (s > 0)
             {
-                surfPhase = th + CoastMath.ShoreOffset(c, Kx[i], Kz[i]) - (Omega[i] - CoastMath.Bend(Kx[i], Kz[i], Omega[i], vx, vz))*c.Time;
-                surfAmp = a*s*CoastMath.Shoaling(Omega[i], c.Depth);
-                y += surfAmp*CoastMath.Breaker(surfPhase, b).Value;
+                surfPhase = th + CoastMath.ShoreOffset(c, Kx[i], Kz[i]) - (Omega[i] - CoastMath.Bend(Kx[i], Kz[i], Omega[i], vx, vz)) * c.Time;
+                surfAmp = a * s * CoastMath.Shoaling(Omega[i], c.Depth);
+                y += surfAmp * CoastMath.Breaker(surfPhase, b).Value;
             }
             double kr = CoastMath.Reflection(c, Kx[i], Kz[i], Omega[i], hs);
-            if (kr > 0) y += open*kr*Math.Sin(th + 2*CoastMath.ShoreOffset(c, Kx[i], Kz[i]));
+            if (kr > 0) y += open * kr * Math.Sin(th + 2 * CoastMath.ShoreOffset(c, Kx[i], Kz[i]));
             return y;
         }
 
@@ -606,7 +607,7 @@ namespace Sea
             double y = 0, hs = coast ? SignificantHeight : 0;
             for (int i = 0; i < Count; i++)
             {
-                if (!coast) { y += Amp[i]*Math.Sin(Kx[i]*qx+Kz[i]*qz-Omega[i]*t+Phase[i]); continue; }
+                if (!coast) { y += Amp[i] * Math.Sin(Kx[i] * qx + Kz[i] * qz - Omega[i] * t + Phase[i]); continue; }
                 y += TrainOnCoast(i, qx, qz, t, c, cap, b, vx, vz, hs, reach[i], out _, out _, out _);
             }
             return y;
@@ -627,7 +628,7 @@ namespace Sea
                 TrainOnCoast(i, q.X, q.Z, Time, c, cap, b, vx, vz, hs, reach[i], out _, out double a, out double phase);
                 if (a <= 0) continue;
                 double u = CoastMath.Breaker(phase, b).Crest;
-                sum += a; crest += a*u*u*u;
+                sum += a; crest += a * u * u * u;
             }
             return (b, CoastMath.SurfFoam(b, sum, crest), c.Depth);
         }
@@ -759,9 +760,9 @@ namespace Sea
         }
 
         /// <summary>Undisplaced mesh coordinate at world X/Z. Shelter is packed at this coordinate by the game.</summary>
-        public (double X,double Z) ParameterAt(double x,double z) => ParameterAt(x,z,Time);
+        public (double X, double Z) ParameterAt(double x, double z) => ParameterAt(x, z, Time);
 
-        public (double X,double Z) ParameterAt(double x,double z,double t)
+        public (double X, double Z) ParameterAt(double x, double z, double t)
         {
             // Invert X = q + sum(Q A direction cos(theta(q))). A height at q is NOT a height at world X.
             // Horizontal orbits deliberately do not depend on the liquid's vertical divisor: legacy callers that
@@ -770,10 +771,10 @@ namespace Sea
             for (int j = 0; j < InverseIterations; j++)
             {
                 Displacement(qx, qz, t, shape, out double dx, out double dz);
-                double nx=x-dx, nz=z-dz;
-                bool converged=Math.Abs(nx-qx)+Math.Abs(nz-qz)<1e-7;
-                qx=nx; qz=nz;
-                if(converged) return (qx,qz);
+                double nx = x - dx, nz = z - dz;
+                bool converged = Math.Abs(nx - qx) + Math.Abs(nz - qz) < 1e-7;
+                qx = nx; qz = nz;
+                if (converged) return (qx, qz);
             }
             // (0.6.0) On a coast the orbits' size changes from place to place (the lee of land, a rip, the depth cap), and
             // where it changes fast the plain iteration no longer contracts: finish with Newton's method on
@@ -803,7 +804,7 @@ namespace Sea
                 }
                 if (!better) break;
             }
-            return (qx,qz);
+            return (qx, qz);
         }
 
         void Displacement(double qx, double qz, double t, double shape, out double dx, out double dz)
@@ -815,19 +816,19 @@ namespace Sea
             bool coast = CoastAt(qx, qz, out var c, out double cap, out _, out _, out _, reach);
             for (int i = 0; i < Count; i++)
             {
-                double k = Math.Sqrt(Kx[i]*Kx[i]+Kz[i]*Kz[i]);
+                double k = Math.Sqrt(Kx[i] * Kx[i] + Kz[i] * Kz[i]);
                 if (k < 1e-12) continue;
                 double a = coast ? Amp[i] * cap * reach[i] * (1 - CoastMath.SurfShare(k, c)) : Amp[i];
-                double d = shape * ShapeWeight(k) * a / k * Math.Cos(Kx[i]*qx+Kz[i]*qz-Omega[i]*t+Phase[i]);
-                dx += Kx[i]*d; dz += Kz[i]*d;
+                double d = shape * ShapeWeight(k) * a / k * Math.Cos(Kx[i] * qx + Kz[i] * qz - Omega[i] * t + Phase[i]);
+                dx += Kx[i] * d; dz += Kz[i] * d;
             }
         }
 
         /// <summary>Parametric surface point, as the vertex shader draws it. Mainly useful for diagnostics.</summary>
         public (double X, double Y, double Z) SurfaceAt(double qx, double qz, double factor = 1)
         {
-            Displacement(qx,qz,Time,Shape,out double dx,out double dz);
-            return (qx+dx,Elevation(qx,qz,Time)*factor,qz+dz);
+            Displacement(qx, qz, Time, Shape, out double dx, out double dz);
+            return (qx + dx, Elevation(qx, qz, Time) * factor, qz + dz);
         }
 
         /// <summary>Significant height (4σ) of what's running here now.</summary>
@@ -863,17 +864,19 @@ namespace Sea
         public static double ShaderHeight(float[] u, int n, double rx, double rz)
         {
             double sum = 0;
-            for (int i=0;i<n;i++) {double k=Math.Sqrt(u[i*4]*u[i*4]+u[i*4+1]*u[i*4+1]);sum+=Math.Abs(u[i*4+3])*k*ShapeWeight(k);}
-            double shape=Math.Min(4.0,MaxCompression/Math.Max(sum,1e-12)), qx=rx,qz=rz;
-            for(int j=0;j<InverseIterations;j++) {
-                double dx=0,dz=0;
-                for(int i=0;i<n;i++) {
-                    double k=Math.Sqrt(u[i*4]*u[i*4]+u[i*4+1]*u[i*4+1]);
-                    if(k<1e-12)continue;
-                    double d=shape*ShapeWeight(k)*u[i*4+3]/k*Math.Cos(u[i*4]*qx+u[i*4+1]*qz+u[i*4+2]);
-                    dx+=u[i*4]*d;dz+=u[i*4+1]*d;
+            for (int i = 0; i < n; i++) { double k = Math.Sqrt(u[i * 4] * u[i * 4] + u[i * 4 + 1] * u[i * 4 + 1]); sum += Math.Abs(u[i * 4 + 3]) * k * ShapeWeight(k); }
+            double shape = Math.Min(4.0, MaxCompression / Math.Max(sum, 1e-12)), qx = rx, qz = rz;
+            for (int j = 0; j < InverseIterations; j++)
+            {
+                double dx = 0, dz = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    double k = Math.Sqrt(u[i * 4] * u[i * 4] + u[i * 4 + 1] * u[i * 4 + 1]);
+                    if (k < 1e-12) continue;
+                    double d = shape * ShapeWeight(k) * u[i * 4 + 3] / k * Math.Cos(u[i * 4] * qx + u[i * 4 + 1] * qz + u[i * 4 + 2]);
+                    dx += u[i * 4] * d; dz += u[i * 4 + 1] * d;
                 }
-                qx=rx-dx;qz=rz-dz;
+                qx = rx - dx; qz = rz - dz;
             }
             double y = 0;
             for (int i = 0; i < n; i++) y += u[i * 4 + 3] * Math.Sin(u[i * 4] * qx + u[i * 4 + 1] * qz + u[i * 4 + 2]);

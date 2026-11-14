@@ -118,15 +118,15 @@ namespace Sea
             {
                 // Oceanity belongs to the original mesh vertex, not the horizontally displaced position.
                 // Preserve HeightAt(world) * WaveFactorAt(world) for existing ship mods across shelter gradients.
-                (double X,double Z) q;
-                if(api.Side==EnumAppSide.Client) q=CameraWaves.ParameterAt(x,z);
-                else { lock(probes) q=ProbeAt(x,z).ParameterAt(x,z); }
-                return MeshWaveFactorAt(q.X,q.Z);
+                (double X, double Z) q;
+                if (api.Side == EnumAppSide.Client) q = CameraWaves.ParameterAt(x, z);
+                else { lock (probes) q = ProbeAt(x, z).ParameterAt(x, z); }
+                return MeshWaveFactorAt(q.X, q.Z);
             }
-            catch(Exception e) { LogOnce.Error(api?.Logger, "the wave factor at a place", e); return 0.2; }
+            catch (Exception e) { LogOnce.Error(api?.Logger, "the wave factor at a place", e); return 0.2; }
         }
 
-        double MeshWaveFactorAt(double x,double z)
+        double MeshWaveFactorAt(double x, double z)
         {
             try
             {
@@ -158,7 +158,7 @@ namespace Sea
         /// </summary>
         public double WaveHeightAt(double x, double z)
         {
-            lock(probes) return ShelteredHeight(ProbeAt(x,z),x,z);
+            lock (probes) return ShelteredHeight(ProbeAt(x, z), x, z);
         }
 
         /// <summary>Client: the drawn water's height at a world position (the camera's wave trains), for comparing with <see cref="WaveHeightAt"/>.</summary>
@@ -168,38 +168,38 @@ namespace Sea
         /// (0.6.0) The sheltered surface height at (x, z) on a place the caller sampled there: the open contracts' answer,
         /// the same on the server and every client (the camera's trains only draw the water; R5 of the contracts).
         /// </summary>
-        internal double HeightOn(WavePlace place,double x,double z)=>ShelteredHeight(place,x,z);
+        internal double HeightOn(WavePlace place, double x, double z) => ShelteredHeight(place, x, z);
 
         /// <summary>(0.6.0) <see cref="WaveFactorAt"/> on a place the caller sampled at (x, z), on every side alike.</summary>
-        internal double WaveFactorOn(WavePlace place,double x,double z)
+        internal double WaveFactorOn(WavePlace place, double x, double z)
         {
-            try { var q=place.ParameterAt(x,z); return MeshWaveFactorAt(q.X,q.Z); }
-            catch(Exception e) { LogOnce.Error(api?.Logger, "the wave factor at a place", e); return 0.2; }
+            try { var q = place.ParameterAt(x, z); return MeshWaveFactorAt(q.X, q.Z); }
+            catch (Exception e) { LogOnce.Error(api?.Logger, "the wave factor at a place", e); return 0.2; }
         }
 
-        double ShelteredHeight(WavePlace place,double x,double z)
+        double ShelteredHeight(WavePlace place, double x, double z)
         {
-            var q=place.ParameterAt(x,z);
+            var q = place.ParameterAt(x, z);
             // (SE-0041) the height only: SurfaceAt worked out the horizontal displacement too, to drop it
-            return place.ElevationAt(q.X,q.Z,MeshWaveFactorAt(q.X,q.Z));
+            return place.ElevationAt(q.X, q.Z, MeshWaveFactorAt(q.X, q.Z));
         }
 
         // Caller holds probes' lock. Keep the same bounded per-cell cache for heights and inverse shelter lookups.
-        WavePlace ProbeAt(double x,double z)
+        WavePlace ProbeAt(double x, double z)
         {
-            var key=((long)Math.Floor(x/WavePlace.GridCell),(long)Math.Floor(z/WavePlace.GridCell));
-            if(!probes.TryGetValue(key,out var probe))
+            var key = ((long)Math.Floor(x / WavePlace.GridCell), (long)Math.Floor(z / WavePlace.GridCell));
+            if (!probes.TryGetValue(key, out var probe))
             {
-                if(probes.Count>=MaxProbes)
+                if (probes.Count >= MaxProbes)
                 {
-                    var oldest=key;long used=long.MaxValue;
-                    foreach(var kv in probes) if(kv.Value.Used<used) {used=kv.Value.Used;oldest=kv.Key;}
+                    var oldest = key; long used = long.MaxValue;
+                    foreach (var kv in probes) if (kv.Value.Used < used) { used = kv.Value.Used; oldest = kv.Key; }
                     probes.Remove(oldest);
                 }
-                probes[key]=probe=new Probe();
+                probes[key] = probe = new Probe();
             }
-            probe.Used=++probeUses;
-            SampleWaves(probe.Place,x,z);
+            probe.Used = ++probeUses;
+            SampleWaves(probe.Place, x, z);
             return probe.Place;
         }
 
