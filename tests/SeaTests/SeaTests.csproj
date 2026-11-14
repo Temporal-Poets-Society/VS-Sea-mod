@@ -40,6 +40,10 @@
     <Compile Include="..\..\src\Water\FlowLook.cs" Link="Water\FlowLook.cs" />
     <Compile Include="..\..\src\Water\NightSkyMath.cs" Link="Water\NightSkyMath.cs" />
     <Compile Include="..\..\src\Water\WaveField.cs" Link="Water\WaveField.cs" />
+    <Compile Include="..\..\src\Water\WaveSpectrum.cs" Link="Water\WaveSpectrum.cs" />
+    <Compile Include="..\..\src\Water\WaveSource.cs" Link="Water\WaveSource.cs" />
+    <Compile Include="..\..\src\Water\SampleHours.cs" Link="Water\SampleHours.cs" />
+    <Compile Include="..\..\src\Water\WaveClock.cs" Link="Water\WaveClock.cs" />
     <Compile Include="..\..\src\SeaConfig.cs" Link="SeaConfig.cs" />
     <Compile Include="..\..\src\Game\DryParticles.cs" Link="Game\DryParticles.cs" />
   </ItemGroup>
