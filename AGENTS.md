@@ -8,9 +8,10 @@ contracts: `docs\open-sea-contracts.md`; engine facts: `docs\engine-notes.md`.
 
 ## Repository
 - Trunk `main`, tracking the private `origin` (`andrisberzins-1/VS-Sea-mod`): all work, branches and the release
-  tags (`v0.5.1`, `v0.5.2`); old lines are `archive/*` tags.
+  tags (`v0.5.1`, `v0.5.2`, `v0.6.0`); old lines are `archive/*` tags.
 - Public `tps` (`Temporal-Poets-Society/VS-Sea-mod`, with a wiki) gets semi-clean release versions only: `main`
-  only, no tags, and it is behind on purpose. Push there only on the author's word.
+  as of each release and that release's tag `vX.Y.Z` with a GitHub release carrying the zip (suite rule, 13 November
+  2026; first full release `v0.6.0`). Between releases it is behind on purpose. Push there only on the author's word.
 
 ## Build
 - `dotnet build Sea.csproj -c Release` gives `release\sea-<version>.zip`. It refuses to overwrite an existing zip:
