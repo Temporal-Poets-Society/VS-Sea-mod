@@ -100,6 +100,10 @@ namespace Sea
 
         void Want((long, long) key) => wanted[key] = Environment.TickCount64;
 
+        readonly List<(long, long)> staleKeys = new(), askedKeys = new();
+        readonly List<KeyValuePair<(long, long), long>> askOrder = new();
+        static readonly Comparison<KeyValuePair<(long, long), long>> NewestFirst = (a, b) => b.Value.CompareTo(a.Value);
+
         readonly float[] scratch = new float[CoastMath.Stride];
 
         /// <summary>Column (i, j)'s <see cref="CoastMath.Stride"/> floats, if its tile is solved (else it's asked for).</summary>
@@ -164,20 +168,21 @@ namespace Sea
             int sea = api.World.SeaLevel;
             Rescan(ba, sea, ref scans);
             if (solving != null && !solving.IsCompleted) return;
-            (long, long)[] asked;
+            // (SE-0040 review) the lists are kept between calls (Work runs on the main thread only): nothing allocated per call
+            var asked = askedKeys;
             lock (gate)
             {
                 if (wanted.Count == 0) return;
                 long cut = Environment.TickCount64 - StaleMs;
-                List<(long, long)> stale = null;
-                foreach (var kv in wanted) if (kv.Value < cut) (stale ??= new()).Add(kv.Key);
-                if (stale != null) foreach (var k in stale) wanted.Remove(k);
+                staleKeys.Clear();
+                foreach (var kv in wanted) if (kv.Value < cut) staleKeys.Add(kv.Key);
+                foreach (var k in staleKeys) wanted.Remove(k);
                 if (wanted.Count == 0) return;
-                var order = new KeyValuePair<(long, long), long>[wanted.Count];
-                ((ICollection<KeyValuePair<(long, long), long>>)wanted).CopyTo(order, 0);
-                Array.Sort(order, (a, b) => b.Value.CompareTo(a.Value));
-                asked = new (long, long)[order.Length];
-                for (int i = 0; i < order.Length; i++) asked[i] = order[i].Key;
+                askOrder.Clear();
+                foreach (var kv in wanted) askOrder.Add(kv);
+                askOrder.Sort(NewestFirst);
+                asked.Clear();
+                foreach (var kv in askOrder) asked.Add(kv.Key);
             }
             int r = (CoastMath.Margin + Chunk - 1) / Chunk;
             long now = Environment.TickCount64;

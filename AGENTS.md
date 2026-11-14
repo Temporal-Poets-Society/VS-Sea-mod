@@ -21,6 +21,8 @@ contracts: `docs\open-sea-contracts.md`; engine facts: `docs\engine-notes.md`.
 
 ## Test
 - `dotnet run --project tests\SeaTests` (offline: waves, wind, sea state, shader injection, dry hulls, configs).
+  It builds Sea.csproj in Debug for the contract snapshot (SE-0044). Run it in Debug (the default): with `-c Release` the
+  Sea project's own Release build would package `release\sea-<version>.zip` and refuse when that zip exists.
 - `dotnet run --project tests\ShaderCheck`: compiles the water shaders on this GPU and compares the dry cut
   pixel by pixel; needs a desktop session. Run it after any shader change (the offline tests only see the text).
   `-- --vertex-cost` adds GPU timings of the water's vertex stage (SEA-D74); in game `.sea cost` times Sea's Use
