@@ -155,15 +155,18 @@ namespace Sea
                     if (DryParticles.SpawnCalls(m) == 0) throw new Exception("no particle spawn found in " + name);
                     methods.Add(m);
                 }
+                var patched = new List<MethodInfo>();
                 foreach (var m in methods)
                 {
                     harmony.Patch(m, transpiler: new HarmonyMethod(typeof(DryParticles), nameof(DryParticles.OnWaterTranspiler)));
+                    patched.Add(m);
                     // (SE-0065) what the transpiler met may not be the original (another mod's transpiler ran first): if it
-                    // replaced nothing, Sea's patch comes off that method again and says so
+                    // replaced nothing, Sea's patch comes off both methods again (a feature reported off is off in both),
+                    // and the feature is not listed as on
                     if (DryParticles.LastReplaced == 0)
                     {
-                        harmony.Unpatch(m, HarmonyPatchType.Transpiler, ClientHarmonyId);
-                        log?.Warning("No particle spawn left to take over in {0} (another mod changed it first): rain and dust there splash in dry places too", m.Name);
+                        foreach (var done in patched) harmony.Unpatch(done, HarmonyPatchType.Transpiler, ClientHarmonyId);
+                        throw new Exception("no particle spawn left to take over in " + m.Name + " (another mod changed it first)");
                     }
                 }
             });

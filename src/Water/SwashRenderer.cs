@@ -26,6 +26,7 @@ namespace Sea
         readonly Matrixf model = new();
         readonly Vec4f tint = new(1, 1, 1, 1);
         readonly float[] cell = new float[CoastMath.Stride];
+        readonly float[] around = new float[CoastMath.Stride];   // Signed's own (it must not overwrite the beach cell's lee)
         readonly List<Beach> beaches = new();
         readonly Dictionary<(long, long), float> wet = new();
         readonly Stopwatch watch = new();
@@ -212,9 +213,9 @@ namespace Sea
         // the distance from the shore line at a column, + over land and - over water (0 off the map)
         float Signed(long i, long j)
         {
-            if (!sys.Coast.Cell(i, j, cell)) return 0;
-            float d = cell[CoastMath.IShoreDist];
-            return cell[CoastMath.IDepth] > 0 ? -d : d;
+            if (!sys.Coast.Cell(i, j, around)) return 0;
+            float d = around[CoastMath.IShoreDist];
+            return around[CoastMath.IDepth] > 0 ? -d : d;
         }
 
         public void Dispose()

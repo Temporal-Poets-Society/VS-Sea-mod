@@ -79,12 +79,15 @@ namespace Sea
         vec3 n = normalize(vec3(-sea_SurfaceSlope.x, 1.0, -sea_SurfaceSlope.y));
         vec3 ray = reflect(eye, n);
         // (SE-0063) only the side the eye looks down on reflects: from below (a crest passing over an eye at the waterline,
-        // a raised tank) Fresnel would be 1 and the sky would replace the water at full opacity
-        bool sea_Above = dot(eye, n) < 0.0;
+        // a raised tank) Fresnel would be 1 and the sky would replace the water at full opacity. (SE-0063 review) Eased
+        // out from 0.1 to 0.3, not cut at 0: near the horizon the eye looks down by 0.01 or so, and the interpolated slope
+        // of a crest's far side or a short train leans past that where the mesh still shows it from above. From below the
+        // dot is 0.5 or more
+        float sea_Above = 1.0 - smoothstep(0.1, 0.3, dot(eye, n));
         float fres = 0.02 + 0.98 * pow(1.0 - clamp(dot(-eye, n), 0.0, 1.0), 5.0);
         // (0.4.4) the sky the game draws, reflected by Fresnel: faint looking down, the sky's own colour at the horizon.
         // Smooth in direction, so waves shade it without speckles; it continues into Wmap's distant sea.
-        if (sea_Effects.y > 0.0 && sea_Above) texColor = sea_SkyReflect(texColor, ray, fres, rgbaFog.rgb);
+        if (sea_Effects.y > 0.0 && sea_Above > 0.0) texColor = sea_SkyReflect(texColor, ray, fres * sea_Above, rgbaFog.rgb);
         // (0.4.7-pre.7) Glints go on until the game's water has faded (0.76 to 0.8 of the view distance); Wmap 0.5.0-pre.8's
         // far sea, from 0.75, carries the same glitter on to the horizon (sea_Glint). Up to pre.6 they stopped from half the
         // view distance, leaving a calm band short of the horizon (issue 14). (SE-0033) Of Sea's own view distance, the
@@ -96,7 +99,7 @@ namespace Sea
         // The OIT pass premultiplies by alpha, so a glint must raise alpha to show (as vanilla's does). The sun and
         // moon are far brighter than the sky, so the glint saturates in a low-dynamic-range frame even where Fresnel
         // reflectance is small; Fresnel only shades it.
-        if (sea_Effects.x > 0.0 && sea_Above) texColor = sea_Glints(texColor, ray, exposed * (0.55 + 0.45 * fres), clamp(pow(shadowBright, 4.0), 0.0, 1.0));
+        if (sea_Effects.x > 0.0 && sea_Above > 0.0) texColor = sea_Glints(texColor, ray, sea_Above * exposed * (0.55 + 0.45 * fres), clamp(pow(shadowBright, 4.0), 0.0, 1.0));
     }
     // Sea owns breaking-wave foam; vanilla's depth/contact foam above is preserved. This sits outside the
     // reflection switch and FOAMEFFECT, as the shared waves do outside WAVINGSTUFF. Lit by the water's own light.
