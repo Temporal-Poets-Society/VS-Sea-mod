@@ -1,6 +1,6 @@
 # Sea — waves that follow the wind, the same sea for everyone (Vintage Story 1.22)
 
-**0.6.0-rc.5 (release candidate, 14 November 2026; [wiki](https://github.com/Temporal-Poets-Society/VS-Sea-mod/wiki)):**
+**0.6.0-rc.4 (release candidate, 14 November 2026; [wiki](https://github.com/Temporal-Poets-Society/VS-Sea-mod/wiki)):**
 waves on coasts (surf, lee, reflection, longshore currents and swash), steeper storms, spray off the open sea's crests,
 the open sea contracts, and the open findings of the 0.4.2 code review fixed. Requires Vintage Story 1.22.0 or later.
 Earth is optional; Earth's weather role is read through the open sea contracts (seen in game with Earth 2.0).
@@ -48,7 +48,7 @@ The coast and storm features were checked in game on one client.
 - **Glints and foam fade by your view distance setting** (SEA-D75), not by the shaders' `viewDistance`, which some LOD
   mods raise; they no longer stop at a hard edge there. LOD mods other than World Map's far terrain are still not
   supported on the suite's worlds.
-- **Code review fixes, 14 November** (SEA-D77): the coastal water's vertex stage costs about 40% less on the GPU; a
+- **Code review fixes, 14 November, after rc.4** (SEA-D77): the coastal water's vertex stage costs about 40% less on the GPU; a
   vanilla boat's pose can't be torn between the particle and render threads; leaving a world switches World Map's far
   sea off too; errors Sea answers safely are logged once; the coast map uploads only what changed; idle boats ease to
   the surf's current.
