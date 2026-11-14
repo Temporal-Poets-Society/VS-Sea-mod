@@ -185,7 +185,7 @@ namespace Sea
                 }
             Beach(depth, slope, w, out var landDist, out var landSlope);
             var steep = Steepness(depth, dist, w);
-            var rays = Rays();
+            var rays = RayFans;
             var tileData = new float[tile * tile * Stride];
             for (int z = 0; z < tile; z++)
                 for (int x = 0; x < tile; x++)
@@ -259,18 +259,7 @@ namespace Sea
                 dist[i] = land ? float.PositiveInfinity : 0;
                 floor[i] = land ? 0 : Math.Clamp(slope[i], 0.02f, 0.5f);
             }
-            const float D = 1.41421356f;
-            for (int pass = 0; pass < 2; pass++)
-            {
-                bool forward = pass == 0;
-                for (int k = 0; k < n; k++)
-                {
-                    int i = forward ? k : n - 1 - k, x = i % w, z = i / w;
-                    if (dist[i] == 0) continue;
-                    int s = forward ? -1 : 1;
-                    Take(i, x + s, z, 1); Take(i, x, z + s, 1); Take(i, x + s, z + s, D); Take(i, x - s, z + s, D);
-                }
-            }
+            Chamfer(w, i => dist[i] == 0, Take);
             void Take(int i, int x, int z, float step)
             {
                 if (x < 0 || z < 0 || x >= w || z >= w) return;
@@ -294,18 +283,7 @@ namespace Sea
                 float d = dist[i];
                 if (d >= 7 && d <= 9) { reach[i] = 0; value[i] = Math.Max(Water(depth[i]) - 1, 0) / d; }
             }
-            const float D = 1.41421356f;
-            for (int pass = 0; pass < 2; pass++)
-            {
-                bool forward = pass == 0;
-                for (int k = 0; k < n; k++)
-                {
-                    int i = forward ? k : n - 1 - k, x = i % w, z = i / w;
-                    if (reach[i] == 0 || IsLand(depth[i])) continue;
-                    int s = forward ? -1 : 1;
-                    Take(i, x + s, z, 1); Take(i, x, z + s, 1); Take(i, x + s, z + s, D); Take(i, x - s, z + s, D);
-                }
-            }
+            Chamfer(w, i => reach[i] == 0 || IsLand(depth[i]), Take);
             for (int i = 0; i < n; i++) if (float.IsPositiveInfinity(reach[i])) value[i] = 0;
             return value;
             void Take(int i, int x, int z, float step)
@@ -317,7 +295,28 @@ namespace Sea
             }
         }
 
+        /// <summary>(SE-0046) The two-pass chamfer both <see cref="Beach"/> and <see cref="Steepness"/> spread their values with:
+        /// forward, then backward, each column not skipped takes from its four neighbours behind it (1, or 1.414 diagonally).</summary>
+        static void Chamfer(int w, System.Func<int, bool> skip, System.Action<int, int, int, float> take)
+        {
+            int n = w * w;
+            const float D = 1.41421356f;
+            for (int pass = 0; pass < 2; pass++)
+            {
+                bool forward = pass == 0;
+                for (int k = 0; k < n; k++)
+                {
+                    int i = forward ? k : n - 1 - k, x = i % w, z = i / w;
+                    if (skip(i)) continue;
+                    int s = forward ? -1 : 1;
+                    take(i, x + s, z, 1); take(i, x, z + s, 1); take(i, x + s, z + s, D); take(i, x - s, z + s, D);
+                }
+            }
+        }
+
         static readonly double[] RayAngles ={ -20, -10, 0, 10, 20 }, RayWeights = { 1, 2, 3, 2, 1 };
+        // (SE-0046) made once; they never change (TileOf made them again for every tile)
+        static readonly (double X, double Z, double W)[][] RayFans = Rays();
 
         // per direction d (waves coming from angle d·45°), the unit steps of its fan of rays
         static (double X, double Z, double W)[][] Rays()

@@ -651,7 +651,7 @@ namespace Sea
                 double phase = Kx[i] * q.X + Kz[i] * q.Z - Omega[i] * Time + Phase[i], sn = Math.Sin(phase), cs = Math.Cos(phase);
                 double ux = Kx[i] / k, uz = Kz[i] / k, c = shape * ShapeWeight(k) * Amp[i] * k * sn;
                 j00 -= c * ux * ux; j01 -= c * ux * uz; j11 -= c * uz * uz;
-                double longWave = 1 - SmoothStep(0.3, 0.6, k), a = longWave * Amp[i], omega = Math.Sqrt(9.81 * k);
+                double longWave = 1 - CoastMath.SmoothStep(0.3, 0.6, k), a = longWave * Amp[i], omega = Math.Sqrt(9.81 * k);
                 height += a * sn; variance += 0.5 * a * a;
                 fall += a * omega * cs; fallVariance += 0.5 * a * a * omega * omega;
             }
@@ -668,8 +668,8 @@ namespace Sea
         /// </summary>
         public static double Whitecap(double height, double compression, double coverage = 0)
         {
-            double s = SmoothStep(0.1, 0.9, coverage);
-            return SmoothStep(Lerp(0.22, 0.14, s), Lerp(0.40, 0.30, s), compression) * SmoothStep(Lerp(0.8, 0.35, s), Lerp(1.65, 1.2, s), height);
+            double s = CoastMath.SmoothStep(0.1, 0.9, coverage);
+            return CoastMath.SmoothStep(Lerp(0.22, 0.14, s), Lerp(0.40, 0.30, s), compression) * CoastMath.SmoothStep(Lerp(0.8, 0.35, s), Lerp(1.65, 1.2, s), height);
         }
 
         static double Lerp(double a, double b, double t) => a + (b - a) * t;
@@ -680,7 +680,7 @@ namespace Sea
         /// <see cref="SprayCompression"/> and <see cref="SprayHeight"/>.
         /// </summary>
         public static double SprayCrest(double height, double compression) =>
-            SmoothStep(SprayCompression, SprayCompression + 0.18, compression) * SmoothStep(SprayHeight, SprayHeight + 0.85, height);
+            CoastMath.SmoothStep(SprayCompression, SprayCompression + 0.18, compression) * CoastMath.SmoothStep(SprayHeight, SprayHeight + 0.85, height);
 
         /// <summary>Measured (SeaTests): about 10% of the open sea from Beaufort 6 to 12, 1.5% at 4; the crests' sharpness
         /// hardly grows past force 6, so how much of it throws spray is left to the wind's whitecap coverage.</summary>
@@ -721,12 +721,6 @@ namespace Sea
                 step *= 0.5;
             }
             return h;
-        }
-
-        static double SmoothStep(double a, double b, double x)
-        {
-            double t = Math.Clamp((x - a) / (b - a), 0, 1);
-            return t * t * (3 - 2 * t);
         }
 
         /// <summary>
