@@ -518,6 +518,23 @@ namespace Sea
             return w > 0 ? l + (Math.Pow(Math.Max(l, 0), FetchPower(omega, Math.Sqrt(wx * wx + wz * wz))) - l) * w : l;
         }
 
+        /// <summary>
+        /// (SE-0042) What of <see cref="Reach(in CoastSample, double, double, double, double, double)"/> depends on the train alone,
+        /// for the shader's sea_WaveLee: the lee sector its direction comes from (−1: no direction), the fraction toward the
+        /// next sector, its wind-sea share and its fetch power. The lee at a place is then the sectors' blend there.
+        /// </summary>
+        public static void TrainLee(double kx, double kz, double omega, double wx, double wz, float[] into, int at)
+        {
+            if (kx * kx + kz * kz < 1e-14) { into[at] = -1; into[at + 1] = 0; into[at + 2] = 0; into[at + 3] = 1; return; }
+            double a = Math.Atan2(-kz, -kx);
+            if (a < 0) a += 6.28318531;
+            double u = a / 0.785398163, d = Math.Floor(u);
+            into[at] = (float)((int)d % 8);
+            into[at + 1] = (float)(u - d);
+            into[at + 2] = (float)WindSea(kx, kz, omega, wx, wz);
+            into[at + 3] = (float)FetchPower(omega, Math.Sqrt(wx * wx + wz * wz));
+        }
+
         /// <summary>Every train's share that gets past the land to here (<see cref="Reach(in CoastSample, double, double, double, double, double)"/>).</summary>
         public static void Reach(in CoastSample c, int count, double[] kx, double[] kz, double[] omega, double wx, double wz, Span<double> reach)
         {

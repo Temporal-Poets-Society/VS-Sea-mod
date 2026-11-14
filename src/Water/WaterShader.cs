@@ -81,6 +81,7 @@ float sea_OpenWater(float div) { return smoothstep(0.0, 0.25, 1.0 - div / 5.0); 
 // sea_CoastSea: the sea's significant height, and the wind (m/s, xz) its own sea follows. sea_WaveClock: per train its
 // angular speed (y is not used).
 uniform vec2 sea_WaveClock[24];
+uniform vec4 sea_WaveLee[24]; // (SE-0042) per train: lee sector, fraction to the next, wind-sea share, its fetch power
 uniform vec4 sea_CoastArea = vec4(0.0);
 uniform vec4 sea_CoastSea = vec4(0.0);
 uniform sampler2D sea_CoastTex;
@@ -98,43 +99,24 @@ vec2 sea_SideStep(int s) {
     float d = (s & 1) == 0 ? sea_Step : -sea_Step;
     return (s >> 1) == 0 ? vec2(d, 0.0) : vec2(0.0, d);
 }
-// the share of a train with wave vector k (so coming from -k) that the land upwave lets through
-float sea_LeeOf(sea_Coast K, vec2 k) {
-    if (dot(k, k) < 1e-14) return 1.0;
-    float a = atan(-k.y, -k.x);
-    if (a < 0.0) a += 6.28318531;
-    float u = a / 0.785398163, d = floor(u), f = u - d;
-    int i = int(d) & 7, j = (i + 1) & 7;
-    float li = i < 4 ? K.la[i] : K.lb[i - 4], lj = j < 4 ? K.la[j] : K.lb[j - 4];
-    return li * (1.0 - f) + lj * f;
+// (SE-0042) a train's share that gets past the land: swell by the lee, the wind's own short sea by a power of it (its need of
+// fetch). What depends on the train alone comes per frame in sea_WaveLee[i] (CoastMath.TrainLee, the CPU's own numbers): the
+// lee sector its direction falls in and the fraction to the next (x < 0: no direction, all of it gets through), how much of
+// it is the wind's own sea, and the power of the lee it takes. Up to 0.6.0-rc.4 the shader worked those out per vertex,
+// per train, at three points (an atan, a pow and five smoothsteps each time).
+float sea_Reach(sea_Coast K, int i) {
+    vec4 t = sea_WaveLee[i];
+    if (t.x < 0.0) return 1.0;
+    int a = int(t.x), b = (a + 1) & 7;
+    float li = a < 4 ? K.la[a] : K.lb[a - 4], lj = b < 4 ? K.la[b] : K.lb[b - 4];
+    float l = li * (1.0 - t.y) + lj * t.y;
+    return t.z > 0.0 ? l + (pow(max(l, 0.0), t.w) - l) * t.z : l;
 }
 float sea_SurfShare(float k, vec4 c) {
     if (c.x >= sea_MaxDepth) return 0.0;
     return (1.0 - smoothstep(0.4, 1.6, k * c.x)) * (1.0 - smoothstep(0.6 * sea_MaxDepth, sea_MaxDepth, c.x)) * min(length(c.zw), 1.0);
 }
 float sea_Shoal(float omega, float h) { return clamp(sqrt(4.905 / max(omega, 0.000001) / sqrt(9.81 * max(h, 0.3))), 1.0, 2.5); }
-// how much of train i is the wind's own sea (slower than 1.2-1.6 times the wind, running with it) short beside the land the
-// coast map sees (under 32-128 blocks: longer waves bend round it like swell)
-float sea_WindSea(int i) {
-    vec2 wv = sea_CoastSea.yz;
-    float u = length(wv), k = length(sea_Wave[i].xy), omega = sea_WaveClock[i].x;
-    if (u < 0.5 || k < 1e-7 || omega <= 0.0) return 0.0;
-    return (1.0 - smoothstep(1.2, 1.6, 9.81 / omega / u)) * smoothstep(0.0, 0.5, dot(sea_Wave[i].xy, wv) / (k * u))
-        * (1.0 - smoothstep(32.0, 128.0, 6.28318531 / k));
-}
-// the power of the lee a train of the wind's own sea takes: 1 at or above the peak the coast map's reach of fetch raises, up
-// to 4 for one 3 times slower (the fetch moves the peak, f_p = 3.5 (g/U)(gF/U^2)^-0.33)
-float sea_FetchPower(float omega) {
-    float u = length(sea_CoastSea.yz);
-    if (u < 0.5 || omega <= 0.0) return 1.0;
-    float peak = 3.5 * 9.81 / u * pow(9.81 * 64.0 / (u * u), -0.33);
-    return 1.0 + 3.0 * smoothstep(1.0, 3.0, peak / (omega / 6.28318531));
-}
-// train i's share that gets past the land: swell by the lee, the wind's own short sea by a power of it (its need of fetch)
-float sea_Reach(sea_Coast K, int i) {
-    float l = sea_LeeOf(K, sea_Wave[i].xy), w = sea_WindSea(i);
-    return w > 0.0 ? l + (pow(max(l, 0.0), sea_FetchPower(sea_WaveClock[i].x)) - l) * w : l;
-}
 // a train's phase at the nearest shore line less its phase here
 float sea_ShoreOffset(sea_Coast K, vec2 k) {
     float l = length(K.c.zw);

@@ -76,6 +76,7 @@ void main(){
             var clock = new float[48];
             int c = p.FillClock(clock);
             GL.Uniform2(GL.GetUniformLocation(prog, "sea_WaveClock"), c, clock);
+            { var lee = new float[96]; int ln = p.FillLee(lee); GL.Uniform4(GL.GetUniformLocation(prog, "sea_WaveLee"), ln, lee); }
             var coastSea = new float[4];
             p.FillCoastSea(coastSea);
             GL.Uniform4(GL.GetUniformLocation(prog, "sea_CoastSea"), coastSea[0], coastSea[1], coastSea[2], coastSea[3]);

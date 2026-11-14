@@ -38,6 +38,7 @@ namespace Sea
         readonly CoastTexture coastTexture = new();
         readonly float[] coastSea = new float[4];
         readonly float[] clockUniform = new float[WaterShader.MaxWaves * 2];
+        readonly float[] leeUniform = new float[WaterShader.MaxWaves * 4];
         double coastCamX, coastCamZ;
         bool coastOn;
 
@@ -135,6 +136,7 @@ namespace Sea
             {
                 coastTexture.Update(sys.Coast, camX, camZ, capi.InWorldEllapsedMilliseconds / 1000.0);
                 place.FillClock(clockUniform);
+                place.FillLee(leeUniform);
                 place.FillCoastSea(coastSea);
             }
             // Foam is cosmetic: use the local provider's current wind, not a grid/clock sample from the wave
@@ -359,7 +361,11 @@ namespace Sea
                 if (wn > 0) prog.Uniforms4(WaterShader.N(prog, "sea_Wave"), wn, WaveUniform);
                 if (WaterShader.Has(prog, "sea_WaveShape")) prog.Uniform(WaterShader.N(prog, "sea_WaveShape"), waveShape);
                 if (wn > 0 && coastOn && WaterShader.Has(prog, "sea_WaveClock"))
+                {
                     GL.Uniform2(GL.GetUniformLocation(prog.ProgramId, "sea_WaveClock"), wn, clockUniform);
+                    int lee = GL.GetUniformLocation(prog.ProgramId, "sea_WaveLee");
+                    if (lee >= 0) GL.Uniform4(lee, wn, leeUniform);
+                }
                 coastTexture.Bind(prog, coastCamX, coastCamZ, coastOn && wn > 0);
                 if (coastOn && WaterShader.Has(prog, "sea_CoastSea")) prog.Uniform("sea_CoastSea", coastSea[0], coastSea[1], coastSea[2], coastSea[3]);
             }

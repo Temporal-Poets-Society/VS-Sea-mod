@@ -67,6 +67,7 @@ namespace ShaderCheck
                         var clock = new float[48];
                         int c = p.FillClock(clock);
                         GL.Uniform2(GL.GetUniformLocation(prog, "sea_WaveClock"), c, clock);
+                        { var lee = new float[96]; int ln = p.FillLee(lee); GL.Uniform4(GL.GetUniformLocation(prog, "sea_WaveLee"), ln, lee); }
                         GL.Uniform1(GL.GetUniformLocation(prog, "sea_CoastTex"), 1);
                         GL.Uniform4(GL.GetUniformLocation(prog, "sea_CoastArea"), (float)(tx + 0.5 - origin), (float)(tz + 0.5 - oz), (float)n, 1f);
                         var coastSea = new float[4]; p.FillCoastSea(coastSea);

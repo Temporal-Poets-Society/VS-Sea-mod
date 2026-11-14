@@ -743,6 +743,16 @@ namespace Sea
         /// (0.6.0) The shader's sea_WaveClock[] uniform: per train its angular speed and (unused since the surf meets the
         /// shore where the sea's own crests do) its phase less ω t, mod 2π.
         /// </summary>
+        /// <summary>(SE-0042) Each train's lee sector, fraction, wind-sea share and fetch power (<see cref="CoastMath.TrainLee"/>),
+        /// 4 floats each, for the shader's sea_WaveLee.</summary>
+        public int FillLee(float[] u)
+        {
+            int n = Math.Min(Count, u.Length / 4);
+            var (wx, wz) = CoastWind;
+            for (int i = 0; i < n; i++) CoastMath.TrainLee(Kx[i], Kz[i], Omega[i], wx, wz, u, i * 4);
+            return n;
+        }
+
         public int FillClock(float[] u)
         {
             int n = Math.Min(Count, u.Length / 2);
