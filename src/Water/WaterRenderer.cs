@@ -229,7 +229,7 @@ namespace Sea
                         dryE[shapes * 4 + 3] = c.DryRake;
                         Array.Copy(c.DryProfile, 0, dryP, shapes * DP, DP);
                         // (0.6.0) its tops (up to the rail at each station), and the highest of them for the first test
-                        Array.Copy(c.DryTopsUniform(), 0, dryT, shapes * WaterShader.DryTopStations, WaterShader.DryTopStations);
+                        c.CopyDryTops(dryT, shapes * WaterShader.DryTopStations);
                         clipD[n * 4 + 2] = c.DryCeiling(true);
                         shapes++;
                     }
@@ -362,8 +362,8 @@ namespace Sea
                 if (WaterShader.Has(prog, "sea_WaveShape")) prog.Uniform(WaterShader.N(prog, "sea_WaveShape"), waveShape);
                 if (wn > 0 && coastOn && WaterShader.Has(prog, "sea_WaveClock"))
                 {
-                    GL.Uniform2(GL.GetUniformLocation(prog.ProgramId, "sea_WaveClock"), wn, clockUniform);
-                    int lee = GL.GetUniformLocation(prog.ProgramId, "sea_WaveLee");
+                    var (clock, lee) = CoastLocations(prog);
+                    GL.Uniform2(clock, wn, clockUniform);
                     if (lee >= 0) GL.Uniform4(lee, wn, leeUniform);
                 }
                 coastTexture.Bind(prog, coastCamX, coastCamZ, coastOn && wn > 0);
@@ -374,6 +374,21 @@ namespace Sea
             if (WaterShader.Has(prog, "sea_Storm")) prog.Uniform(WaterShader.N(prog, "sea_Storm"), stormX, stormZ,
                 sys.FoamView == FoamView.Off ? 0 : foamCoverage, sys.FoamView == FoamView.Off || !coastOn ? 0f : 1f);
             if (WaterShader.Has(prog, "sea_FoamOrigin")) prog.Uniform(WaterShader.N(prog, "sea_FoamOrigin"), foamAlong, foamAcross, 0f);
+        }
+
+        // (SE-0047) the train clock's and lee's uniform locations per program (and compile: its id), not asked of GL each frame
+        readonly int[] locProgram = new int[4];
+        readonly IShaderProgram[] locOwner = new IShaderProgram[4];   // (with its id: a driver may reuse a deleted program's id)
+        readonly (int Clock, int Lee)[] locs = new (int, int)[4];
+        int locNext;
+
+        (int Clock, int Lee) CoastLocations(IShaderProgram prog)
+        {
+            int id = prog.ProgramId;
+            for (int i = 0; i < locProgram.Length; i++) if (locProgram[i] == id && id != 0 && ReferenceEquals(locOwner[i], prog)) return locs[i];
+            var l = (GL.GetUniformLocation(id, "sea_WaveClock"), GL.GetUniformLocation(id, "sea_WaveLee"));
+            locProgram[locNext] = id; locOwner[locNext] = prog; locs[locNext] = l; locNext = (locNext + 1) % locProgram.Length;
+            return l;
         }
 
         /// <summary>An error here would end the game (it's inside its drawing): Sea's water numbers stop instead, logged once.</summary>

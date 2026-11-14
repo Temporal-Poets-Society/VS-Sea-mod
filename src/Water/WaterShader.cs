@@ -605,6 +605,12 @@ bool sea_Dry(vec3 p) {
         }
 
         /// <summary>What the shader gets for its tops (sea_DryT): the tops, or <see cref="DryHeight"/> at every station.</summary>
+        /// <summary>(SE-0047) <see cref="DryTopsUniform"/> straight into the uniform's array, without a new one per hull and frame.</summary>
+        public void CopyDryTops(float[] into, int at)
+        {
+            for (int i = 0; i < WaterShader.DryTopStations; i++) into[at + i] = HasDryTops ? DryTops[i] : DryHeight;
+        }
+
         public float[] DryTopsUniform()
         {
             var t = new float[WaterShader.DryTopStations];

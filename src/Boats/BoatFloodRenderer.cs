@@ -25,10 +25,13 @@ namespace Sea
         public double RenderOrder => 1;
         public int RenderRange => 128;
         public BoatFloodRenderer(ICoreClientAPI api, NativeBoats boats) { this.api = api; this.boats = boats; }
+        readonly HashSet<long> present = new();
+        readonly List<long> gone = new();
+
         public void OnRenderFrame(float dt, EnumRenderStage stage)
         {
             var eye = api.World.Player.Entity.CameraPos;
-            var present = new HashSet<long>();
+            present.Clear();   // (SE-0047) kept between frames
             foreach (var b in boats.Boats)
             {
                 float fill = NativeBoats.Fill(b);
@@ -69,8 +72,9 @@ namespace Sea
                 finally
                 { shader.Stop(); api.Render.GLDepthMask(true); api.Render.GlEnableCullFace(); api.Render.GlToggleBlend(false); }
             }
-            foreach (long id in new List<long>(surfaces.Keys))
-                if (!present.Contains(id)) { surfaces[id].Dispose(); surfaces.Remove(id); }
+            gone.Clear();
+            foreach (long id in surfaces.Keys) if (!present.Contains(id)) gone.Add(id);
+            foreach (long id in gone) { surfaces[id].Dispose(); surfaces.Remove(id); }
         }
         internal static MeshData Build(WaterClipBox clip, double y, Vec3d origin, double seconds)
         {

@@ -55,6 +55,8 @@ namespace Sea
             finally { LastMs = watch.Elapsed.TotalMilliseconds; }
         }
 
+        readonly HashSet<(long, long)> seen = new();
+        readonly List<(long, long)> drop = new();
         void Frame(float dt)
         {
             var ep = capi.World?.Player?.Entity;
@@ -73,7 +75,8 @@ namespace Sea
             data.Clear();
             originX = (int)Math.Floor(eye.X); originY = (int)Math.Floor(rest); originZ = (int)Math.Floor(eye.Z);
             float fade = (float)(1 - Math.Exp(-Math.Clamp(dt, 0, 0.5) / WetSeconds));
-            var seen = new HashSet<(long, long)>();
+            // (SE-0047) kept between frames: nothing allocated per frame
+            seen.Clear();
             foreach (var b in beaches)
             {
                 // the sea reaching this beach (past the land), and its height now at the shore line in front of it
@@ -109,7 +112,11 @@ namespace Sea
                 }
             }
             if (wet.Count > seen.Count)
-                foreach (var key in new List<(long, long)>(wet.Keys)) if (!seen.Contains(key)) wet.Remove(key);
+            {
+                drop.Clear();
+                foreach (var key in wet.Keys) if (!seen.Contains(key)) drop.Add(key);
+                foreach (var key in drop) wet.Remove(key);
+            }
             if (data.VerticesCount == 0) return;
 
             if (white == null)
