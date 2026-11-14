@@ -248,6 +248,10 @@ namespace Sea
         {
             var m = Model;
             if (m == null) return;
+            // (SE-0066) the ended fixed winds the sea no longer remembers go now, not at the next change (clients get the
+            // shorter list with the next parameters packet; theirs reads the same, as the pruned ones read nothing)
+            var pruned = WindOverride.Pruned(m.History, Hours);
+            if (!ReferenceEquals(pruned, m.History)) Change(() => m.History = pruned);
             var save = sapi.WorldManager.SaveGame;
             var ov = m.Override;
             save.StoreData(OverrideKey, ov == null ? Array.Empty<byte>() : SerializerUtil.Serialize(ov));

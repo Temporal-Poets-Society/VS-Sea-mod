@@ -39,11 +39,11 @@ namespace Sea
             // (96 to 160 before), and the shader eases its coast out over the outer 16
             long tx = (long)Math.Round(camX / CoastMath.Tile) - Tiles / 2, tz = (long)Math.Round(camZ / CoastMath.Tile) - Tiles / 2;
             long nx = tx * CoastMath.Tile, nz = tz * CoastMath.Tile;
-            bool moved = nx != ox || nz != oz || texture == 0;
-            if (!moved && field.Version == version && !(missing && seconds - refilled > RefillSeconds)) return;
+            bool first = texture == 0, moved = nx != ox || nz != oz;
+            if (!first && !moved && field.Version == version && !(missing && seconds - refilled > RefillSeconds)) return;
             version = field.Version;
             refreshes++;
-            if (moved) { ox = nx; oz = nz; Array.Clear(shown, 0, shown.Length); }
+            ox = nx; oz = nz;
             refilled = seconds;
             missing = false;
             const int T = CoastMath.Tile;
@@ -51,15 +51,20 @@ namespace Sea
             for (int j = 0; j < Tiles; j++)
                 for (int i = 0; i < Tiles; i++)
                 {
-                    var data = field.TileData(tx + i, tz + j);
+                    long wtx = tx + i, wtz = tz + j;
+                    var data = field.TileData(wtx, wtz);
                     if (data == null) missing = true;
-                    int k = j * Tiles + i;
-                    if (!moved && ReferenceEquals(data, shown[k]) && (data != null || openShown[k])) continue;
+                    // (SE-0068) each world tile has its slot in the texture (a ring: tile mod 8), so a window that moves on a
+                    // tile line uploads only the tiles that came into it; the shader reads the ring from where the window
+                    // starts (sea_CoastWrap). Up to 0.6.0-rc.4 the whole map (4 MB) went up at every 32-block line.
+                    int si = (int)Mod(wtx, Tiles), sj = (int)Mod(wtz, Tiles), k = sj * Tiles + si;
+                    if (!first && slotTileX[k] == wtx && slotTileZ[k] == wtz && ReferenceEquals(data, shown[k]) && (data != null || openShown[k])) continue;
                     shown[k] = data;
                     openShown[k] = data == null;
+                    slotTileX[k] = wtx; slotTileZ[k] = wtz;
                     for (int z = 0; z < T; z++)
                     {
-                        int row = ((j * T + z) * Size + i * T) * S;
+                        int row = ((sj * T + z) * Size + si * T) * S;
                         if (data != null) Array.Copy(data, z * T * S, pixels, row, T * S);
                         else
                             for (int x = 0; x < T; x++) CoastMath.OpenColumn(pixels, row + x * S);
@@ -67,10 +72,12 @@ namespace Sea
                     changedTile[changed++] = k;
                 }
             if (changed == 0) return;
-            Upload(moved ? null : changedTile, changed);
+            Upload(first ? null : changedTile, changed);
         }
 
         readonly float[][] shown = new float[Tiles * Tiles][];
+        readonly long[] slotTileX = new long[Tiles * Tiles], slotTileZ = new long[Tiles * Tiles];
+        static long Mod(long a, long m) { long r = a % m; return r < 0 ? r + m : r; }
         readonly bool[] openShown = new bool[Tiles * Tiles];
         readonly int[] changedTile = new int[Tiles * Tiles];
 
@@ -146,6 +153,8 @@ namespace Sea
             try { prog.BindTexture2D("sea_CoastTex", texture, 12); }
             finally { GL.ActiveTexture((TextureUnit)active); }
             prog.Uniform("sea_CoastArea", (float)(ox + 0.5 - camX), (float)(oz + 0.5 - camZ), Size, 1f);
+            // (SE-0068) where in the ring of tile slots the window's first column is
+            if (WaterShader.Has(prog, "sea_CoastWrap")) GL.Uniform2(GL.GetUniformLocation(prog.ProgramId, "sea_CoastWrap"), (int)Mod(ox, Size), (int)Mod(oz, Size));
         }
 
         public void Dispose()

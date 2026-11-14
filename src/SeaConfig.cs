@@ -50,7 +50,8 @@ namespace Sea
         public SeaConfig ForWorld(ITreeAttribute world)
         {
             var effective = (SeaConfig)MemberwiseClone();
-            // Match the dropdown's strings explicitly: independent of the server's number culture.
+            // Match the dropdown's strings explicitly: independent of the server's number culture. (SE-0066) "json" (the
+            // default since 0.6.0) and anything unknown keep sea.json's StormHeightScale; a world made earlier keeps its pick.
             effective.StormHeightScale = world?.GetString("seaStormHeight") switch
             {
                 "1" => 1,
@@ -68,7 +69,7 @@ namespace Sea
         {
             var d = new SeaConfig();
             static float Ok(float v, float fallback) => float.IsFinite(v) && v >= 0 ? v : fallback;
-            WaveScale = Ok(WaveScale, d.WaveScale);
+            WaveScale = System.Math.Clamp(Ok(WaveScale, d.WaveScale), 0, 10);   // (SE-0066: no upper bound before)
             StormHeightScale = System.Math.Clamp(Ok(StormHeightScale, d.StormHeightScale), 0, 4);
             CelestialReflections = System.Math.Clamp(Ok(CelestialReflections, d.CelestialReflections), 0, 2);
             SkyReflections = System.Math.Clamp(Ok(SkyReflections, d.SkyReflections), 0, 2);
@@ -160,6 +161,17 @@ namespace Sea
         /// the calendar, which an admin's /time set moves ahead of the samples for a few seconds) are dropped.
         /// Returns how many still-needed ones were dropped for room (<see cref="MaxHistory"/>).
         /// </summary>
+        /// <summary>(SE-0066) The history without the ended fixed winds no hour of the sea's memory reads any more (they were dropped
+        /// only at the next change, so up to 64 stayed in the save, every packet and each sea-state sum); the same array if none.</summary>
+        public static WindOverride[] Pruned(WindOverride[] history, double hoursNow)
+        {
+            if (history == null || history.Length == 0) return history;
+            var kept = new System.Collections.Generic.List<WindOverride>(history.Length);
+            foreach (var h in history)
+                if (h != null && !(h.Ended && h.EndHours < hoursNow - WindModel.HistoryHours - 1)) kept.Add(h);
+            return kept.Count == history.Length ? history : kept.ToArray();
+        }
+
         public static int Change(ref WindOverride current, ref WindOverride[] history, WindOverride next, long activeSample, double activeHours, double hoursNow)
         {
             next = Checked(next);

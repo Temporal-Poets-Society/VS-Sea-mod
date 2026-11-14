@@ -104,6 +104,13 @@ namespace Sea
 
         void Advance(WaveSpectrum spec, double t, in SeaState sea, in Wind wind, bool bothEnds, in SeaState prevSea, in Wind prevWind)
         {
+            // (SE-0070) a wind that isn't numbers (from a caller of the public Update) is calm: it would become an array index
+            if (!double.IsFinite(wind.X) || !double.IsFinite(wind.Z) || !double.IsFinite(prevWind.X) || !double.IsFinite(prevWind.Z))
+            {
+                Advance(spec, t, sea, double.IsFinite(wind.X) && double.IsFinite(wind.Z) ? wind : default, bothEnds, prevSea,
+                    double.IsFinite(prevWind.X) && double.IsFinite(prevWind.Z) ? prevWind : default);
+                return;
+            }
             Time = t;
             if (spec == null) { Count = 0; return; }
             long n = SampleIndex(t);
@@ -467,8 +474,10 @@ namespace Sea
             return CrestAtMesh(q.X, q.Z);
         }
 
-        /// <summary>(SE-0054) <see cref="CrestAt"/> at a mesh coordinate (no inverse): the crest the surface draws from q.</summary>
-        public (double Height, double Compression, double Fall) CrestAtMesh(double qx, double qz)
+        /// <summary>(SE-0054) <see cref="CrestAt"/> at a mesh coordinate (no inverse): the crest the surface draws from q. (SE-0070)
+        /// footprint: blocks per pixel there; trains too short for it are faded out as the shader's whitecaps fade them
+        /// (sea_Differential's keep), so spray comes off the crests the shader whitens. 0: all of them.</summary>
+        public (double Height, double Compression, double Fall) CrestAtMesh(double qx, double qz, double footprint = 0)
         {
             var q = (X: qx, Z: qz);
             double shape = Shape, j00 = 1, j01 = 0, j11 = 1, height = 0, variance = 0, fall = 0, fallVariance = 0;
@@ -477,11 +486,12 @@ namespace Sea
                 double k = Math.Sqrt(Kx[i] * Kx[i] + Kz[i] * Kz[i]);
                 if (k < 1e-7) continue;
                 double phase = Kx[i] * q.X + Kz[i] * q.Z - Omega[i] * Time + Phase[i], sn = Math.Sin(phase), cs = Math.Cos(phase);
-                double ux = Kx[i] / k, uz = Kz[i] / k, c = shape * ShapeWeight(k) * Amp[i] * k * sn;
+                double keep = 1 - CoastMath.SmoothStep(0.25, 0.75, k * footprint);
+                double ux = Kx[i] / k, uz = Kz[i] / k, c = shape * ShapeWeight(k) * Amp[i] * k * sn * keep;
                 j00 -= c * ux * ux; j01 -= c * ux * uz; j11 -= c * uz * uz;
                 double longWave = 1 - CoastMath.SmoothStep(0.3, 0.6, k), a = longWave * Amp[i], omega = Math.Sqrt(9.81 * k);
-                height += a * sn; variance += 0.5 * a * a;
-                fall += a * omega * cs; fallVariance += 0.5 * a * a * omega * omega;
+                height += keep * a * sn; variance += 0.5 * a * a;
+                fall += keep * a * omega * cs; fallVariance += 0.5 * a * a * omega * omega;
             }
             double least = 0.5 * (j00 + j11 - Math.Sqrt((j00 - j11) * (j00 - j11) + 4 * j01 * j01));
             return (height / Math.Max(Math.Sqrt(variance), 1e-4), Math.Max(0, 1 - least), fall / Math.Max(Math.Sqrt(fallVariance), 1e-4));

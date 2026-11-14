@@ -69,11 +69,12 @@ namespace SeaTests
                 && attrs[0].GetProperty("category").GetString() == "earth" && !attrs[0].GetProperty("onlyDuringWorldCreate").GetBoolean(),
                 "only the storm-height setting remains in the Earth tab");
             var storm = attrs[0];
-            check(storm.GetProperty("dataType").GetString() == "DropDown" && storm.GetProperty("default").GetString() == "1"
-                && storm.GetProperty("values").EnumerateArray().Select(v => v.GetString()).SequenceEqual(new[] { "1", "1.5", "2.2" }),
-                "storm defaults and choices remain unchanged");
+            // (SE-0066) the default is the server's sea.json; the three heights stay as they were
+            check(storm.GetProperty("dataType").GetString() == "DropDown" && storm.GetProperty("default").GetString() == "json"
+                && storm.GetProperty("values").EnumerateArray().Select(v => v.GetString()).SequenceEqual(new[] { "json", "1", "1.5", "2.2" }),
+                "storm choices: the server's sea.json (the default), 1, 1.5, 2.2");
             var defaults = new TreeAttribute(); defaults.SetString("seaStormHeight", storm.GetProperty("default").GetString());
-            check(fallback.ForWorld(defaults).StormHeightScale == 1, "new-world storm default overrides the config fallback");
+            check(fallback.ForWorld(defaults).StormHeightScale == fallback.StormHeightScale, "a new world's default takes sea.json's StormHeightScale (SE-0066)");
             bool translated = english.RootElement.TryGetProperty("worldconfig-category-earth", out _)
                 && english.RootElement.TryGetProperty("worldattribute-seaStormHeight", out _)
                 && english.RootElement.TryGetProperty("worldattribute-seaStormHeight-desc", out _)

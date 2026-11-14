@@ -2,6 +2,7 @@
   "worldconfig-category-earth": "Earth",
   "worldattribute-seaStormHeight": "Storm wave height",
   "worldattribute-seaStormHeight-desc": "Storm wave height and wavelength multiplier. 1 keeps current heights; 2.2 gives about 12-block hurricane seas. Changes apply after restarting the world or server.",
+  "worldconfig-seaStormHeight-json": "The server's sea.json (StormHeightScale)",
   "worldconfig-seaStormHeight-1": "1 (current heights)",
   "worldconfig-seaStormHeight-1.5": "1.5 (higher storm waves)",
   "worldconfig-seaStormHeight-2.2": "2.2 (about 12-block hurricane seas)"

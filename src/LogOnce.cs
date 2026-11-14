@@ -17,7 +17,8 @@ namespace Sea
         public static void Error(ILogger log, string site, Exception e)
         {
             if (log == null || e == null) return;
-            if (seen.Count > 256 || !seen.TryAdd(site + "|" + e.GetType().FullName, 0)) return;
+            // (SE-0070) per logger too: the server and the client of a singleplayer game each say it in their own log
+            if (seen.Count > 256 || !seen.TryAdd(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(log) + "|" + site + "|" + e.GetType().FullName, 0)) return;
             log.Error("[sea] {0} failed; Sea answers safely from now on and logs this only once: {1}", site, e);
         }
 

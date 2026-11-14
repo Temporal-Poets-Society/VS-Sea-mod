@@ -117,6 +117,9 @@ namespace Sea
 
         void Want((long, long) key) => wanted[key] = Environment.TickCount64;
 
+        // (SE-0068) tiles to solve again after their blocks changed: first in line, and not dropped for not being asked for
+        readonly HashSet<(long, long)> redo = new();
+
         readonly List<(long, long)> staleKeys = new(), askedKeys = new();
         readonly List<KeyValuePair<(long, long), long>> askOrder = new();
         static readonly Comparison<KeyValuePair<(long, long), long>> NewestFirst = (a, b) => b.Value.CompareTo(a.Value);
@@ -190,7 +193,7 @@ namespace Sea
                 RingMisaligned = misaligned;
                 if (t == ringStartTile && n == ringTiles) return;
                 ringStartTile = t; ringTiles = n;
-                tiles.Clear(); columns.Clear(); wanted.Clear(); dirty.Clear(); failedAt.Clear();
+                tiles.Clear(); columns.Clear(); wanted.Clear(); dirty.Clear(); failedAt.Clear(); redo.Clear();
                 Interlocked.Increment(ref version);
             }
         }
@@ -210,7 +213,8 @@ namespace Sea
         // any thread (the client marks chunks dirty from its relight thread too)
         void OnChunkDirty(Vec3i chunk, IWorldChunk _, EnumChunkDirtyReason reason)
         {
-            if (reason != EnumChunkDirtyReason.MarkedDirty) return;
+            // (SE-0068) a chunk that comes back loaded may have changed while it was away: its column is scanned again too
+            if (reason != EnumChunkDirtyReason.MarkedDirty && reason != EnumChunkDirtyReason.NewlyLoaded) return;
             int sea = api.World.SeaLevel, y0 = (sea - (int)CoastMath.MaxDepth - 3) / Chunk, y1 = (sea + 2) / Chunk;
             if (chunk.Y < y0 || chunk.Y > y1) return;   // (other dimensions are far above)
             lock (gate) if (columns.ContainsKey((chunk.X, chunk.Z))) dirty.Add((chunk.X, chunk.Z));
@@ -231,17 +235,18 @@ namespace Sea
             var asked = askedKeys;
             lock (gate)
             {
-                if (wanted.Count == 0) return;
+                if (wanted.Count == 0 && redo.Count == 0) return;
                 long cut = Environment.TickCount64 - StaleMs;
                 staleKeys.Clear();
                 foreach (var kv in wanted) if (kv.Value < cut) staleKeys.Add(kv.Key);
                 foreach (var k in staleKeys) wanted.Remove(k);
-                if (wanted.Count == 0) return;
                 askOrder.Clear();
                 foreach (var kv in wanted) askOrder.Add(kv);
                 askOrder.Sort(NewestFirst);
                 asked.Clear();
-                foreach (var kv in askOrder) asked.Add(kv.Key);
+                foreach (var k in redo) asked.Add(k);
+                foreach (var kv in askOrder) if (!redo.Contains(kv.Key)) asked.Add(kv.Key);
+                if (asked.Count == 0) return;
             }
             int r = (CoastMath.Margin + Chunk - 1) / Chunk;
             long now = Environment.TickCount64;
@@ -303,7 +308,7 @@ namespace Sea
                         for (long ux = key.Item1 - r; ux <= key.Item1 + r; ux++)
                         {
                             long tx = WrapTile(ux);
-                            if (tiles.ContainsKey((tx, tz)) && !wanted.ContainsKey((tx, tz))) { Want((tx, tz)); resolves++; }
+                            if (tiles.ContainsKey((tx, tz)) && redo.Add((tx, tz))) resolves++;
                         }
                 }
             }
@@ -380,6 +385,7 @@ namespace Sea
                 {
                     tiles[key] = new Entry { Data = data, Used = ++uses };
                     wanted.Remove(key);
+                    redo.Remove(key);
                     failedAt.Remove(key);
                     if (tiles.Count > MaxTiles) Forget(tiles);
                     solved++; solveMs += ms; solveMax = Math.Max(solveMax, ms);
@@ -392,6 +398,7 @@ namespace Sea
                 lock (gate)
                 {
                     wanted.Remove(key);
+                    redo.Remove(key);
                     failedAt[key] = Environment.TickCount64;
                     if (failedAt.Count > 256) failedAt.Clear();
                 }

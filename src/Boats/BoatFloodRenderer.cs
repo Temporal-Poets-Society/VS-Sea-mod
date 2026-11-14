@@ -30,7 +30,8 @@ namespace Sea
 
         public void OnRenderFrame(float dt, EnumRenderStage stage)
         {
-            var eye = api.World.Player.Entity.CameraPos;
+            var eye = api.World?.Player?.Entity?.CameraPos;   // (SE-0069: as the other renderers check)
+            if (eye == null) return;
             present.Clear();   // (SE-0047) kept between frames
             foreach (var b in boats.Boats)
             {

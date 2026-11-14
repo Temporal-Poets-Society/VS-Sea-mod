@@ -84,6 +84,28 @@ namespace ShaderCheck
                         }
                         var pos = Render(0);
                         var normals = Render(1);
+                        // (SE-0068) the same map as a ring of slots: stored rotated by (37, 11) columns, read through sea_CoastWrap,
+                        // it must give the same surface to the last bit
+                        if (strength == 0.5 && from == 270.0)
+                        {
+                            const int rx = 37, rz = 11;
+                            var rotated = new float[pixels.Length];
+                            for (int b = 0; b < n; b++)
+                                for (int a = 0; a < n; a++)
+                                    Array.Copy(pixels, (b * n + a) * S, rotated, (((b + rz) % n) * n + (a + rx) % n) * S, S);
+                            GL.ActiveTexture(TextureUnit.Texture1);
+                            GL.TexSubImage2D(TextureTarget.Texture2D, 0, 0, 0, n * S / 4, n, PixelFormat.Rgba, PixelType.Float, rotated);
+                            GL.ActiveTexture(TextureUnit.Texture0);
+                            GL.Uniform2(GL.GetUniformLocation(prog, "sea_CoastWrap"), rx, rz);
+                            var ringPos = Render(0);
+                            GL.Uniform2(GL.GetUniformLocation(prog, "sea_CoastWrap"), 0, 0);
+                            GL.ActiveTexture(TextureUnit.Texture1);
+                            GL.TexSubImage2D(TextureTarget.Texture2D, 0, 0, 0, n * S / 4, n, PixelFormat.Rgba, PixelType.Float, pixels);
+                            GL.ActiveTexture(TextureUnit.Texture0);
+                            double ringDiff = 0;
+                            for (int k = 0; k < pos.Length; k++) ringDiff = Math.Max(ringDiff, Math.Abs(pos[k] - ringPos[k]));
+                            Check(ringDiff == 0, $"SE-0068: the coast map as a ring of slots (stored rotated, read through sea_CoastWrap) draws the same surface (largest difference {ringDiff:E1})");
+                        }
                         for (int i = 0; i < 256; i++)
                         {
                             double qx = (i % 16 - 7.5) * 7.3, qz = (i / 16 - 7.5) * 7.3;

@@ -154,26 +154,27 @@ namespace Sea
         /// drive along a beach (Komar 1979) and a rip's flow back out to sea; 0 off the coast. Things afloat there move with it.
         /// </summary>
         public (double X, double Z) Current(double x, double z) =>
-            AtPlace(x, z, p => sys.CurrentAt(p, x, z), (0.0, 0.0));
+            AtPlace(x, z, static (s, p, x, z) => s.CurrentAt(p, x, z), (0.0, 0.0));
 
         /// <summary>
         /// (0.6.0) The surf at a place now: depth to the sea floor (blocks; 32 or more off the coast), how far the waves
         /// break there (0–1) and the whitewater drawn (0–1).
         /// </summary>
         public (double Depth, double Breaking, double Foam) Surf(double x, double z) =>
-            AtPlace(x, z, p => { var s = p.SurfAt(x, z); return (s.Depth, s.Breaking, s.Foam); }, (CoastMath.MaxDepth, 0.0, 0.0));
+            AtPlace(x, z, static (_, p, x, z) => { var s = p.SurfAt(x, z); return (s.Depth, s.Breaking, s.Foam); }, (CoastMath.MaxDepth, 0.0, 0.0));
 
         /// <summary>
         /// (0.6.0) The share of the sea's height that gets past the land to a place now (1 on open water; less in the lee
         /// of an island or a headland, deep water too). surface.height already has it.
         /// </summary>
-        public double Lee(double x, double z) => AtPlace(x, z, p => sys.LeeAt(p, x, z), 1.0);
+        public double Lee(double x, double z) => AtPlace(x, z, static (s, p, x, z) => s.LeeAt(p, x, z), 1.0);
 
-        // a place sampled at (x, z) now, from the same small cache as Trains
-        T AtPlace<T>(double x, double z, Func<WavePlace, T> read, T none) => AtPlaceAt(x, z, sys.WaveTime, read, none);
+        // a place sampled at (x, z) now, from the same small cache as Trains. (SE-0069) The answer is read by a static function
+        // of Sea, the place and (x, z): no closure made per answer (a pose asks five)
+        T AtPlace<T>(double x, double z, Func<SeaSystem, WavePlace, double, double, T> read, T none) => AtPlaceAt(x, z, sys.WaveTime, read, none);
 
         // the same at wave time t
-        T AtPlaceAt<T>(double x, double z, double t, Func<WavePlace, T> read, T none)
+        T AtPlaceAt<T>(double x, double z, double t, Func<SeaSystem, WavePlace, double, double, T> read, T none)
         {
             if (sys.Spectrum == null || !double.IsFinite(x) || !double.IsFinite(z) || !double.IsFinite(t)) return none;
             try
@@ -182,7 +183,7 @@ namespace Sea
                 {
                     var p = TrainPlace(x, z);
                     sys.SampleWaves(p, x, z, t);
-                    return read(p);
+                    return read(sys, p, x, z);
                 }
             }
             catch (Exception e) { LogOnce.Error(log, "an open contract answer at a place", e); return none; }
@@ -195,10 +196,10 @@ namespace Sea
         public string Probe(double x, double z, double t)
         {
             if (sys.Spectrum == null) return "Sea's waves aren't ready.";
-            double H(double px, double pz) => AtPlaceAt(px, pz, t, p => sys.HeightOn(p, px, pz), double.NaN);
-            double shelter = Math.Clamp(AtPlaceAt(x, z, t, p => sys.WaveFactorOn(p, x, z), 0.0), 0, 1);
+            double H(double px, double pz) => AtPlaceAt(px, pz, t, static (s, p, x, z) => s.HeightOn(p, x, z), double.NaN);
+            double shelter = Math.Clamp(AtPlaceAt(x, z, t, static (s, p, x, z) => s.WaveFactorOn(p, x, z), 0.0), 0, 1);
             var pose = shelter > 0 ? SeaContractMath.PoseOn(H, shelter, x, z, 0.5, 30, 8) : default;
-            var (n, sum) = AtPlaceAt(x, z, t, p => { double s = 0; for (int i = 0; i < p.Count; i++) s += p.Amp[i]; return (p.Count, s); }, (0, 0.0));
+            var (n, sum) = AtPlaceAt(x, z, t, static (_, p, _, _) => { double s = 0; for (int i = 0; i < p.Count; i++) s += p.Amp[i]; return (p.Count, s); }, (0, 0.0));
             return FormattableString.Invariant($"probe ({x:0.###}, {z:0.###}) at wave time {t:0.###}: height {H(x, z):0.000000}, shelter {shelter:0.000000}, pose lift {pose.Lift:0.000000} roll {pose.Roll:0.000000} pitch {pose.Pitch:0.000000} (30 x 8 at yaw 0.5), {n} trains, amplitudes {sum:0.000000}");
         }
 
@@ -240,7 +241,7 @@ namespace Sea
         /// The share of the open sea's waves that reaches here, 0–1 (0 on inland water). Worked out at the place itself
         /// on every side, so the server and every client agree (R5).
         /// </summary>
-        public double Shelter(double x, double z) => sys.Spectrum == null ? 0 : Math.Clamp(AtPlace(x, z, p => sys.WaveFactorOn(p, x, z), 0.0), 0, 1);
+        public double Shelter(double x, double z) => sys.Spectrum == null ? 0 : Math.Clamp(AtPlace(x, z, static (s, p, x, z) => s.WaveFactorOn(p, x, z), 0.0), 0, 1);
 
         // ------------------------------------------------------------------ surface (section 7)
 
@@ -309,7 +310,7 @@ namespace Sea
         /// the open sea from the camera's trains: away from the camera the drawn water can differ from this by how much the
         /// sea state changes over that distance (Sea's open issue O1), as it does for Ships' own ships.
         /// </summary>
-        public double Height(double x, double z) => sys.Spectrum == null ? 0 : AtPlace(x, z, p => sys.HeightOn(p, x, z), 0.0);
+        public double Height(double x, double z) => sys.Spectrum == null ? 0 : AtPlace(x, z, static (s, p, x, z) => s.HeightOn(p, x, z), 0.0);
 
         /// <summary>
         /// How a hull of `length` by `beam` m centred at (x, z) lies on the water now, with Rough Seas' meaning of
@@ -318,12 +319,14 @@ namespace Sea
         /// Hold 0–1 (the share of the open sea's waves here; 0: none drawn), Lift m, Roll rad about the length (the
         /// renderer's xangle), Pitch rad about the beam (zangle). The water's pose, without the hull's inertia.
         /// </summary>
+        Func<double, double, double> height;
+
         public (double Hold, double Lift, double Roll, double Pitch) Pose(double x, double z, double yaw, double length, double beam)
         {
             if (sys.Spectrum == null || !(length > 0) || !(beam > 0)) return default;
             double hold = Shelter(x, z);
             if (hold <= 0) return default;
-            return SeaContractMath.PoseOn(Height, hold, x, z, yaw, length, beam);
+            return SeaContractMath.PoseOn(height ??= Height, hold, x, z, yaw, length, beam);   // (SE-0069: one delegate, made once)
         }
 
         // ------------------------------------------------------------------ hulls (section 8)
@@ -379,6 +382,7 @@ namespace Sea
             bool failed;
 
             public HullRecords(Func<double[][]> records, ILogger log, string id) { this.records = records; this.log = log; this.id = id; }
+            readonly List<SeaContractMath.ClipArrays> arrays = new();
 
             public void AddWaterClips(List<WaterClipBox> clips)
             {
@@ -390,7 +394,9 @@ namespace Sea
                     return;
                 }
                 if (list == null) return;
-                foreach (var r in list) if (SeaContractMath.ToClip(r, out var c)) clips.Add(c);
+                // (SE-0069) each record's arrays kept from frame to frame (the clip boxes are read in the same frame)
+                while (arrays.Count < list.Length) arrays.Add(new SeaContractMath.ClipArrays());
+                for (int i = 0; i < list.Length; i++) if (SeaContractMath.ToClip(list[i], out var c, arrays[i])) clips.Add(c);
             }
         }
 

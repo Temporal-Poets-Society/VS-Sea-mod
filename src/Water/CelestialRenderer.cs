@@ -47,6 +47,13 @@ namespace Sea
         float rain;
         public bool WaterPatched { get; private set; }
         public bool FarPatched { get; private set; }
+
+        /// <summary>(SE-0065) The shaders are being loaded again: what takes Sea's sky uniforms is found out afresh.</summary>
+        public static void ShadersReloading()
+        {
+            var c = current;
+            if (c != null) c.WaterPatched = c.FarPatched = false;
+        }
         public string Status => $"Celestial water: {WaterPatched}; Wmap lighting: {FarPatched}; moon from {(!astraPresent ? "vanilla" : astraFailed ? "vanilla (AstraTerra adapter FAILED, see log)" : "AstraTerra when it draws one")}; clear {clear:0.00}; sun altitude {Math.Asin(sun.Y) * 180 / Math.PI:0.0}°, moon {Math.Asin(moon.Y) * 180 / Math.PI:0.0}°; moon fraction {phase:0.00}; sky daylight {skyLight:0.00}; strengths: night {NightStrength:0.##}, sky {SkyStrength:0.##}, glint {GlintStrength:0.##}; outdoor floor {floor:0.000}; total days {api.World.Calendar.TotalDays:0.00000}.";
 
         public CelestialRenderer(ICoreClientAPI api, SeaSystem sea)
@@ -59,7 +66,8 @@ namespace Sea
             ambientFailed = usesFailed = twilightFailed = handOffFailed = false;
             Patch("shader uniforms", () => harmony.Patch(AccessTools.Method(AccessTools.TypeByName("Vintagestory.Client.NoObf.ShaderProgramBase"), "Use"), postfix: new HarmonyMethod(typeof(CelestialRenderer), nameof(UsePostfix))));
             Patch("outdoor night lighting", () => harmony.Patch(AccessTools.Method(AccessTools.TypeByName("Vintagestory.Client.NoObf.AmbientManager"), "UpdateAmbient"), postfix: new HarmonyMethod(typeof(CelestialRenderer), nameof(AmbientPostfix))));
-            Patch("real twilight", PatchTwilight);
+            // (SE-0070) the shadow and shading hand-off rely on real twilight: if its patch can't go in, they stay off too
+            if (!Patch("real twilight", PatchTwilight)) twilightFailed = true;
             Patch("shadow and shading hand-off", PatchHandOff);
             api.Event.LevelFinalize += InitializeAstra;
         }
@@ -95,10 +103,10 @@ namespace Sea
             harmony.Patch(update, postfix: new HarmonyMethod(typeof(CelestialRenderer), nameof(CalendarPostfix)) { priority = Priority.Low });
         }
 
-        void Patch(string name, Action action)
+        bool Patch(string name, Action action)
         {
-            try { action(); }
-            catch (Exception ex) { api.Logger.Warning("[sea] {0} unavailable: {1}", name, ex.Message); }
+            try { action(); return true; }
+            catch (Exception ex) { api.Logger.Warning("[sea] {0} unavailable: {1}", name, ex.Message); return false; }
         }
 
         void InitializeAstra()
@@ -479,21 +487,22 @@ namespace Sea
                 }
             }
             if (!WaterShader.Has(p, "sea_Effects")) return;
+            // (SE-0070) each one only where the program declares it (vanilla's Uniform throws on an unknown name)
             c.WaterPatched = true;
             bool enabled = c.api.World?.Player?.Entity?.Pos.Dimension == 0;
-            p.Uniform(WaterShader.N(p, "sea_Effects"), enabled ? c.GlintStrength : 0, enabled ? c.SkyStrength : 0);
-            p.Uniform(WaterShader.N(p, "sea_Eye"), c.eye);
+            if (WaterShader.Has(p, "sea_Effects")) p.Uniform(WaterShader.N(p, "sea_Effects"), enabled ? c.GlintStrength : 0, enabled ? c.SkyStrength : 0);
+            if (WaterShader.Has(p, "sea_Eye")) p.Uniform(WaterShader.N(p, "sea_Eye"), c.eye);
             if (WaterShader.Has(p, "sea_FadeDistance")) p.Uniform(WaterShader.N(p, "sea_FadeDistance"), c.fadeDistance);
-            p.Uniform(WaterShader.N(p, "sea_Sun"), c.sun.X, c.sun.Y, c.sun.Z, 1.6f);  // saturates the glint core, as vanilla's does
-            p.Uniform(WaterShader.N(p, "sea_Moon"), c.moon.X, c.moon.Y, c.moon.Z, 0.75f * c.phase * c.night);
+            if (WaterShader.Has(p, "sea_Sun")) p.Uniform(WaterShader.N(p, "sea_Sun"), c.sun.X, c.sun.Y, c.sun.Z, 1.6f);  // saturates the glint core, as vanilla's does
+            if (WaterShader.Has(p, "sea_Moon")) p.Uniform(WaterShader.N(p, "sea_Moon"), c.moon.X, c.moon.Y, c.moon.Z, 0.75f * c.phase * c.night);
             // (0.4.7) The drawn sun's colour (SunAndGlow)
-            p.Uniform(WaterShader.N(p, "sea_SunColor"), c.sunR, c.sunG, c.sunB);
-            p.Uniform(WaterShader.N(p, "sea_AboveSea"), c.aboveSea);
-            p.Uniform(WaterShader.N(p, "sea_Sunset"), c.sunset.X, c.sunset.Y, c.sunset.Z, c.sunset.W);
+            if (WaterShader.Has(p, "sea_SunColor")) p.Uniform(WaterShader.N(p, "sea_SunColor"), c.sunR, c.sunG, c.sunB);
+            if (WaterShader.Has(p, "sea_AboveSea")) p.Uniform(WaterShader.N(p, "sea_AboveSea"), c.aboveSea);
+            if (WaterShader.Has(p, "sea_Sunset")) p.Uniform(WaterShader.N(p, "sea_Sunset"), c.sunset.X, c.sunset.Y, c.sunset.Z, c.sunset.W);
             var am = c.api.Ambient;
-            p.Uniform(WaterShader.N(p, "sea_Weather"), c.clear, c.night, am.BlendedCloudDensity, c.roughness);
+            if (WaterShader.Has(p, "sea_Weather")) p.Uniform(WaterShader.N(p, "sea_Weather"), c.clear, c.night, am.BlendedCloudDensity, c.roughness);
             var su = c.api.Render.ShaderUniforms;
-            p.Uniform(WaterShader.N(p, "sea_Sky"), c.skyLight, su.SunsetMod, am.BlendedFogMin, am.BlendedFogDensity);
+            if (WaterShader.Has(p, "sea_Sky")) p.Uniform(WaterShader.N(p, "sea_Sky"), c.skyLight, su.SunsetMod, am.BlendedFogMin, am.BlendedFogDensity);
             GL.GetInteger(GetPName.ActiveTexture, out int active);
             p.BindTexture2D("sea_SkyTex", su.SkyTextureId, 10);
             p.BindTexture2D("sea_GlowTex", su.GlowTextureId, 11);

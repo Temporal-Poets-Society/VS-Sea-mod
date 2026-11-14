@@ -132,7 +132,10 @@ namespace Sea
                 else
                     Change(() =>
                     {
-                        provider = new WindProvider(name, windAt, prevailingAt);
+                        provider = new WindProvider(name, windAt, prevailingAt)
+                        {
+                            FirstFailure = (who, why) => api?.Logger.Warning("[sea] The wind provider {0} failed ({1}); Sea takes calm for such answers and counts them (.sea)", who, why)
+                        };
                         var m = Model;
                         if (m != null) m.Provider = provider;
                     });

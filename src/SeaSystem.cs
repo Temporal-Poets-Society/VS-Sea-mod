@@ -91,7 +91,8 @@ namespace Sea
             LogOnce.Reset();
             api.Network.RegisterChannel(ChannelName).RegisterMessageType<SeaParamsPacket>().RegisterMessageType<SeaClockPacket>();
             // the client's patches only by the client (or a dedicated server, which has none): see Hooks
-            clientHooks = api.Side == EnumAppSide.Client || (api as ICoreServerAPI)?.Server.IsDedicated == true;
+            // (SE-0067) a dedicated server only for the self-test (SEA_SELFTEST=1), which checks them
+            clientHooks = api.Side == EnumAppSide.Client || ((api as ICoreServerAPI)?.Server.IsDedicated == true && SeaSelfTest.Requested);
             Hooks.Apply(Mod.Logger, clientHooks);
             coast = new CoastField(api);
             coastLookup = coast.Lookup;

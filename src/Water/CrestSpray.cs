@@ -85,7 +85,10 @@ namespace Sea
                 double factor = sys.WaveFactorAtMesh(qx, qz);
                 if (factor < 0.5) continue;
                 if (sys.SurfOn && sys.CoastAt(qx, qz).Coastal) continue;   // (the surf's own spray; within a block of the drawn point)
-                var crest = place.CrestAtMesh(qx, qz);
+                // (SE-0070) the pixel's footprint there, as the shader measures it, so only crests it whitens throw spray
+                double fromEye = Math.Sqrt((qx - cx) * (qx - cx) + (qz - cz) * (qz - cz) + (rest - ep.CameraPos.Y) * (rest - ep.CameraPos.Y));
+                double graze = Math.Max(Math.Abs(rest - ep.CameraPos.Y) / Math.Max(fromEye, 1e-3), 0.01);
+                var crest = place.CrestAtMesh(qx, qz, sys.PixelSize * fromEye * Math.Sqrt(1 + 1 / (graze * graze)));
                 // the crest and its front only: the falling back of a passing wave throws nothing
                 if (crest.Fall > 0.35) continue;
                 double w = WavePlace.SprayCrest(crest.Height, crest.Compression * factor);

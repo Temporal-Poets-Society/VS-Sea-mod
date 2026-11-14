@@ -52,6 +52,8 @@ The coast and storm features were checked in game on one client.
   vanilla boat's pose can't be torn between the particle and render threads; leaving a world switches World Map's far
   sea off too; errors Sea answers safely are logged once; the coast map uploads only what changed; idle boats ease to
   the surf's current.
+- **A new world's storm height** (the Earth tab's `seaStormHeight`) is the server's `sea.json` by default (SEA-D78); worlds
+  made before keep their choice.
 - **SheyderMod:** Sea's water code goes into its water shader, and Sea keeps the water's reflections: SheyderMod's own
   water reflection (a flat mirror over the water that laid a second, sharp sun over Sea's glitter path) is skipped
   while Sea draws the water (SEA-D76). Its other features, its water ripples among them, stay on; nothing in its

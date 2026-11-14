@@ -29,7 +29,10 @@ namespace Sea
         }
 
         /// <summary>A hull record as Sea's clip box; false when it is too short or not finite (the shader leaves those out too).</summary>
-        public static bool ToClip(double[] r, out WaterClipBox c)
+        /// <summary>(SE-0069) Arrays a caller keeps for one record from frame to frame, so its clip box takes no new ones.</summary>
+        public sealed class ClipArrays { public float[] Profile, DryProfile, DryTops; }
+
+        public static bool ToClip(double[] r, out WaterClipBox c, ClipArrays reuse = null)
         {
             c = default;
             if (r == null || r.Length < HullRecordLength) return false;
@@ -52,7 +55,7 @@ namespace Sea
             // the footprint's 16 half-widths; NaN at the first: none (a record that only wants the detail below)
             if (r.Length >= HullRecordWithProfile && !double.IsNaN(r[HProfile]))
             {
-                if (!Floats(r, HProfile, WaterShader.ProfileStations, out c.Profile)) return false;
+                if (!Floats(r, HProfile, WaterShader.ProfileStations, out c.Profile, reuse == null ? null : reuse.Profile ??= new float[WaterShader.ProfileStations])) return false;
             }
             if (r.Length >= HullRecordDetailed)
             {
@@ -68,21 +71,21 @@ namespace Sea
                 // the dry outline by levels; NaN at the first: none (the footprint less the inset)
                 if (r.Length >= HullRecordWithDryProfile && !double.IsNaN(r[HDryProfile]))
                 {
-                    if (!(c.DryLevelStep > 0) || !Floats(r, HDryProfile, WaterShader.DryStations * WaterShader.DryLevels, out c.DryProfile)) return false;
+                    if (!(c.DryLevelStep > 0) || !Floats(r, HDryProfile, WaterShader.DryStations * WaterShader.DryLevels, out c.DryProfile, reuse == null ? null : reuse.DryProfile ??= new float[WaterShader.DryStations * WaterShader.DryLevels])) return false;
                     // its tops; NaN at the first: none (DryHeight all along)
                     if (r.Length >= HullRecordWithDryTops && !double.IsNaN(r[HDryTops]))
                     {
-                        if (!Floats(r, HDryTops, WaterShader.DryTopStations, out c.DryTops)) return false;
+                        if (!Floats(r, HDryTops, WaterShader.DryTopStations, out c.DryTops, reuse == null ? null : reuse.DryTops ??= new float[WaterShader.DryTopStations])) return false;
                     }
                 }
             }
             return c.HalfLength > 0 && c.HalfWidth > 0;
         }
 
-        static bool Floats(double[] r, int from, int count, out float[] into)
+        static bool Floats(double[] r, int from, int count, out float[] into, float[] buffer = null)
         {
             into = null;
-            var f = new float[count];
+            var f = buffer ?? new float[count];
             for (int i = 0; i < count; i++)
             {
                 double v = r[from + i];

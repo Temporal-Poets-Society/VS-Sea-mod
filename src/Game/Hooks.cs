@@ -156,7 +156,16 @@ namespace Sea
                     methods.Add(m);
                 }
                 foreach (var m in methods)
+                {
                     harmony.Patch(m, transpiler: new HarmonyMethod(typeof(DryParticles), nameof(DryParticles.OnWaterTranspiler)));
+                    // (SE-0065) what the transpiler met may not be the original (another mod's transpiler ran first): if it
+                    // replaced nothing, Sea's patch comes off that method again and says so
+                    if (DryParticles.LastReplaced == 0)
+                    {
+                        harmony.Unpatch(m, HarmonyPatchType.Transpiler, ClientHarmonyId);
+                        log?.Warning("No particle spawn left to take over in {0} (another mod changed it first): rain and dust there splash in dry places too", m.Name);
+                    }
+                }
             });
         }
 
@@ -224,6 +233,13 @@ namespace Sea
 
         static void LoadShaderProgramPostfix(object program)
         {
+            // (SE-0065) an error here would end the shader load: logged once, the shader left as the game made it
+            try { LoadShaderProgram(program); }
+            catch (Exception e) { LogOnce.Error(log, "putting Sea's code into a shader", e); }
+        }
+
+        static void LoadShaderProgram(object program)
+        {
             if (!(program is IShaderProgram p) || p.VertexShader == null) return;
             if (p.PassName == "farterrain" && p.AssetDomain == "wmap" && p.FragmentShader != null && !CelestialFarDisabled)
             {
@@ -233,6 +249,8 @@ namespace Sea
             }
             if (Array.IndexOf(WaterShader.Passes, p.PassName) < 0) return;
             injectedLevel = WaterCodeLevel;
+            // (SE-0065) what this load puts in is reported afresh: after a step-down `.sea` showed what was no longer in
+            if (p.PassName == "chunkliquid") { FlowLookInjected = false; CelestialRenderer.ShadersReloading(); }
             if (WaterCodeLevel >= 2)
             {
                 // this machine's driver wouldn't take Sea's water code: vanilla water
@@ -360,7 +378,30 @@ namespace Sea
         static void CompilePostfix(object __instance, bool __result)
         {
             if (__result || !(__instance is IShaderProgram p)) return;
-            if (!CelestialFarDisabled && p.PassName == "farterrain" && p.AssetDomain == "wmap" && p.FragmentShader?.Code is string farCode && (farCode.Contains("sea_NightFloor") || farCode.Contains("seaNightFloor")))
+            try { Compiled(p); }
+            catch (Exception e) { LogOnce.Error(log, "stepping Sea's shader code down after a compile error", e); }
+        }
+
+        /// <summary>(SE-0065) Did this stage compile? Vanilla compiles the fragment stage only when the vertex stage did (ShaderProgram.Compile).</summary>
+        static bool StageCompiled(IShader s)
+        {
+            // (the engine's Shader keeps its GL id in a public field ShaderId; Sea compiles against the API only)
+            if (s == null) return false;
+            // (no such field in a later game: say it compiled, and the order below is the fixed one it was)
+            if ((shaderId ??= AccessTools.Field(s.GetType(), "ShaderId")) == null) return true;
+            int id = shaderId.GetValue(s) is int v ? v : 0;
+            if (id == 0) return false;
+            OpenTK.Graphics.OpenGL4.GL.GetShader(id, OpenTK.Graphics.OpenGL4.ShaderParameter.CompileStatus, out int ok);
+            return ok == 1;
+        }
+
+        static FieldInfo shaderId;
+
+        static void Compiled(IShaderProgram p)
+        {
+            // (SE-0065) only Sea's own patch of an older World Map (its 0.5 shaders declare the far uniforms themselves, and
+            // their failure is World Map's)
+            if (!CelestialFarDisabled && p.PassName == "farterrain" && p.AssetDomain == "wmap" && p.FragmentShader?.Code is string farCode && farCode.Contains("uniform vec3 sea_NightFloor = vec3(0.0);"))
             {
                 CelestialFarDisabled = true;
                 log?.Warning("[sea] Wmap night floor shader failed; reloading Wmap without Sea's optional brightness adjustment.");
@@ -368,6 +409,26 @@ namespace Sea
                 return;
             }
             if (Array.IndexOf(WaterShader.Passes, p.PassName) < 0) return;
+            // (SE-0065) blame only code in the stage that failed (both compiled: the link failed, all of it is in question).
+            // A failed vertex stage: the sky code's vertex part, else Sea's waves; never the even flow or the dry cut's
+            // fragment part, which a fixed order switched off on the way, each after a full reload
+            bool vertexOk = StageCompiled(p.VertexShader), fragmentOk = vertexOk && (p.FragmentShader == null || StageCompiled(p.FragmentShader));
+            if (!vertexOk)
+            {
+                if (!CelestialDisabled && p.VertexShader?.Code?.Contains("out vec2 sea_SurfaceSlope;") == true)
+                {
+                    CelestialDisabled = true;
+                    log?.Warning("[sea] Water shader {0}'s vertex stage failed with Sea's sky code; reloading without it (vanilla highlights), keeping Sea's waves and dry hulls.", p.PassName);
+                    RequestShaderReload?.Invoke();
+                    return;
+                }
+                if (p.VertexShader?.Code?.Contains(WaterShader.Marker) != true) return;   // vanilla's own code failed: not ours to fix
+                if (WaterCodeLevel != injectedLevel || WaterCodeLevel >= 2) return;
+                WaterCodeLevel = 2;
+                log?.Warning("Water shader {0}'s vertex stage didn't compile with Sea's waves (the error is above); trying again with vanilla's water (no Sea waves, water may show inside ships)", p.PassName);
+                RequestShaderReload?.Invoke();
+                return;
+            }
             if (!CelestialDisabled && p.FragmentShader?.Code?.Contains(CelestialShader.Marker) == true)
             {
                 CelestialDisabled = true;

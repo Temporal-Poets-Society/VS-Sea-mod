@@ -71,6 +71,14 @@ namespace Sea
 
         void OnParams(SeaParamsPacket p)
         {
+            // (SE-0066) the ring and the calendar's shape as numbers a model can be made of, or the packet is not taken
+            if (p == null || !double.IsFinite(p.RingStart) || !double.IsFinite(p.Circumference) || p.Circumference < 0
+                || !(p.DaysPerYear > 0) || !double.IsFinite(p.DaysPerYear) || !(p.HoursPerDay > 0) || !double.IsFinite(p.HoursPerDay))
+            {
+                Mod.Logger.Warning("[sea] The server sent parameters Sea can't use (ring {0} from {1}, {2} days of {3} hours); keeping what it had",
+                    p?.Circumference, p?.RingStart, p?.DaysPerYear, p?.HoursPerDay);
+                return;
+            }
             RegionSize = capi.World.BlockAccessor.RegionSize;
             Config = (p.Config ?? new SeaConfig()).Checked();
             var ov = WindOverride.Checked(p.Override);
@@ -135,6 +143,8 @@ namespace Sea
         /// <summary>Client: the wind at the player right now (updated 4× a second).</summary>
         public Wind LocalWind { get; private set; }
         public int DrawnHullCount => waterRenderer?.LastClipCount ?? 0;
+        /// <summary>(SE-0070) Blocks per pixel per block of distance on this client (the drawn water's sea_Pixel; 0 before the first frame).</summary>
+        public double PixelSize => waterRenderer?.Pixel ?? 0;
         /// <summary>(SE-0040) What the client's coast map has uploaded so far (for `.sea coast`).</summary>
         public (int Refreshes, int Whole, int Tiles, double MB) CoastUploads => waterRenderer?.CoastUploads ?? default;
         public int DrawnWaveCount => waterRenderer?.LastWaveCount ?? 0;

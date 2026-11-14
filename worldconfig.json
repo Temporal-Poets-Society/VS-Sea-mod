@@ -5,13 +5,15 @@
       "category": "earth",
       "code": "seaStormHeight",
       "dataType": "DropDown",
-      "default": "1",
+      "default": "json",
       "values": [
+        "json",
         "1",
         "1.5",
         "2.2"
       ],
       "names": [
+        "json",
         "1",
         "1.5",
         "2.2"

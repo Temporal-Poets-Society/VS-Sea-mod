@@ -94,7 +94,7 @@ namespace Sea
         // The native mask writes flat depth as well as Sea cutting the displaced surface. Keep only Sea's volume
         // when it is available, and retain the native fallback if the driver's dry shader cannot compile.
         public static bool NativeMask(EntityBehaviorHideWaterSurface __instance)
-            => !BoatWaves.Sailed(__instance.entity as EntityBoat) || !Hooks.DryHullsInjected;
+            => !BoatWaves.Sailed(__instance.entity as EntityBoat) || !Hooks.DryHullsInjected || WaterRenderer.UploadFailed;   // (SE-0069: after an upload error Sea cuts nothing)
 
         public static void Density(EntityBoat __instance, ref float __result)
         { if (BoatWaves.Sailed(__instance)) __result = (float)BoatWaveMath.FloodDensity(Fill(__instance)); }

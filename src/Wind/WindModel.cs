@@ -51,10 +51,13 @@ namespace Sea
             return wind.Strength > WindModel.MaxStrength ? wind.WithStrength(WindModel.MaxStrength) : wind;
         }
 
+        /// <summary>(SE-0066) Told the first failure (they were only counted): the provider's name and why.</summary>
+        public Action<string, string> FirstFailure;
+
         Wind Failed(string why)
         {
-            Interlocked.Increment(ref failures);
             lastError = why;
+            if (Interlocked.Increment(ref failures) == 1) { try { FirstFailure?.Invoke(Name, why); } catch (Exception) { } }
             return default;
         }
     }

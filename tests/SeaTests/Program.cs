@@ -252,6 +252,7 @@ namespace SeaTests
                         ("Vintagestory.Client.NoObf.Camera", "CameraEyePos", true),
                         ("Vintagestory.Client.NoObf.AmbientManager", "UpdateAmbient", false),
                         ("Vintagestory.Common.ClientGameCalendar", "Update", false),
+                        ("Vintagestory.Client.NoObf.Shader", "ShaderId", true),   // (SE-0065: which stage failed)
                     };
                     var missing = new System.Collections.Generic.List<string>();
                     foreach (var (type, member, field) in targets)

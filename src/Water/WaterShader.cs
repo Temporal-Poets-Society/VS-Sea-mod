@@ -93,6 +93,7 @@ uniform vec4 sea_WaveLee[24]; // (SE-0042) per train: lee sector, fraction to th
 uniform vec4 sea_CoastArea = vec4(0.0);
 uniform vec4 sea_CoastSea = vec4(0.0);
 uniform sampler2D sea_CoastTex;
+uniform ivec2 sea_CoastWrap = ivec2(0); // (SE-0068) the texture column and row of the map's first column
 const float sea_MaxDepth = 32.0;
 const float sea_Step = 0.01;
 float sea_Surf = 0.0; // whitewater at the last sea_Differential (0.6.0)
@@ -170,7 +171,9 @@ void sea_CoastAt(vec2 q) {
     for (int k = 0; k < 4; k++) {
         ivec2 o = ivec2(k & 1, k >> 1);
         float w = (o.x == 1 ? t.x : 1.0 - t.x) * (o.y == 1 ? t.y : 1.0 - t.y);
-        ivec2 p = ivec2(4 * (c.x + o.x), c.y + o.y);
+        // (SE-0068) the map is a ring of tile slots: the window's column c is the texture's (c + sea_CoastWrap) mod n
+        ivec2 cc = (c + o + sea_CoastWrap) % int(n);
+        ivec2 p = ivec2(4 * cc.x, cc.y);
         sea_K.c += w * texelFetch(sea_CoastTex, p, 0);
         sea_K.la += w * texelFetch(sea_CoastTex, p + ivec2(1, 0), 0);
         sea_K.lb += w * texelFetch(sea_CoastTex, p + ivec2(2, 0), 0);
@@ -312,16 +315,16 @@ void sea_Differential(vec2 q, float factor, float footprint, out vec2 slope, out
             float ks = as>0.0 ? length(vec2(thsS[0]-ths, thsS[1]-ths))/sea_Step : 0.0;
             float keepS = 1.0-smoothstep(0.25,0.75,max(ks,k)*footprint);
             gradient += keepS*vec2(restS[0]-rest, restS[1]-rest)/sea_Step*factor;
-            rough += (1.0-keepS*keepS)*0.5*pow(as*ks*factor,2.0);
+            rough += (1.0-keepS*keepS)*0.5*(as*ks*factor)*(as*ks*factor);   // (SE-0070: pow(x, 2.0) is undefined for x < 0)
             if (as>0.0) { vec3 sh=sea_Breaker(ths,sea_K.br.y); surfSum += as; surfCrest += as*sh.z*sh.z*sh.z; }
         }
-        rough += (1.0-keep*keep)*0.5*pow(ao*k*factor,2.0);
+        rough += (1.0-keep*keep)*0.5*(ao*k*factor)*(ao*k*factor);
         float longWave=1.0-smoothstep(0.3,0.6,k);
         height += longWave*keep*ao*sn;
-        variance += 0.5*pow(longWave*ao,2.0);
+        variance += 0.5*(longWave*ao)*(longWave*ao);
         float omega=sqrt(9.81*k);
         fall += longWave*keep*ao*omega*cs;
-        fallVariance += 0.5*pow(longWave*ao*omega,2.0);
+        fallVariance += 0.5*(longWave*ao*omega)*(longWave*ao*omega);
     }
     sea_Surf = surfSum > 0.0001 ? sea_K.br.y * (0.2 + 0.8 * smoothstep(0.35, 0.85, surfCrest / surfSum)) : 0.0;
     if (sea_KeepSurface) { sea_Kept = kept; sea_KeptQ = q; }

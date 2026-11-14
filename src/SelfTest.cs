@@ -30,12 +30,16 @@ namespace Sea
 
         public override bool ShouldLoad(EnumAppSide forSide) => forSide == EnumAppSide.Server;
 
+        /// <summary>(SE-0067) The self-test runs only on a server started with SEA_SELFTEST=1 (tools/run_selftest.sh sets it) and
+        /// ModConfig/sea-selftest.json enabled: a copied config file alone, in a player's data folder, does nothing.</summary>
+        public static bool Requested => Environment.GetEnvironmentVariable("SEA_SELFTEST") == "1";
+
         public override void StartServerSide(ICoreServerAPI api)
         {
             sapi = api;
             SeaSelfTestConfig cfg;
             try { cfg = api.LoadModConfig<SeaSelfTestConfig>("sea-selftest.json"); } catch { cfg = null; }
-            if (cfg?.Enabled != true) return;
+            if (cfg?.Enabled != true || !Requested) return;
             api.Event.ServerRunPhase(EnumServerRunPhase.RunGame, () => api.Event.RegisterCallback(_ =>
             {
                 void Finish()
@@ -191,6 +195,14 @@ namespace Sea
             var m = sys?.Model;
             Check(m != null, $"wind model built (wind from {sys?.WindProviderName ?? "vanilla"})");
             if (m == null) return;
+            // (SE-0067) the world's own fixed wind is set back however the checks end (they set and clear their own)
+            var worldFixed = m.Override;
+            try { RunChecks(sys, m); }
+            finally { if (worldFixed != null) sys.SetOverride(worldFixed); }
+        }
+
+        void RunChecks(SeaSystem sys, WindModel m)
+        {
 
             var spawn = sapi.World.DefaultSpawnPosition;
             double x = spawn.X, z = spawn.Z, h = sys.Hours;

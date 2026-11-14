@@ -51,6 +51,7 @@ namespace Sea
         static WaterRenderer current;
 
         public int LastClipCount { get; private set; }
+        public double Pixel => pixel;
         public (int Refreshes, int Whole, int Tiles, double MB) CoastUploads => coastTexture.Uploads;
         public int LastWaveCount { get; private set; }
         public int LastDryCount { get; private set; }
