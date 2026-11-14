@@ -1061,6 +1061,8 @@ namespace Sea
         /// <summary>Client: the wind at the player right now (updated 4× a second).</summary>
         public Wind LocalWind { get; private set; }
         public int DrawnHullCount => waterRenderer?.LastClipCount ?? 0;
+        /// <summary>(SE-0040) What the client's coast map has uploaded so far (for `.sea coast`).</summary>
+        public (int Refreshes, int Whole, int Tiles, double MB) CoastUploads => waterRenderer?.CoastUploads ?? default;
         public int DrawnWaveCount => waterRenderer?.LastWaveCount ?? 0;
         public int DrawnDryHullCount => waterRenderer?.LastDryCount ?? 0;
 

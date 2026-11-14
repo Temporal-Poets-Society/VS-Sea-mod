@@ -28,22 +28,33 @@ namespace Sea
         public int TextureId => texture;
         public bool Ready => texture != 0;
 
-        /// <summary>Follow the camera and the field (a new tile, a moved window, or every 2 s while tiles are missing).</summary>
+        /// <summary>
+        /// Follow the camera and the field (a new tile, a moved window, or every 2 s while tiles are missing). (SE-0040)
+        /// Solved tiles are never changed in place (a re-solve makes a new array), so only the tiles whose array differs
+        /// from the one shown are copied and uploaded, each as its own rectangle; the whole map only when the window moves.
+        /// </summary>
         public void Update(CoastField field, double camX, double camZ, double seconds)
         {
             long tx = CoastField.TileOf(camX) - Tiles / 2, tz = CoastField.TileOf(camZ) - Tiles / 2;
             long nx = tx * CoastMath.Tile, nz = tz * CoastMath.Tile;
-            if (nx == ox && nz == oz && field.Version == version && !(missing && seconds - refilled > RefillSeconds) && texture != 0) return;
+            bool moved = nx != ox || nz != oz || texture == 0;
+            if (!moved && field.Version == version && !(missing && seconds - refilled > RefillSeconds)) return;
             version = field.Version;
-            ox = nx; oz = nz;
+            refreshes++;
+            if (moved) { ox = nx; oz = nz; Array.Clear(shown, 0, shown.Length); }
             refilled = seconds;
             missing = false;
             const int T = CoastMath.Tile;
+            int changed = 0;
             for (int j = 0; j < Tiles; j++)
                 for (int i = 0; i < Tiles; i++)
                 {
                     var data = field.TileData(tx + i, tz + j);
                     if (data == null) missing = true;
+                    int k = j * Tiles + i;
+                    if (!moved && ReferenceEquals(data, shown[k]) && (data != null || openShown[k])) continue;
+                    shown[k] = data;
+                    openShown[k] = data == null;
                     for (int z = 0; z < T; z++)
                     {
                         int row = ((j * T + z) * Size + i * T) * S;
@@ -51,11 +62,23 @@ namespace Sea
                         else
                             for (int x = 0; x < T; x++) CoastMath.OpenColumn(pixels, row + x * S);
                     }
+                    changedTile[changed++] = k;
                 }
-            Upload();
+            if (changed == 0) return;
+            Upload(moved ? null : changedTile, changed);
         }
 
-        void Upload()
+        readonly float[][] shown = new float[Tiles * Tiles][];
+        readonly bool[] openShown = new bool[Tiles * Tiles];
+        readonly int[] changedTile = new int[Tiles * Tiles];
+
+        /// <summary>(SE-0040) What the map has uploaded so far (for `.sea coast`): whole maps, single tiles, megabytes.</summary>
+        /// Refreshes: each was a whole upload (4 MB) up to 0.6.0-rc.4.
+        public (int Refreshes, int Whole, int Tiles, double MB) Uploads => (refreshes, wholeUploads, tileUploads, uploadedBytes / 1048576.0);
+        int refreshes, wholeUploads, tileUploads;
+        long uploadedBytes;
+
+        void Upload(int[] tilesChanged, int count)
         {
             GL.GetInteger(GetPName.ActiveTexture, out int active);
             GL.GetInteger(GetPName.TextureBinding2D, out int bound);
@@ -70,11 +93,35 @@ namespace Sea
                     GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
                     GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
                     GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba32f, Size * S / 4, Size, 0, PixelFormat.Rgba, PixelType.Float, pixels);
+                    wholeUploads++; uploadedBytes += pixels.Length * 4L;
+                    return;
                 }
-                else
+                GL.BindTexture(TextureTarget.Texture2D, texture);
+                if (tilesChanged == null)
                 {
-                    GL.BindTexture(TextureTarget.Texture2D, texture);
                     GL.TexSubImage2D(TextureTarget.Texture2D, 0, 0, 0, Size * S / 4, Size, PixelFormat.Rgba, PixelType.Float, pixels);
+                    wholeUploads++; uploadedBytes += pixels.Length * 4L;
+                    return;
+                }
+                // one tile's rectangle out of the whole array: rows of the full width, starting at the tile's corner
+                const int T = CoastMath.Tile;
+                GL.PixelStore(PixelStoreParameter.UnpackRowLength, Size * S / 4);
+                try
+                {
+                    for (int n = 0; n < count; n++)
+                    {
+                        int k = tilesChanged[n], i = k % Tiles, j = k / Tiles;
+                        GL.PixelStore(PixelStoreParameter.UnpackSkipPixels, i * T * S / 4);
+                        GL.PixelStore(PixelStoreParameter.UnpackSkipRows, j * T);
+                        GL.TexSubImage2D(TextureTarget.Texture2D, 0, i * T * S / 4, j * T, T * S / 4, T, PixelFormat.Rgba, PixelType.Float, pixels);
+                        tileUploads++; uploadedBytes += T * T * S * 4L;
+                    }
+                }
+                finally
+                {
+                    GL.PixelStore(PixelStoreParameter.UnpackRowLength, 0);
+                    GL.PixelStore(PixelStoreParameter.UnpackSkipPixels, 0);
+                    GL.PixelStore(PixelStoreParameter.UnpackSkipRows, 0);
                 }
             }
             finally

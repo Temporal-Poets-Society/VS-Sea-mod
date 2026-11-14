@@ -75,7 +75,8 @@ namespace Sea
             var k = sys.Coast.Costs;
             string head = $"Surf {(sys.SurfOn ? "on" : "off (config Surf, or a Cylinder World ring)")}; coast map: {n.Tiles} tiles solved, {n.Columns} chunk columns scanned, {n.Wanted} waiting. "
                 + $"Cost: {k.Scans} column scans at {k.ScanMs:0.00} ms each (main thread), {k.Solves} tile solves at {k.SolveMs:0.0} ms each, longest {k.SolveMaxMs:0.0} ms (background); "
-                + $"{k.Rescans} columns scanned again after block changes, {k.Resolves} tiles solved again. Swash: {sys.Swash?.LastCells ?? 0} beach cells, {sys.Swash?.LastMs ?? 0:0.00} ms last frame.";
+                + $"{k.Rescans} columns scanned again after block changes, {k.Resolves} tiles solved again. Swash: {sys.Swash?.LastCells ?? 0} beach cells, {sys.Swash?.LastMs ?? 0:0.00} ms last frame. "
+                + $"Map: {sys.CoastUploads.Refreshes} refreshes, uploaded {sys.CoastUploads.Whole} whole and {sys.CoastUploads.Tiles} single tiles, {sys.CoastUploads.MB:0.0} MB (a whole map is 4 MB).";
             var c = sys.CoastAt(x, z);
             if (!c.Affects) return head + " Here: open sea (deeper than " + CoastMath.MaxDepth + " blocks, no land upwave, or not solved yet).";
             string lee = sys.CameraWaves.Count > 0 ? $"{sys.LeeAt(sys.CameraWaves, x, z):0.00} of the sea's height gets past the land" : "no sea";

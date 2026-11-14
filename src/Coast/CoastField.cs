@@ -26,7 +26,10 @@ namespace Sea
         readonly object gate = new();
         readonly Dictionary<(long, long), Entry> tiles = new();
         readonly Dictionary<(long, long), Columns> columns = new();
-        readonly HashSet<(long, long)> wanted = new();
+        // (SE-0040) tiles asked for, with when they were last asked for: one not asked for in StaleMs (where the camera
+        // passed while travelling, chunks that never load) is dropped, and the most recently asked are solved first
+        readonly Dictionary<(long, long), long> wanted = new();
+        const long StaleMs = 10000;
         // (SE-0045) a tile whose solve threw, and when: it is not tried again for a minute (it was retried at once, each time logged)
         readonly Dictionary<(long, long), long> failedAt = new();
         const long RetryFailedMs = 60000;
@@ -78,16 +81,24 @@ namespace Sea
         {
             lock (gate)
             {
-                bool any = false;
-                sample = CoastMath.Bilinear(x, z, (i, j, into) =>
-                {
-                    bool got = CellLocked(i, j, into);
-                    any |= got;
-                    return got;
-                }, scratch);
-                return any;
+                // (SE-0040) one delegate made once, its "anything found" in a field under the lock: no closure per lookup
+                lookupAny = false;
+                sample = CoastMath.Bilinear(x, z, cellForLookup ??= CellForLookup, scratch);
+                return lookupAny;
             }
         }
+
+        bool lookupAny;
+        System.Func<long, long, float[], bool> cellForLookup;
+
+        bool CellForLookup(long i, long j, float[] into)
+        {
+            bool got = CellLocked(i, j, into);
+            lookupAny |= got;
+            return got;
+        }
+
+        void Want((long, long) key) => wanted[key] = Environment.TickCount64;
 
         readonly float[] scratch = new float[CoastMath.Stride];
 
@@ -97,7 +108,7 @@ namespace Sea
         bool CellLocked(long i, long j, float[] into)
         {
             var key = (Floor(i, CoastMath.Tile), Floor(j, CoastMath.Tile));
-            if (!tiles.TryGetValue(key, out var e)) { wanted.Add(key); return false; }
+            if (!tiles.TryGetValue(key, out var e)) { Want(key); return false; }
             e.Used = ++uses;
             int o = ((int)(j - key.Item2 * CoastMath.Tile) * CoastMath.Tile + (int)(i - key.Item1 * CoastMath.Tile)) * CoastMath.Stride;
             Array.Copy(e.Data, o, into, 0, CoastMath.Stride);
@@ -110,7 +121,7 @@ namespace Sea
             lock (gate)
             {
                 if (tiles.TryGetValue((tx, tz), out var e)) { e.Used = ++uses; return e.Data; }
-                wanted.Add((tx, tz));
+                Want((tx, tz));
                 return null;
             }
         }
@@ -127,7 +138,7 @@ namespace Sea
                     for (long tx = x0; tx <= x1; tx++)
                     {
                         if (tiles.TryGetValue((tx, tz), out var e)) e.Used = ++uses;
-                        else wanted.Add((tx, tz));
+                        else Want((tx, tz));
                     }
         }
 
@@ -157,8 +168,16 @@ namespace Sea
             lock (gate)
             {
                 if (wanted.Count == 0) return;
-                asked = new (long, long)[wanted.Count];
-                wanted.CopyTo(asked);
+                long cut = Environment.TickCount64 - StaleMs;
+                List<(long, long)> stale = null;
+                foreach (var kv in wanted) if (kv.Value < cut) (stale ??= new()).Add(kv.Key);
+                if (stale != null) foreach (var k in stale) wanted.Remove(k);
+                if (wanted.Count == 0) return;
+                var order = new KeyValuePair<(long, long), long>[wanted.Count];
+                ((ICollection<KeyValuePair<(long, long), long>>)wanted).CopyTo(order, 0);
+                Array.Sort(order, (a, b) => b.Value.CompareTo(a.Value));
+                asked = new (long, long)[order.Length];
+                for (int i = 0; i < order.Length; i++) asked[i] = order[i].Key;
             }
             int r = (CoastMath.Margin + Chunk - 1) / Chunk;
             long now = Environment.TickCount64;
@@ -217,7 +236,7 @@ namespace Sea
                     int r = (CoastMath.Margin + Chunk - 1) / Chunk;
                     for (long tz = key.Item2 - r; tz <= key.Item2 + r; tz++)
                         for (long tx = key.Item1 - r; tx <= key.Item1 + r; tx++)
-                            if (tiles.ContainsKey((tx, tz)) && wanted.Add((tx, tz))) resolves++;
+                            if (tiles.ContainsKey((tx, tz)) && !wanted.ContainsKey((tx, tz))) { Want((tx, tz)); resolves++; }
                 }
             }
         }
@@ -244,16 +263,28 @@ namespace Sea
             int w = CoastMath.Window, m = CoastMath.Margin;
             var depth = new float[w * w];
             long x0 = key.Item1 * CoastMath.Tile - m, z0 = key.Item2 * CoastMath.Tile - m;
+            // (SE-0040) the chunk columns under the window looked up once under the lock (a column's depths are replaced, never
+            // changed in place), the depths copied outside it: about 25 lookups, not one per block
+            long cx0 = Floor(x0, Chunk), cz0 = Floor(z0, Chunk), cx1 = Floor(x0 + w - 1, Chunk), cz1 = Floor(z0 + w - 1, Chunk);
+            int nx = (int)(cx1 - cx0 + 1), nz = (int)(cz1 - cz0 + 1);
+            var cols = new float[nx * nz][];
             lock (gate)
-            {
-                for (int z = 0; z < w; z++)
-                    for (int x = 0; x < w; x++)
+                for (int j = 0; j < nz; j++)
+                    for (int i = 0; i < nx; i++)
                     {
-                        long bx = x0 + x, bz = z0 + z;
-                        if (!columns.TryGetValue((Floor(bx, Chunk), Floor(bz, Chunk)), out var c)) return null;
+                        if (!columns.TryGetValue((cx0 + i, cz0 + j), out var c)) return null;
                         c.Used = ++uses;
-                        depth[z * w + x] = c.Depth[(int)(bz - Floor(bz, Chunk) * Chunk) * Chunk + (int)(bx - Floor(bx, Chunk) * Chunk)];
+                        cols[j * nx + i] = c.Depth;
                     }
+            for (int z = 0; z < w; z++)
+            {
+                long bz = z0 + z, cz = Floor(bz, Chunk);
+                int rz = (int)(bz - cz * Chunk) * Chunk;
+                for (int x = 0; x < w; x++)
+                {
+                    long bx = x0 + x, cx = Floor(bx, Chunk);
+                    depth[z * w + x] = cols[(int)(cz - cz0) * nx + (int)(cx - cx0)][rz + (int)(bx - cx * Chunk)];
+                }
             }
             return depth;
         }
@@ -299,7 +330,8 @@ namespace Sea
             foreach (var kv in d) order.Add((kv.Key, kv.Value is Entry e ? e.Used : ((Columns)(object)kv.Value).Used));
             order.Sort((a, b) => a.Used.CompareTo(b.Used));
             for (int i = 0; i < order.Count / 4; i++) d.Remove(order[i].Key);
-            Interlocked.Increment(ref version);
+            // (SE-0040) only forgotten tiles change the map; forgotten columns are scanned again when needed
+            if (typeof(T) == typeof(Entry)) Interlocked.Increment(ref version);
         }
 
         /// <summary>
