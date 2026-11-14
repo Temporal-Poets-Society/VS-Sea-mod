@@ -26,7 +26,9 @@ namespace Sea
             public bool Applied;
             public float MountX, MountY, MountZ, RenderX, RenderY, RenderZ;
             public double Trim;
-            public State() { Height = (x, z) => Waves.HeightAt(x, z) * Sea.WaveFactorAt(x, z); }
+            // (SE-0059) one inverse on the boat's own place, the same on every side (HeightOn): the product of HeightAt and
+            // WaveFactorAt inverted twice, the factor on a client on the camera's trains, which the render thread resamples
+            public State() { Height = (x, z) => Sea.HeightOn(Waves, x, z); }
         }
         static readonly ConditionalWeakTable<EntityBoat, State> states = new();
 

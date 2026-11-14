@@ -167,9 +167,8 @@ namespace Sea
                     celestialRenderer.Dispose();
                 }
                 if (frameStart != null) capi.Event.UnregisterRenderer(frameStart, EnumRenderStage.Before);
-                // (0.4.2) the game keeps its compiled shaders from world to world: leave Sea's code in them switched off,
-                // or a world without Sea joined next would draw this one's last waves, hull cut-outs and glints
-                WaterRenderer.SwitchOff(capi);
+                // (SE-0071 R1) nothing to switch off in the shaders: the game reloads every shader, disposing its programs,
+                // when the next world's mods have started (ClientSystemStartup.HandleServerReady, 1.22.7)
                 Hooks.RequestShaderReload = null;
             }
             Hooks.Remove(clientHooks);

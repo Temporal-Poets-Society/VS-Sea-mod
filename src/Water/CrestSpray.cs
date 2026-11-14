@@ -77,12 +77,15 @@ namespace Sea
             int left = Budget;
             for (int i = 0; i < Tries && left > 0; i++)
             {
+                // (SE-0054) a random point of the drawn mesh, not of the world: its crest and the ocean map's factor are read
+                // at that mesh coordinate with no inverse (two inverses a try cost about 5 ms a tick), and the spray goes to
+                // the surface point the shader draws from it
                 double r = Reach * Math.Sqrt(rand.NextDouble()), a = rand.NextDouble() * 2 * Math.PI;
-                double x = cx + r * Math.Cos(a), z = cz + r * Math.Sin(a);
-                if (sys.SurfOn && sys.CoastAt(x, z).Coastal) continue;
-                double factor = sys.WaveFactorAt(x, z);
+                double qx = cx + r * Math.Cos(a), qz = cz + r * Math.Sin(a);
+                double factor = sys.WaveFactorAtMesh(qx, qz);
                 if (factor < 0.5) continue;
-                var crest = place.CrestAt(x, z);
+                if (sys.SurfOn && sys.CoastAt(qx, qz).Coastal) continue;   // (the surf's own spray; within a block of the drawn point)
+                var crest = place.CrestAtMesh(qx, qz);
                 // the crest and its front only: the falling back of a passing wave throws nothing
                 if (crest.Fall > 0.35) continue;
                 double w = WavePlace.SprayCrest(crest.Height, crest.Compression * factor);
@@ -90,6 +93,8 @@ namespace Sea
                 // mostly where the shader whitens the crest; a little off crests only sharpened
                 double strength = Math.Max(white, 0.35 * w);
                 if (strength < 0.12 || rand.NextDouble() > share) continue;
+                var drawn = place.SurfaceAt(qx, qz);   // (only for a crest that throws spray)
+                double x = drawn.X, z = drawn.Z;
                 // up to the crest's tip along the waves' run
                 double tip = place.ClimbCrest(ref x, ref z, ux, uz);
                 double y = rest + tip * factor;

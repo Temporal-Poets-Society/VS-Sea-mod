@@ -126,6 +126,9 @@ namespace Sea
             catch (Exception e) { LogOnce.Error(api?.Logger, "the wave factor at a place", e); return 0.2; }
         }
 
+        /// <summary>(SE-0054) The wave factor the game packs at a mesh coordinate (no inverse; <see cref="WaveFactorAt"/> inverts a world position first).</summary>
+        internal double WaveFactorAtMesh(double qx, double qz) => MeshWaveFactorAt(qx, qz);
+
         double MeshWaveFactorAt(double x, double z)
         {
             try

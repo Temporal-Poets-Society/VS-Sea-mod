@@ -464,6 +464,13 @@ namespace Sea
         public (double Height, double Compression, double Fall) CrestAt(double x, double z)
         {
             var q = ParameterAt(x, z, Time);
+            return CrestAtMesh(q.X, q.Z);
+        }
+
+        /// <summary>(SE-0054) <see cref="CrestAt"/> at a mesh coordinate (no inverse): the crest the surface draws from q.</summary>
+        public (double Height, double Compression, double Fall) CrestAtMesh(double qx, double qz)
+        {
+            var q = (X: qx, Z: qz);
             double shape = Shape, j00 = 1, j01 = 0, j11 = 1, height = 0, variance = 0, fall = 0, fallVariance = 0;
             for (int i = 0; i < Count; i++)
             {

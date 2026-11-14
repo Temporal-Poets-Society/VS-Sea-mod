@@ -23,24 +23,35 @@ namespace Sea
             api.ChatCommands.Create("sea")
                 .WithDescription("Wind and waves where you are")
                 .RequiresPrivilege(Privilege.chat)
-                .RequiresPlayer()
-                .HandleWith(args => TextCommandResult.Success(Report(sys, args.Caller.Player.Entity.Pos)))
+                // (SE-0062) no RequiresPlayer on the root: it would hold for every sub-command, and an admin's console must
+                // be able to setwind and clearwind; the report and probe ask for a player themselves
+                .HandleWith(args => args.Caller.Player?.Entity == null ? TextCommandResult.Error("Ask in game, or give x and z to /sea probe.")
+                    : TextCommandResult.Success(Report(sys, args.Caller.Player.Entity.Pos)))
                 .BeginSubCommand("setwind")
                     .WithDescription("Fix the wind everywhere: from (N, SW, 270…), strength (0.15 light breeze, 0.3 medium, 0.6 strong, 1 storm, max 1.5), game hours (0 = until /sea clearwind), 'built' = the sea is already up (otherwise it builds over ~3 game hours)")
                     .RequiresPrivilege(Privilege.controlserver)
-                    .WithArgs(parsers.Word("from"), parsers.Double("strength"), parsers.OptionalDouble("hours", 0), parsers.OptionalWordRange("sea", "built"))
+                    // (SE-0062) numbers as words: the game's number parser takes "0,3" as 3 (a thousands separator); and the tail by
+                    // hand, so "setwind N 0.5 built" works without the hours
+                    .WithArgs(parsers.Word("from"), parsers.Word("strength"), parsers.OptionalAll("hours and/or built"))
                     .HandleWith(args =>
                     {
                         if (sys.Model == null) return TextCommandResult.Error("Sea isn't ready yet.");
                         double? from = Compass.Parse(args[0] as string);
                         if (from == null) return TextCommandResult.Error("Direction must be a compass point (N, NNE, NE … NW) or degrees.");
-                        if (!double.IsFinite((double)args[1]) || !double.IsFinite((double)args[2])) return TextCommandResult.Error("Strength and hours must be numbers.");
-                        double strength = Math.Clamp((double)args[1], 0, WindModel.MaxStrength);
-                        double hours = Math.Max(0, (double)args[2]);
+                        if (!Number(args[1] as string, out double strengthIn)) return TextCommandResult.Error("Strength must be a number, like 0.3 (or 0,3).");
+                        double hoursIn = 0;
+                        bool builtWord = false;
+                        foreach (string word in ((args[2] as string) ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                        {
+                            if (word == "built") builtWord = true;
+                            else if (!Number(word, out hoursIn)) return TextCommandResult.Error("After the strength: game hours (a number) and/or 'built'.");
+                        }
+                        double strength = Math.Clamp(strengthIn, 0, WindModel.MaxStrength);
+                        double hours = Math.Max(0, hoursIn);
                         // (0.4.2) from a moment ahead, so the server and every client change at the same wave sample
                         double now = sys.NextActivation;
                         // "built": as if it had been blowing for a day already, so the sea is fully up at once
-                        bool built = (args[3] as string) == "built";
+                        bool built = builtWord;
                         sys.ChangeOverride(new WindOverride { FromDegrees = from.Value, Strength = strength, StartHours = built ? now - 24 : now, UntilHours = hours > 0 ? now + hours : 0 });
                         return TextCommandResult.Success($"Wind fixed: {strength:0.00} from the {Compass.Name(from.Value)} ({from.Value:0}°), Beaufort {Beaufort.Force(strength)}"
                             + (hours > 0 ? $", for {hours:0.#} game hours" : ", until /sea clearwind")
@@ -61,7 +72,12 @@ namespace Sea
                 .BeginSubCommand("probe")
                     .WithDescription("(0.6.0, checks) The open contracts' answers at x z (default: where you are) at wave time t (default: the last whole 10 s); compare with .sea probe on a client")
                     .WithArgs(parsers.OptionalDouble("x", double.NaN), parsers.OptionalDouble("z", double.NaN), parsers.OptionalDouble("t", double.NaN))
-                    .HandleWith(args => TextCommandResult.Success(Probe(sys, args.Caller.Player.Entity.Pos, (double)args[0], (double)args[1], (double)args[2])))
+                    .HandleWith(args =>
+                    {
+                        var pos = args.Caller.Player?.Entity?.Pos;
+                        if (pos == null && (!double.IsFinite((double)args[0]) || !double.IsFinite((double)args[1]))) return TextCommandResult.Error("From a console, give x and z.");
+                        return ProbeChecked(sys, pos, (double)args[0], (double)args[1], (double)args[2]);
+                    })
                 .EndSubCommand();
         }
 
@@ -117,17 +133,17 @@ namespace Sea
                 .HandleWith(args => TextCommandResult.Success(ClientReport(capi, sys)))
                 // (0.4.3) tuning by eye: this client only, at once, until you leave the world (sea.json is unchanged)
                 .BeginSubCommand("night")
-                    .WithDescription("Night visibility on your client now, 0-4 (sea.json's NightVisibility otherwise; 1 = clear moonless 0.10, high full moon 0.40, 1.5 = the 0.4.4 level; 0 = the game's own night and twilight)")
+                    .WithDescription("Night visibility on your client now, 0-2 (sea.json's NightVisibility otherwise; 1 = clear moonless 0.10, high full moon 0.40, 1.5 = the 0.4.4 level; 0 = the game's own night and twilight)")
                     .WithArgs(parsers.OptionalWord("value"))
                     .HandleWith(args => Tune(sys, args[0] as string, "night", c => c.NightOverride, (c, v) => c.NightOverride = v, c => c.NightStrength))
                 .EndSubCommand()
                 .BeginSubCommand("sky")
-                    .WithDescription("Sky reflection on the water (Fresnel) on your client now, 0-4 (sea.json's SkyReflections otherwise; 1 = physical)")
+                    .WithDescription("Sky reflection on the water (Fresnel) on your client now, 0-2 (sea.json's SkyReflections otherwise; 1 = physical)")
                     .WithArgs(parsers.OptionalWord("value"))
                     .HandleWith(args => Tune(sys, args[0] as string, "sky", c => c.SkyOverride, (c, v) => c.SkyOverride = v, c => c.SkyStrength))
                 .EndSubCommand()
                 .BeginSubCommand("glint")
-                    .WithDescription("Sun glitter and moon trail on your client now, 0-4 (sea.json's CelestialReflections otherwise; 0 = vanilla's sun highlight)")
+                    .WithDescription("Sun glitter and moon trail on your client now, 0-2 (sea.json's CelestialReflections otherwise; 0 = vanilla's sun highlight)")
                     .WithArgs(parsers.OptionalWord("value"))
                     .HandleWith(args => Tune(sys, args[0] as string, "glint", c => c.GlintOverride, (c, v) => c.GlintOverride = v, c => c.GlintStrength))
                 .EndSubCommand()
@@ -152,7 +168,7 @@ namespace Sea
                 .BeginSubCommand("probe")
                     .WithDescription("(0.6.0, checks) The open contracts' answers at x z (default: where you are) at wave time t (default: the last whole 10 s); compare with /sea probe on the server")
                     .WithArgs(parsers.OptionalDouble("x", double.NaN), parsers.OptionalDouble("z", double.NaN), parsers.OptionalDouble("t", double.NaN))
-                    .HandleWith(args => TextCommandResult.Success(Probe(sys, capi.World.Player.Entity.Pos, (double)args[0], (double)args[1], (double)args[2])))
+                    .HandleWith(args => ProbeChecked(sys, capi.World.Player.Entity.Pos, (double)args[0], (double)args[1], (double)args[2]))
                 .EndSubCommand()
                 .BeginSubCommand("cost")
                     .WithDescription("(checks) Start measuring what Sea's shader-use postfixes cost a frame; again to stop and see it")
@@ -197,6 +213,21 @@ namespace Sea
                 .EndSubCommand();
         }
 
+        /// <summary>(SE-0062) A decimal number as people type it: 0.3 or 0,3, nothing else.</summary>
+        static bool Number(string word, out double value)
+        {
+            value = 0;
+            return !string.IsNullOrEmpty(word) && double.TryParse(word.Replace(',', '.'), System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out value) && double.IsFinite(value);
+        }
+
+        /// <summary>(SE-0062) A probe within a day of wave time either way: a far time would keep its corner samples from being pruned.</summary>
+        static TextCommandResult ProbeChecked(SeaSystem sys, Vintagestory.API.Common.Entities.EntityPos pos, double x, double z, double t)
+        {
+            if (double.IsFinite(t) && Math.Abs(t - sys.WaveTime) > 86400) return TextCommandResult.Error("Give a wave time within a day of now (.sea shows the wave clock).");
+            return TextCommandResult.Success(Probe(sys, pos, x, z, t));
+        }
+
         static string Probe(SeaSystem sys, Vintagestory.API.Common.Entities.EntityPos pos, double x, double z, double t)
         {
             if (sys.Contracts == null) return "The contracts aren't running.";
@@ -219,8 +250,8 @@ namespace Sea
                 return TextCommandResult.Success($"{name}: {now(c):0.##} (sea.json).");
             }
             if (!float.TryParse(value.Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float v) || !float.IsFinite(v))
-                return TextCommandResult.Error($"Give a number from 0 to 4, or 'default': .sea {name} 1.5");
-            set(c, Math.Clamp(v, 0, 4));
+                return TextCommandResult.Error($"Give a number from 0 to 2, or 'default': .sea {name} 1.5");
+            set(c, Math.Clamp(v, 0, 2));   // (SE-0062) sea.json's range (SeaConfig.Checked)
             return TextCommandResult.Success($"{name}: {now(c):0.##} on this client until you leave the world (sea.json unchanged). .sea shows the result.");
         }
 

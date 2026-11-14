@@ -162,7 +162,7 @@ namespace Sea
                     var p = Point(c, c.CentreOffset + along, c.DryHeight + 0.025,
                         side * (c.DryHalfWidthAt(along / c.HalfLength, c.DryHeight) + 0.025));
                     if (Surface(p.X, b.Pos.Y, p.Z, 12, out double level))
-                        over = Math.Max(over, level + waves.HeightAt(p.X, p.Z) * sea.WaveFactorAt(p.X, p.Z) - p.Y);
+                        over = Math.Max(over, level + sea.HeightOn(waves, p.X, p.Z) - p.Y);   // (SE-0059) one inverse, the place's own
                 }
             float after = (float)BoatWaveMath.FloodStep(before, over, dt);
             if (after != before) b.WatchedAttributes.SetFloat(FloodKey, after);

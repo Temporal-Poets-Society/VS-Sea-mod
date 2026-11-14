@@ -111,10 +111,13 @@ namespace Sea
         vec3 eye = eyeDelta / max(length(eyeDelta), 0.001);
         vec3 n = normalize(vec3(-sea_SurfaceSlope.x, 1.0, -sea_SurfaceSlope.y));
         vec3 ray = reflect(eye, n);
+        // (SE-0063) only the side the eye looks down on reflects: from below (a crest passing over an eye at the waterline,
+        // a raised tank) Fresnel would be 1 and the sky would replace the water at full opacity
+        bool sea_Above = dot(eye, n) < 0.0;
         float fres = 0.02 + 0.98 * pow(1.0 - clamp(dot(-eye, n), 0.0, 1.0), 5.0);
         // (0.4.4) the sky the game draws, reflected by Fresnel: faint looking down, the sky's own colour at the horizon.
         // Smooth in direction, so waves shade it without speckles; it continues into Wmap's distant sea.
-        if (sea_Effects.y > 0.0) texColor = sea_SkyReflect(texColor, ray, fres, rgbaFog.rgb);
+        if (sea_Effects.y > 0.0 && sea_Above) texColor = sea_SkyReflect(texColor, ray, fres, rgbaFog.rgb);
         // (0.4.7-pre.7) Glints go on until the game's water has faded (0.76 to 0.8 of the view distance); Wmap 0.5.0-pre.8's
         // far sea, from 0.75, carries the same glitter on to the horizon (sea_Glint). Up to pre.6 they stopped from half the
         // view distance, leaving a calm band short of the horizon (issue 14). (SE-0033) Of Sea's own view distance, the
@@ -126,7 +129,7 @@ namespace Sea
         // The OIT pass premultiplies by alpha, so a glint must raise alpha to show (as vanilla's does). The sun and
         // moon are far brighter than the sky, so the glint saturates in a low-dynamic-range frame even where Fresnel
         // reflectance is small; Fresnel only shades it.
-        if (sea_Effects.x > 0.0) texColor = sea_Glints(texColor, ray, exposed * (0.55 + 0.45 * fres), clamp(pow(shadowBright, 4.0), 0.0, 1.0));
+        if (sea_Effects.x > 0.0 && sea_Above) texColor = sea_Glints(texColor, ray, exposed * (0.55 + 0.45 * fres), clamp(pow(shadowBright, 4.0), 0.0, 1.0));
     }
     // Sea owns breaking-wave foam; vanilla's depth/contact foam above is preserved. This sits outside the
     // reflection switch and FOAMEFFECT, as the shared waves do outside WAVINGSTUFF. Lit by the water's own light.
@@ -276,7 +279,7 @@ vec4 sea_Glints(vec4 c, vec3 ray, float glint, float shade) {
 // sea (which calls getSkyColorAt itself) have them: without them the near water reflected a clearer, darker sky than
 // the far sea beyond it. And AstraTerra's sunset glow, mixed in after, as it is into the dome.
 vec3 sea_SkyColor(vec3 ray, vec3 fogColor) {
-    vec3 d = normalize(vec3(ray.x, max(ray.y, 0.0), ray.z));
+    vec3 d = normalize(vec3(ray.x, max(ray.y, 1e-3), ray.z));   // (SE-0063: never a zero vector for a ray straight down)
     vec3 skyPos = d * 250.0; // the length Wmap's far sea gives getSkyColorAt
     vec3 v2 = normalize(vec3(skyPos.x, skyPos.y + 0.25 * sea_AboveSea, skyPos.z));
     float u = (sea_Sun.y + 1.0) / 2.0;

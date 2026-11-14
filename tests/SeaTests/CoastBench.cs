@@ -53,6 +53,10 @@ namespace SeaTests
             double hOpen = Time(open.HeightAt, 100, 400), hCoast = Time(coast.HeightAt, 2, 60);
             double pCoast = Time((x, z) => coast.ParameterAt(x, z).X, 2, 60);
             double sCoast = Time((x, z) => coast.SurfaceAt(x, z).Y, 2, 60), eCoast = Time((x, z) => coast.ElevationAt(x, z), 2, 60);
+            // (SE-0054) one crest-spray try: a world point's crest (two inverses, with the wave factor's) against a mesh point's
+            double tryOld = Time((x, z) => { var q = open.ParameterAt(x, z); return open.CrestAt(x, z).Height + q.X; }, 100, 400);
+            double tryNew = Time((x, z) => open.CrestAtMesh(x, z).Height, 100, 400);
+            Console.WriteLine($"  info crest spray, one try of 600 a tick: {tryOld:0.0} µs with two inverses (to 0.6.0-rc.4), {tryNew:0.0} µs at a mesh point");
             Console.WriteLine($"  info CPU surface, 24 trains: HeightAt {hOpen:0.0} µs open sea, {hCoast:0.0} µs on a coast; on a coast ParameterAt {pCoast:0.0} µs, SurfaceAt {sCoast:0.0} µs, its height alone (ElevationAt) {eCoast:0.0} µs");
         }
     }

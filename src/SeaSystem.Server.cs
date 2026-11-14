@@ -32,9 +32,17 @@ namespace Sea
             sapi = api;
             serverInstance = this;
             Boats = new NativeBoats(this, api);
+            // (SE-0060) stored back only when it was read or missing: a file that doesn't parse (a hand edit's typo) is left as
+            // it is, so the player's settings aren't overwritten with defaults
+            bool readable = true;
             try { Config = (api.LoadModConfig<SeaConfig>(ConfigFile) ?? new SeaConfig()).Checked(); }
-            catch (Exception e) { Mod.Logger.Error("Bad ModConfig/{0}, using defaults: {1}", ConfigFile, e.Message); Config = new SeaConfig(); }
-            api.StoreModConfig(Config, ConfigFile);
+            catch (Exception e)
+            {
+                readable = false;
+                Mod.Logger.Error("ModConfig/{0} could not be read, so Sea runs on its defaults and leaves the file as it is (fix it and restart): {1}", ConfigFile, e.Message);
+                Config = new SeaConfig();
+            }
+            if (readable) api.StoreModConfig(Config, ConfigFile);
 
             serverChannel = api.Network.GetChannel(ChannelName);
             // Cylinder World sets up its ring at WorldReady

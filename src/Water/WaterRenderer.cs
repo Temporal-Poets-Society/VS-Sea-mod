@@ -75,6 +75,7 @@ namespace Sea
             this.capi = capi;
             this.sys = sys;
             current = this;
+            FailNextUpload = false;   // (SE-0062: a .sea uploaderror asked for in the last world doesn't carry into this one)
         }
 
         public void OnRenderFrame(float dt, EnumRenderStage stage)
@@ -404,7 +405,7 @@ namespace Sea
         /// <summary>
         /// After an upload error, each water program the game uses gets Sea's waves and hulls set to nothing, once (it's in
         /// use: inside the Use postfix): its last numbers would freeze the waves, and the camera-relative hull cut-outs
-        /// would move with the camera through open water. Straight through GL, as <see cref="SwitchOff"/>.
+        /// would move with the camera through open water. Straight through GL.
         /// </summary>
         void SwitchOffOnce(IShaderProgram prog)
         {
@@ -445,47 +446,6 @@ namespace Sea
         /// (0.4.4) Straight through GL, not the program's Use: the game is tearing the world down, and Use also uploads
         /// vanilla's per-frame uniforms (the colour map rects), which ended the game with an access violation on leaving.
         /// </summary>
-        /// <summary>(SE-0038) A Sea uniform's location under the name the program declares it by: Wmap 0.5's far programs keep
-        /// the names before SEA-D57 (seaWaveCount, seaNightFloor), where the new name's location is -1 and the set does nothing.</summary>
-        static int Loc(IShaderProgram prog, string name) => GL.GetUniformLocation(prog.ProgramId, WaterShader.N(prog, name));
-
-        public static void SwitchOff(ICoreClientAPI capi)
-        {
-            current = null;
-            var programs = new List<IShaderProgram>();
-            foreach (var pass in Passes) programs.Add(capi.Shader.GetProgram((int)pass));
-            try { programs.Add(capi.Shader.GetProgramByName("farterrain")); } catch (Exception) { }
-            // (0.4.7) Wmap 0.5's terraces take the same far-water uniforms
-            try { programs.Add(capi.Shader.GetProgramByName("farcells")); } catch (Exception) { }
-            foreach (var prog in programs)
-            {
-                try
-                {
-                    if (prog == null || prog.Disposed || prog.ProgramId == 0) continue;
-                    bool water = WaterShader.Has(prog, "sea_ClipCount"), waves = WaterShader.Has(prog, "sea_WaveCount"),
-                        sky = WaterShader.Has(prog, "sea_Effects"), floor = WaterShader.Has(prog, "sea_NightFloor");
-                    if (!water && !waves && !sky && !floor) continue;
-                    int id = prog.ProgramId;
-                    GL.GetInteger(GetPName.CurrentProgram, out int previous);
-                    GL.UseProgram(id);
-                    try
-                    {
-                        if (water) GL.Uniform1(Loc(prog, "sea_ClipCount"), 0);
-                        if (waves) GL.Uniform1(Loc(prog, "sea_WaveCount"), 0);
-                        if (WaterShader.Has(prog, "sea_Storm")) GL.Uniform4(Loc(prog, "sea_Storm"), 0f, 0f, 0f, 0f);
-                        if (sky) GL.Uniform2(Loc(prog, "sea_Effects"), 0f, 0f);
-                        if (floor) GL.Uniform3(Loc(prog, "sea_NightFloor"), 0f, 0f, 0f);
-                        if (WaterShader.Has(prog, "sea_NightEnabled")) GL.Uniform1(Loc(prog, "sea_NightEnabled"), 0f);
-                        if (WaterShader.Has(prog, "sea_SkyReflect")) GL.Uniform1(Loc(prog, "sea_SkyReflect"), 0f);
-                        // (SE-0038) Wmap's far glitter too: it would keep the last sun of the world left
-                        if (WaterShader.Has(prog, "sea_Glint")) GL.Uniform1(Loc(prog, "sea_Glint"), 0f);
-                    }
-                    finally { GL.UseProgram(previous); }
-                }
-                catch (Exception e) { capi.Logger.Warning("[sea] Could not switch Sea's shader code off in {0}: {1}", prog?.PassName, e.Message); }
-            }
-        }
-
         static readonly EnumShaderProgram[] Passes = { EnumShaderProgram.Chunkliquid, EnumShaderProgram.Chunkliquiddepth };
 
         /// <summary>Nearest the camera first (one comparer, reused: nothing is allocated per frame).</summary>
