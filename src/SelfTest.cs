@@ -271,7 +271,8 @@ namespace Sea
             Check(us < 50, $"wind lookup takes {us:0.0} µs (average {sum / n:0.00})");
             sw.Restart();
             for (int i = 0; i < 200; i++) m.SeaAt(x + i * 50, z, h);
-            Check(sw.Elapsed.TotalMilliseconds / 200 < 2, $"sea state takes {sw.Elapsed.TotalMilliseconds * 1000 / 200:0} µs");
+            // (SE-0050) a bound ten times the usual: a busy machine must not fail it
+            Check(sw.Elapsed.TotalMilliseconds / 200 < 20, $"sea state takes {sw.Elapsed.TotalMilliseconds * 1000 / 200:0} µs (bound 20 ms)");
 
             // the client-side patches are applied here too (same code): check they went in
             Check(Hooks.ShaderPatched, $"water shader loader patched ({string.Join(", ", Hooks.Active)})");

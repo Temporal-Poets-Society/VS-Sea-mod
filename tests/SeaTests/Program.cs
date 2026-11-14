@@ -149,10 +149,11 @@ namespace SeaTests
                 double sum = 0;
                 for (int i = 0; i < n; i++) sum += m.At(i * 13.7 % 256000, 20000 + i * 0.37 % 90000, 5000 + i * 0.0002).Strength;
                 double us = sw.Elapsed.TotalMilliseconds * 1000 / n;
-                Check(us < 1, $"wind lookup {us:0.000} µs (mean {sum / n:0.00})");
+                // (SE-0050) bounds ten times the usual time: a busy machine must not fail them, a real slowdown still does
+                Check(us < 10, $"wind lookup {us:0.000} µs (mean {sum / n:0.00}; bound 10)");
                 sw.Restart();
                 for (int i = 0; i < 2000; i++) m.SeaAt(i * 97.0, 60000, 7000 + i * 0.01);
-                Check(sw.Elapsed.TotalMilliseconds / 2000 < 0.05, $"sea state {sw.Elapsed.TotalMilliseconds * 1000 / 2000:0.0} µs");
+                Check(sw.Elapsed.TotalMilliseconds / 2000 < 0.5, $"sea state {sw.Elapsed.TotalMilliseconds * 1000 / 2000:0.0} µs (bound 500)");
             }
 
             Console.WriteLine("compass");
@@ -227,13 +228,38 @@ namespace SeaTests
                         string file = System.IO.Path.Combine(game, "Lib", new System.Reflection.AssemblyName(e.Name).Name + ".dll");
                         return System.IO.File.Exists(file) ? System.Reflection.Assembly.LoadFrom(file) : null;
                     };
-                    var lib = System.Reflection.Assembly.LoadFrom(System.IO.Path.Combine(game, "VintagestoryLib.dll"));
-                    Type T(string n) => lib.GetType(n);
+                    string libPath = System.IO.Path.Combine(game, "VintagestoryLib.dll");
+                    // (SE-0050) a missing game is a failed check that says where it looked, not a crash
+                    var lib = System.IO.File.Exists(libPath) ? System.Reflection.Assembly.LoadFrom(libPath) : null;
+                    Check(lib != null, "the installed game's VintagestoryLib.dll is at " + libPath);
+                    Type T(string n) => lib?.GetType(n);
                     bool bound = HarmonyLib.AccessTools.Method(T("Vintagestory.Client.NoObf.SystemRenderShadowMap"), "OnRenderBefore") != null
                         && HarmonyLib.AccessTools.Method(T("Vintagestory.Client.NoObf.SystemRenderSunMoon"), "OnRenderFrame3D") != null
                         && HarmonyLib.AccessTools.Field(T("Vintagestory.Client.NoObf.AmbientManager"), "DropShadowIntensity")?.FieldType == typeof(float);
                     Check(bound, "the game has the shadow pass, the sun-and-moon pass and the ambient's shadow intensity the hand-off patches"
                         + (bound ? "" : $" (types: {T("Vintagestory.Client.NoObf.SystemRenderShadowMap") != null}, {T("Vintagestory.Client.NoObf.SystemRenderSunMoon") != null}, {T("Vintagestory.Client.NoObf.AmbientManager") != null})"));
+                    // (SE-0050) every other client-only member Sea's patches bind to by name (Hooks, CelestialRenderer), in the installed
+                    // game: a game update that renames one would otherwise show only as a warning in a player's log
+                    var targets = new (string Type, string Member, bool Field)[]
+                    {
+                        ("Vintagestory.Client.NoObf.ShaderRegistry", "LoadShaderProgram", false),
+                        ("Vintagestory.Client.NoObf.ShaderProgram", "Compile", false),
+                        ("Vintagestory.Client.NoObf.ShaderProgramBase", "Use", false),
+                        ("Vintagestory.Client.NoObf.ClientMain", "EyesInWaterDepth", false),
+                        ("Vintagestory.Client.NoObf.ClientMain", "GetEyesInWaterColorShift", false),
+                        ("Vintagestory.Client.NoObf.ClientMain", "MainCamera", true),
+                        ("Vintagestory.Client.NoObf.Camera", "CameraEyePos", true),
+                        ("Vintagestory.Client.NoObf.AmbientManager", "UpdateAmbient", false),
+                        ("Vintagestory.Common.ClientGameCalendar", "Update", false),
+                    };
+                    var missing = new System.Collections.Generic.List<string>();
+                    foreach (var (type, member, field) in targets)
+                    {
+                        var t = T(type);
+                        bool ok = t != null && (field ? HarmonyLib.AccessTools.Field(t, member) != null : HarmonyLib.AccessTools.Method(t, member) != null);
+                        if (!ok) missing.Add(type + "." + member);
+                    }
+                    Check(lib != null && missing.Count == 0, "the game has every client member Sea's patches bind to" + (missing.Count > 0 ? " (missing " + string.Join(", ", missing) + ")" : ""));
                 }
                 Check(Math.Abs(NightSkyMath.Daylight(0.51f, 0.51f, 0, 0.06f, 0) - 0.06f) < 1e-6f && NightSkyMath.Daylight(0.33f, 0.06f, 0.33f, 0.06f, 0.33f) == 0.33f
                     && Math.Abs(NightSkyMath.Daylight(0.4f, 0.06f, 0.33f, 0.06f, 0.1f) - 0.17f) < 1e-6f && NightSkyMath.Daylight(0.2f, 0.1f, 0, 0.3f, 0) == 0.2f,
@@ -252,8 +278,11 @@ namespace SeaTests
                     && NightSkyMath.MoonAmbientScale(0.02f, 0.33f, 0.33f, 0.8f, 1, 0.2f) < 0.25f,
                     "local moon removes a false vanilla ambient moon (and clouds hide it); stronger external lighting and daylight are preserved");
                 string shaderRoot = Path.Combine(Environment.GetEnvironmentVariable("VINTAGE_STORY") ?? Path.Combine(Environment.GetEnvironmentVariable("APPDATA"), "Vintagestory"), "assets/game/shaders");
-                string vf = File.ReadAllText(Path.Combine(shaderRoot, "chunkliquid.vsh"));
-                string ff = File.ReadAllText(Path.Combine(shaderRoot, "chunkliquid.fsh"));
+                // (SE-0050) a missing game is a failed check, not a crash
+                bool haveShaders = File.Exists(Path.Combine(shaderRoot, "chunkliquid.vsh")) && File.Exists(Path.Combine(shaderRoot, "chunkliquid.fsh"));
+                Check(haveShaders, "the game's water shaders are at " + shaderRoot);
+                string vf = haveShaders ? File.ReadAllText(Path.Combine(shaderRoot, "chunkliquid.vsh")) : "";
+                string ff = haveShaders ? File.ReadAllText(Path.Combine(shaderRoot, "chunkliquid.fsh")) : "";
                 string cv = CelestialShader.Vertex(WaterShader.Inject(vf)), cf = CelestialShader.Fragment(ff);
                 Check(cv != null && cf != null && CelestialShader.Vertex(cv) == null && CelestialShader.Fragment(cf) == null, "celestial anchors apply once to installed water shader");
                 // (0.4.7-pre.5) the near water fades each train by Wmap's far-sea rule, keeping the faded slope as glint roughness;

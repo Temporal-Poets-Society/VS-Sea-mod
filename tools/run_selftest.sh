@@ -74,7 +74,9 @@ EOF
 
 cd "$VS"
 status=0
-./VintagestoryServer.exe --dataPath "$(cygpath -w "$TS")" > "$TS/server-console.log" 2>&1 || status=$?
+# (SE-0050) a chunk that never loads would leave the self-test waiting for ever: stop the server after SELFTEST_TIMEOUT s
+timeout "${SELFTEST_TIMEOUT:-600}" ./VintagestoryServer.exe --dataPath "$(cygpath -w "$TS")" > "$TS/server-console.log" 2>&1 || status=$?
+[ "$status" = 124 ] && echo "the server was stopped after ${SELFTEST_TIMEOUT:-600} s (self-test unfinished)" >&2
 echo "server exited ($status)"
 LOG="$TS/Logs/server-main.log"
 grep -h "SELFTEST\|\[sea\]\|sea.*rror\|Exception" "$LOG" 2>/dev/null | head -80 || true
