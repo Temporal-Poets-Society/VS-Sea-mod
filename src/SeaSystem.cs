@@ -88,6 +88,7 @@ namespace Sea
         {
             this.api = api;
             mainThread = Environment.CurrentManagedThreadId;
+            LogOnce.Reset();
             api.Network.RegisterChannel(ChannelName).RegisterMessageType<SeaParamsPacket>().RegisterMessageType<SeaClockPacket>();
             // the client's patches only by the client (or a dedicated server, which has none): see Hooks
             clientHooks = api.Side == EnumAppSide.Client || (api as ICoreServerAPI)?.Server.IsDedicated == true;
@@ -557,7 +558,7 @@ namespace Sea
                 else { lock(probes) q=ProbeAt(x,z).ParameterAt(x,z); }
                 return MeshWaveFactorAt(q.X,q.Z);
             }
-            catch(Exception) { return 0.2; }
+            catch(Exception e) { LogOnce.Error(api?.Logger, "the wave factor at a place", e); return 0.2; }
         }
 
         double MeshWaveFactorAt(double x,double z)
@@ -577,8 +578,9 @@ namespace Sea
                 double div = 5 * Math.Max(0.2, 1 - oceanity), t = Math.Clamp((1 - div / 5) / 0.25, 0, 1);
                 return t * t * (3 - 2 * t) / div;
             }
-            catch (Exception)
+            catch (Exception e)
             {
+                LogOnce.Error(api?.Logger, "the ocean map's wave factor", e);
                 return 0.2;
             }
         }
@@ -607,7 +609,7 @@ namespace Sea
         internal double WaveFactorOn(WavePlace place,double x,double z)
         {
             try { var q=place.ParameterAt(x,z); return MeshWaveFactorAt(q.X,q.Z); }
-            catch(Exception) { return 0.2; }
+            catch(Exception e) { LogOnce.Error(api?.Logger, "the wave factor at a place", e); return 0.2; }
         }
 
         double ShelteredHeight(WavePlace place,double x,double z)
@@ -685,7 +687,7 @@ namespace Sea
             for (int i = 0; i < list.Length; i++)
             {
                 try { if (list[i].IsDry(x, y, z)) return true; }
-                catch (Exception) { }
+                catch (Exception e) { LogOnce.Error(api?.Logger, "dry places of " + list[i].GetType().Name, e); }
             }
             return false;
         }
@@ -697,7 +699,7 @@ namespace Sea
             for (int i = 0; i < list.Length; i++)
             {
                 try { if (list[i].IsDryWithin(x, y, z, seconds)) return true; }
-                catch (Exception) { }
+                catch (Exception e) { LogOnce.Error(api?.Logger, "dry places (within seconds) of " + list[i].GetType().Name, e); }
             }
             return false;
         }
@@ -975,6 +977,9 @@ namespace Sea
             swash = new SwashRenderer(api, this);
             api.Event.RegisterRenderer(swash, EnumRenderStage.Opaque, "sea-swash");
             SeaCommands.RegisterClient(api, this);
+            // (SE-0039) a step-down from an earlier world of this game session still holds: say so in this world's log
+            if (Hooks.StepDowns() is string steps)
+                api.Logger.Warning("[sea] Sea's shader code is still stepped down from earlier in this game session (a water shader would not compile with it); restart the game to try it again: {0}", steps);
             // (SE-0034, SEA-D76) SheyderMod's screen-space water reflection is skipped while Sea draws the water (Hooks); say so
             if (api.ModLoader.IsModEnabled("sheydermod"))
                 api.Logger.Notification("[sea] SheyderMod is installed: Sea draws the water's reflections (sun, moon, sky) and skips SheyderMod's water reflection; SheyderMod's other features stay on");

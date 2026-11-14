@@ -185,7 +185,7 @@ namespace Sea
                     return read(p);
                 }
             }
-            catch (Exception) { return none; }
+            catch (Exception e) { LogOnce.Error(log, "an open contract answer at a place", e); return none; }
         }
 
         /// <summary>

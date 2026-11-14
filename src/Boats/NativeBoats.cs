@@ -139,6 +139,10 @@ namespace Sea
             // m/s to the game's motion (blocks per 1/60 s)
             double vx = d.X / 60, vz = d.Z / 60;
             var m = b.Pos.Motion;
+            // (SE-0049) Vanilla eases ForwardSpeed toward 0 when nobody paddles, never reaching it, and while it isn't 0 sets the
+            // motion from it every tick: the current then rode on top at once and the easing below never ran. Below a
+            // speed nobody sees (1/1000 block a tick) it is 0, vanilla leaves the motion alone and the boat eases to the current.
+            if (Math.Abs(b.ForwardSpeed) < 1e-3) b.ForwardSpeed = 0;
             if (b.ForwardSpeed != 0) { m.X += vx; m.Z += vz; return; }
             double f = 1 - Math.Exp(-Math.Clamp(dt, 0, 0.5) / 2);
             m.X += (vx - m.X) * f; m.Z += (vz - m.Z) * f;

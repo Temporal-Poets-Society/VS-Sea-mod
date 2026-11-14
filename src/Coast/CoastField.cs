@@ -27,6 +27,9 @@ namespace Sea
         readonly Dictionary<(long, long), Entry> tiles = new();
         readonly Dictionary<(long, long), Columns> columns = new();
         readonly HashSet<(long, long)> wanted = new();
+        // (SE-0045) a tile whose solve threw, and when: it is not tried again for a minute (it was retried at once, each time logged)
+        readonly Dictionary<(long, long), long> failedAt = new();
+        const long RetryFailedMs = 60000;
         readonly HashSet<(long, long)> dirty = new();
         long uses;
         Task solving;
@@ -158,8 +161,10 @@ namespace Sea
                 wanted.CopyTo(asked);
             }
             int r = (CoastMath.Margin + Chunk - 1) / Chunk;
+            long now = Environment.TickCount64;
             foreach (var key in asked)
             {
+                lock (gate) if (failedAt.TryGetValue(key, out long at) && now - at < RetryFailedMs) continue;
                 // the chunk columns under its window (tile = chunk size)
                 bool ready = true;
                 for (long cz = key.Item2 - r; cz <= key.Item2 + r && ready; cz++)
@@ -269,6 +274,7 @@ namespace Sea
                 {
                     tiles[key] = new Entry { Data = data, Used = ++uses };
                     wanted.Remove(key);
+                    failedAt.Remove(key);
                     if (tiles.Count > MaxTiles) Forget(tiles);
                     solved++; solveMs += ms; solveMax = Math.Max(solveMax, ms);
                     Interlocked.Increment(ref version);
@@ -276,8 +282,13 @@ namespace Sea
             }
             catch (Exception e)
             {
-                api.Logger.Error("[sea] coast tile {0},{1} failed: {2}", key.Item1, key.Item2, e);
-                lock (gate) wanted.Remove(key);
+                LogOnce.Error(api.Logger, "solving a coast tile", new Exception("tile " + key.Item1 + "," + key.Item2 + ": " + e.Message, e));
+                lock (gate)
+                {
+                    wanted.Remove(key);
+                    failedAt[key] = Environment.TickCount64;
+                    if (failedAt.Count > 256) failedAt.Clear();
+                }
             }
         }
 

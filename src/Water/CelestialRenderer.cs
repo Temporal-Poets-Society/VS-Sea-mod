@@ -54,7 +54,9 @@ namespace Sea
             this.api = api;
             this.sea = sea;
             current = this;
-            ambientFailed = usesFailed = false;
+            // (SE-0039) every switch a failure set is per world: an error in one world (another mod's shader, a bad frame)
+            // must not leave real twilight or the shadow hand-off off in the next
+            ambientFailed = usesFailed = twilightFailed = handOffFailed = false;
             Patch("shader uniforms", () => harmony.Patch(AccessTools.Method(AccessTools.TypeByName("Vintagestory.Client.NoObf.ShaderProgramBase"), "Use"), postfix: new HarmonyMethod(typeof(CelestialRenderer), nameof(UsePostfix))));
             Patch("outdoor night lighting", () => harmony.Patch(AccessTools.Method(AccessTools.TypeByName("Vintagestory.Client.NoObf.AmbientManager"), "UpdateAmbient"), postfix: new HarmonyMethod(typeof(CelestialRenderer), nameof(AmbientPostfix))));
             Patch("real twilight", PatchTwilight);

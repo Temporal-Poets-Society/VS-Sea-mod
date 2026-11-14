@@ -339,6 +339,18 @@ namespace Sea
         public static bool CelestialFarDisabled;
         /// <summary>(EA-0050) Set when the water shader would not compile with Sea's even flow (<see cref="FlowLook"/>): vanilla's flowing water.</summary>
         public static bool FlowLookDisabled;
+        /// <summary>(SE-0039) What of Sea's shader code is stepped down for the rest of this game session, or null: these are
+        /// kept per process (a driver that refused the code once refuses it again), so each world's log says so.</summary>
+        public static string StepDowns()
+        {
+            var parts = new List<string>();
+            if (WaterCodeLevel == 1) parts.Add("water code without the dry-hull cut");
+            if (WaterCodeLevel >= 2) parts.Add("vanilla water (no Sea waves)");
+            if (CelestialDisabled) parts.Add("no sky reflections or glints");
+            if (CelestialFarDisabled) parts.Add("World Map's far terrain not patched");
+            if (FlowLookDisabled) parts.Add("vanilla flowing water");
+            return parts.Count == 0 ? null : string.Join("; ", parts);
+        }
         /// <summary>(EA-0050) Set once the drawn water's fragment stage was loaded with Sea's even flow.</summary>
         public static bool FlowLookInjected;
         static int injectedLevel = -1;

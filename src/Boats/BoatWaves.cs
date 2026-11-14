@@ -59,19 +59,25 @@ namespace Sea
             var s = states.GetValue(boat, _ => new State());
             double time = sea.WaveTime;
             double fill = Sailed(boat) ? NativeBoats.Fill(boat) : 0;
-            if (s.Sea != sea || s.Time != time || s.X != boat.Pos.X || s.Z != boat.Pos.Z || s.Yaw != boat.Pos.Yaw || s.Fill != fill)
+            // (SE-0037) The client's particle thread asks for a boat's dry cut (DryParticles → IsDryWithin → Clip) while the
+            // render thread poses the same boat; a WavePlace is rewritten in place when it is sampled, so one boat's state is
+            // sampled and read by one thread at a time
+            lock (s)
             {
-                s.Sea = sea; s.Time = time; s.X = boat.Pos.X; s.Z = boat.Pos.Z; s.Yaw = boat.Pos.Yaw; s.Fill = fill;
-                s.Hull = Waterplane(boat);
-                // A loaded sailboat cannot rise instantaneously with every crest. A short deterministic response
-                // delay lets green water overtake the gunwale; both sides sample the same past wave time.
-                sea.SampleWaves(s.Waves, s.X, s.Z, time - (Sailed(boat) ? 0.65 : 0));
-                var fit = BoatWaveMath.Sample(s.Height, s.X, s.Z, s.Yaw, s.Hull);
-                double pivot = (boat.SelectionBox?.Y2 ?? 1.2) / 2;
-                double follow = Sailed(boat) ? Math.Clamp((1 - NativeBoats.Fill(boat)) / 0.1, 0, 1) : 1;
-                s.Pose = new BoatWavePose((fit.Heave - pivot * (1 - Math.Cos(fit.Roll) * Math.Cos(fit.Pitch))) * follow, fit.Pitch * follow, fit.Roll * follow);
+                if (s.Sea != sea || s.Time != time || s.X != boat.Pos.X || s.Z != boat.Pos.Z || s.Yaw != boat.Pos.Yaw || s.Fill != fill)
+                {
+                    s.Sea = sea; s.Time = time; s.X = boat.Pos.X; s.Z = boat.Pos.Z; s.Yaw = boat.Pos.Yaw; s.Fill = fill;
+                    s.Hull = Waterplane(boat);
+                    // A loaded sailboat cannot rise instantaneously with every crest. A short deterministic response
+                    // delay lets green water overtake the gunwale; both sides sample the same past wave time.
+                    sea.SampleWaves(s.Waves, s.X, s.Z, time - (Sailed(boat) ? 0.65 : 0));
+                    var fit = BoatWaveMath.Sample(s.Height, s.X, s.Z, s.Yaw, s.Hull);
+                    double pivot = (boat.SelectionBox?.Y2 ?? 1.2) / 2;
+                    double follow = Sailed(boat) ? Math.Clamp((1 - NativeBoats.Fill(boat)) / 0.1, 0, 1) : 1;
+                    s.Pose = new BoatWavePose((fit.Heave - pivot * (1 - Math.Cos(fit.Roll) * Math.Cos(fit.Pitch))) * follow, fit.Pitch * follow, fit.Roll * follow);
+                }
+                pose = s.Pose;
             }
-            pose = s.Pose;
             return true;
         }
 

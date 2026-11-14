@@ -176,7 +176,7 @@ namespace Sea
             foreach (var s in sys.WaterSources)
             {
                 try { s.AddWaterClips(clips); }
-                catch (Exception e) { capi.Logger.Error("[sea] water clip source {0} failed: {1}", s.GetType().Name, e.Message); }
+                catch (Exception e) { LogOnce.Error(capi.Logger, "water clip source " + s.GetType().Name, e); }
             }
             // nearest first: the nearest get a place (there are MaxClips) and a detailed dry outline (MaxDryShapes)
             if (clips.Count > 1)
@@ -423,6 +423,10 @@ namespace Sea
         /// (0.4.4) Straight through GL, not the program's Use: the game is tearing the world down, and Use also uploads
         /// vanilla's per-frame uniforms (the colour map rects), which ended the game with an access violation on leaving.
         /// </summary>
+        /// <summary>(SE-0038) A Sea uniform's location under the name the program declares it by: Wmap 0.5's far programs keep
+        /// the names before SEA-D57 (seaWaveCount, seaNightFloor), where the new name's location is -1 and the set does nothing.</summary>
+        static int Loc(IShaderProgram prog, string name) => GL.GetUniformLocation(prog.ProgramId, WaterShader.N(prog, name));
+
         public static void SwitchOff(ICoreClientAPI capi)
         {
             current = null;
@@ -444,13 +448,15 @@ namespace Sea
                     GL.UseProgram(id);
                     try
                     {
-                        if (water) GL.Uniform1(GL.GetUniformLocation(id, "sea_ClipCount"), 0);
-                        if (waves) GL.Uniform1(GL.GetUniformLocation(id, "sea_WaveCount"), 0);
-                        if (WaterShader.Has(prog, "sea_Storm")) GL.Uniform4(GL.GetUniformLocation(id, "sea_Storm"), 0f, 0f, 0f, 0f);
-                        if (sky) GL.Uniform2(GL.GetUniformLocation(id, "sea_Effects"), 0f, 0f);
-                        if (floor) GL.Uniform3(GL.GetUniformLocation(id, "sea_NightFloor"), 0f, 0f, 0f);
-                        if (WaterShader.Has(prog, "sea_NightEnabled")) GL.Uniform1(GL.GetUniformLocation(id, "sea_NightEnabled"), 0f);
-                        if (WaterShader.Has(prog, "sea_SkyReflect")) GL.Uniform1(GL.GetUniformLocation(id, "sea_SkyReflect"), 0f);
+                        if (water) GL.Uniform1(Loc(prog, "sea_ClipCount"), 0);
+                        if (waves) GL.Uniform1(Loc(prog, "sea_WaveCount"), 0);
+                        if (WaterShader.Has(prog, "sea_Storm")) GL.Uniform4(Loc(prog, "sea_Storm"), 0f, 0f, 0f, 0f);
+                        if (sky) GL.Uniform2(Loc(prog, "sea_Effects"), 0f, 0f);
+                        if (floor) GL.Uniform3(Loc(prog, "sea_NightFloor"), 0f, 0f, 0f);
+                        if (WaterShader.Has(prog, "sea_NightEnabled")) GL.Uniform1(Loc(prog, "sea_NightEnabled"), 0f);
+                        if (WaterShader.Has(prog, "sea_SkyReflect")) GL.Uniform1(Loc(prog, "sea_SkyReflect"), 0f);
+                        // (SE-0038) Wmap's far glitter too: it would keep the last sun of the world left
+                        if (WaterShader.Has(prog, "sea_Glint")) GL.Uniform1(Loc(prog, "sea_Glint"), 0f);
                     }
                     finally { GL.UseProgram(previous); }
                 }
