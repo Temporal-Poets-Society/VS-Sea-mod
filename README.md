@@ -1,6 +1,6 @@
 # Sea — waves that follow the wind, the same sea for everyone (Vintage Story 1.22)
 
-**0.6.0-rc.4 (release candidate, 14 November 2026; [wiki](https://github.com/Temporal-Poets-Society/VS-Sea-mod/wiki)):**
+**0.6.0-rc.5 (release candidate, 14 November 2026; [wiki](https://github.com/Temporal-Poets-Society/VS-Sea-mod/wiki)):**
 waves on coasts (surf, lee, reflection, longshore currents and swash), steeper storms, spray off the open sea's crests,
 the open sea contracts, and the open findings of the 0.4.2 code review fixed. Requires Vintage Story 1.22.0 or later.
 Earth is optional; Earth's weather role is read through the open sea contracts (seen in game with Earth 2.0).
@@ -48,6 +48,10 @@ The coast and storm features were checked in game on one client.
 - **Glints and foam fade by your view distance setting** (SEA-D75), not by the shaders' `viewDistance`, which some LOD
   mods raise; they no longer stop at a hard edge there. LOD mods other than World Map's far terrain are still not
   supported on the suite's worlds.
+- **Code review fixes, 14 November** (SEA-D77): the coastal water's vertex stage costs about 40% less on the GPU; a
+  vanilla boat's pose can't be torn between the particle and render threads; leaving a world switches World Map's far
+  sea off too; errors Sea answers safely are logged once; the coast map uploads only what changed; idle boats ease to
+  the surf's current.
 - **SheyderMod:** Sea's water code goes into its water shader, and Sea keeps the water's reflections: SheyderMod's own
   water reflection (a flat mirror over the water that laid a second, sharp sun over Sea's glitter path) is skipped
   while Sea draws the water (SEA-D76). Its other features, its water ripples among them, stay on; nothing in its
@@ -210,7 +214,7 @@ ping; `/sea clearwind` lets the storm's sea die down, and setwind/clearwind take
 side; the surface at a place no longer depends on where a ship came from (a 64-block sampling grid), and the server's
 wave probe is safe from several threads; bad hull clips can't reach the shader; less work per frame (water uniforms on
 the game's own shader use, the AstraTerra adapter and the star atlas). See [decisions SEA-D31–D34](docs/DECISIONS.md);
-what the review left open is in [open issues](docs/open-issues.md).
+what the review left open is in the suite backlog ([open issues](docs/open-issues.md) points there).
 0.4.1: the night floor on Wmap 0.4.3's far terrain. 0.4.0: **the wind comes from a provider; Sea has no weather of its own any more.** Sea's prevailing belts,
 drifting weather, travelling storms and gusts moved to the Earth mod, which now owns climate and weather (winds, storms,
 rain, clouds) and drives vanilla's weather with them. Sea only consumes the wind, through a generic call any mod can make
@@ -376,7 +380,7 @@ Nothing about the wind or the waves is sent while you play, except a clock:
   30 × 8 block hull, the number of trains and their summed amplitude. The same arguments on both sides must give the
   same line (rule R5); a difference is a bug.
 - `.sea drawn` (client, 0.6.0): how far the drawn water (the camera's trains) is from the per-place answer, at 0 to
-  512 blocks around you in 16 directions (open issue O1).
+  512 blocks around you in 16 directions (O1, backlog SE-0052).
 - `.sea` (client, with a dot): what Sea is doing on your own client.
   - where the wind comes from (the provider's name, and any of its answers Sea refused)
   - the wind it sees, and what vanilla sees
@@ -544,7 +548,8 @@ Earth, Terra Prety and other world generators: `docs/compatibility.md`.
 
 ## Not yet
 
-- **What the 0.4.2 review left open** (by design, deferred, or not yet play-tested): [docs/open-issues.md](docs/open-issues.md).
+- **Open issues** are in the suite backlog (prefix SE); [docs/open-issues.md](docs/open-issues.md) points there. The drawn water uses
+  the camera's wave trains, so far off it can differ from the per-place answer where the wind varies (O1, SE-0052).
 - **Coasts, what 0.6.0 leaves out.** The lee is a geometric estimate (rays upwave, no real diffraction pattern).
   Fetch is judged only within the coast map's 64-block reach: the open sea's state comes from the weather, so a
   sheltered gulf or a lake a few kilometres across gets the sea's own waves away from its shores. Growth limited by
