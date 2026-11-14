@@ -5,39 +5,6 @@ namespace Sea
     public static class CelestialShader
     {
         public const string Marker = "sea_Celestial";
-        // Wmap's far-terrain light term: up to 0.4.2 the sun colour, from 0.4.3 the game's ambient colour.
-        static readonly string[] FarLight = { "max(vec3(0.05), sun)", "clamp(wmapAmbient, 0.0, 1.0)" };
-
-        /// <summary>Sea's night floor and sky reflection text-patched into Wmap's far terrain shader (Wmap 0.4.x). Wmap 0.5
-        /// declares sea_NightFloor, sea_SkyReflect and the wave uniforms itself and does that shading in all its far programs
-        /// (its far-water contract); Sea then only sets the uniforms, and a shader that declares sea_NightFloor is left as it is.</summary>
-        public static string FarFragment(string code)
-        {
-            if (code == null || code.Contains("sea_NightFloor") || code.Contains("seaNightFloor") || !code.Contains("void main()")) return null;
-            string light = Array.Find(FarLight, l => code.Contains("albedo * " + l));
-            if (light == null) return null;
-            if (!code.Contains("haze = min(haze, clamp(dayLight"))
-            {
-                const string mix = "color.rgb = mix(color.rgb, sky.rgb, haze);";
-                if (!code.Contains(mix)) return null;
-                code = code.Replace(mix, "haze = mix(haze, min(haze, clamp(dayLight, 0.0, 1.0)), sea_NightEnabled);\n    " + mix);
-            }
-            code = code.Replace("albedo * " + light, "albedo * max(" + light + ", sea_NightFloor)");
-            // (0.4.4) the distant sea reflects the sky it already looks up (Fresnel at its grazing angle), as Sea's near
-            // water does, so the sea meets the sky at the horizon without a step where Wmap takes over
-            const string skyMix = "color.rgb = mix(color.rgb, sky.rgb, haze);";
-            if (code.Contains("bool water") && code.Contains("in vec3 wmapPos;") && code.Contains(skyMix))
-                code = code.Replace(skyMix, skyMix + FarSkyReflection);
-            return code.Replace("void main()", "uniform vec3 sea_NightFloor = vec3(0.0);\nuniform float sea_NightEnabled = 0.0;\nuniform float sea_SkyReflect = 0.0;\nvoid main()");
-        }
-
-        // (0.4.6) The dome as it reaches the screen: at night the sky colour function returns the fog colour with alpha
-        // fogAmount, and the dome shows rgb * alpha over dark space. Reflecting the rgb alone drew a fog-brown horizon.
-        public const string FarSkyReflection = @"
-    if (water && sea_SkyReflect > 0.0) {
-        float sea_Cos = clamp(-wmapPos.y / max(length(wmapPos), 0.001), 0.0, 1.0);
-        color.rgb = mix(color.rgb, sky.rgb * clamp(sky.a, 0.0, 1.0), clamp(sea_SkyReflect * (0.02 + 0.98 * pow(1.0 - sea_Cos, 5.0)), 0.0, 1.0));
-    }";
         // The wave gradient is evaluated at vertices, then interpolated. No 24-wave loop per water pixel.
         public static string Vertex(string code)
         {

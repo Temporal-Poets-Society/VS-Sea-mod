@@ -22,6 +22,10 @@ namespace Sea
     public static class WaterShader
     {
         public const int MaxClips = 8;
+
+        /// <summary>(SE-0071 R8) The texture units Sea binds its samplers to: the sky colours, the sun's glow, the coast map
+        /// (clear of vanilla's water units, checked against 1.22.7).</summary>
+        public const int SkyTextureUnit = 10, GlowTextureUnit = 11, CoastTextureUnit = 12;
         public const int ProfileStations = 16;
         /// <summary>A detailed dry outline: half-widths at this many stations along the hull, at <see cref="DryLevels"/> heights.</summary>
         public const int DryStations = 32, DryLevels = 4;
@@ -49,7 +53,6 @@ namespace Sea
         // (SE-0035) each name worked out once: Has and N run in every program's Use, and a new string each time was garbage
         static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> legacyNames = new();
 
-        /// <summary>(0.6.0) Does the program declare this Sea uniform, under its name or its name before 0.6.0?</summary>
         /// <summary>(SE-0048) The anchor is in the code exactly once: a repeated line would take Sea's code twice and fail to
         /// compile (then step down), so an injector leaves such a shader alone instead.</summary>
         public static bool Once(string code, string anchor)
@@ -58,6 +61,7 @@ namespace Sea
             return at >= 0 && code.IndexOf(anchor, at + anchor.Length, StringComparison.Ordinal) < 0;
         }
 
+        /// <summary>(0.6.0) Does the program declare this Sea uniform, under its name or its name before 0.6.0?</summary>
         public static bool Has(Vintagestory.API.Client.IShaderProgram p, string name) => p.HasUniform(name) || p.HasUniform(Legacy(name));
 
         /// <summary>(0.6.0) The name the program declares this Sea uniform under (its own name when neither is declared).</summary>

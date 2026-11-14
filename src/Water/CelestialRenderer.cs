@@ -451,7 +451,6 @@ namespace Sea
                 try
                 {
                     if (WaterShader.Has(p, "sea_NightFloor")) p.Uniform(WaterShader.N(p, "sea_NightFloor"), 0f, 0f, 0f);
-                    if (WaterShader.Has(p, "sea_NightEnabled")) p.Uniform(WaterShader.N(p, "sea_NightEnabled"), 0f);
                     if (WaterShader.Has(p, "sea_SkyReflect")) p.Uniform(WaterShader.N(p, "sea_SkyReflect"), 0f);
                     if (WaterShader.Has(p, "sea_Effects")) p.Uniform(WaterShader.N(p, "sea_Effects"), 0f, 0f);
                     if (WaterShader.Has(p, "sea_Sunset")) p.Uniform(WaterShader.N(p, "sea_Sunset"), 0f, 0f, 0f, 0f);
@@ -470,7 +469,6 @@ namespace Sea
             {
                 c.FarPatched = true;
                 p.Uniform(WaterShader.N(p, "sea_NightFloor"), c.floor * 0.78f, c.floor * 0.88f, c.floor);
-                if (WaterShader.Has(p, "sea_NightEnabled")) p.Uniform(WaterShader.N(p, "sea_NightEnabled"), c.NightStrength > 0 ? 1f : 0f);
                 if (WaterShader.Has(p, "sea_SkyReflect")) p.Uniform(WaterShader.N(p, "sea_SkyReflect"), c.api.World?.Player?.Entity?.Pos.Dimension == 0 ? c.SkyStrength : 0f);
                 // (0.4.7) Wmap's far haze and far-sea reflection take the same sunset glow as the dome and the near water
                 if (WaterShader.Has(p, "sea_Sunset")) p.Uniform(WaterShader.N(p, "sea_Sunset"), c.sunset.X, c.sunset.Y, c.sunset.Z, c.sunset.W);
@@ -504,13 +502,10 @@ namespace Sea
             var su = c.api.Render.ShaderUniforms;
             if (WaterShader.Has(p, "sea_Sky")) p.Uniform(WaterShader.N(p, "sea_Sky"), c.skyLight, su.SunsetMod, am.BlendedFogMin, am.BlendedFogDensity);
             GL.GetInteger(GetPName.ActiveTexture, out int active);
-            p.BindTexture2D("sea_SkyTex", su.SkyTextureId, 10);
-            p.BindTexture2D("sea_GlowTex", su.GlowTextureId, 11);
+            p.BindTexture2D("sea_SkyTex", su.SkyTextureId, WaterShader.SkyTextureUnit);
+            p.BindTexture2D("sea_GlowTex", su.GlowTextureId, WaterShader.GlowTextureUnit);
             GL.ActiveTexture((TextureUnit)active);
         }
-
-        public static string FarFragment(string code)
-            => CelestialShader.FarFragment(code);
 
         public void Dispose()
         {

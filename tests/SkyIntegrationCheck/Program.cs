@@ -115,28 +115,26 @@ static class Program
             else Check(air == null && D("sunsetGlow") == null, "an AstraTerra without SunsetScatter: the glint keeps Sea's own sun table");
         }
 
-        var p = typeof(CelestialRenderer).GetMethod("FarFragment");
-        // Wmap's working tree next door, or another checkout of it (WMAP_ROOT, its project folder).
-        string wmapRoot = Path.GetFullPath(Environment.GetEnvironmentVariable("WMAP_ROOT") ?? "../Wmap");
+        // (SE-0071 R4) Sea no longer patches World Map's far terrain: World Map 0.5 and later declare the far-water uniforms
+        // themselves (under the names before SEA-D57 or Sea's), and Sea only sets them
+        // (WMAP_ROOT, else a Wmap folder beside this checkout or above it: a worktree sits under Sea/.claude/worktrees)
+        string wmapRoot = Environment.GetEnvironmentVariable("WMAP_ROOT");
+        if (string.IsNullOrEmpty(wmapRoot))
+            for (var dir = new DirectoryInfo(Directory.GetCurrentDirectory()); dir != null; dir = dir.Parent)
+                if (Directory.Exists(Path.Combine(dir.FullName, "Wmap", "assets", "wmap"))) { wmapRoot = Path.Combine(dir.FullName, "Wmap"); break; }
+        wmapRoot = Path.GetFullPath(wmapRoot ?? "../Wmap");
         string farPath = Path.Combine(wmapRoot, "assets/wmap/shaders/farterrain.fsh");
         if (File.Exists(farPath))
         {
-            // As the game hands it to Sea: Wmap's own includes expanded (from 0.5 the shading is in them).
             var seen = new System.Collections.Generic.HashSet<string>();
-            string Expand(string code) => System.Text.RegularExpressions.Regex.Replace(code, "^#include\\s+(.*)", m =>
+            string Expand(string code) => System.Text.RegularExpressions.Regex.Replace(code, @"^#include\s+(.*)", m =>
             {
                 string name = m.Groups[1].Value.Trim().ToLowerInvariant(), file = Path.Combine(wmapRoot, "assets/wmap/shaderincludes", name);
                 return seen.Add(name) && File.Exists(file) ? Expand(File.ReadAllText(file)) : "";
             }, System.Text.RegularExpressions.RegexOptions.Multiline);
             string source = Expand(File.ReadAllText(farPath));
-            string patched = (string)p.Invoke(null, new object[] { source });
-            // (SE-0036) Wmap 0.5 declares the far-water uniforms under the names before SEA-D57 (seaNightFloor) or Sea's own;
-            // Sea's own patch of an older Wmap declares sea_NightFloor (SEA-D57)
-            if (source.Contains("seaNightFloor") || source.Contains("sea_NightFloor"))
-                Check(patched == null, "workspace Wmap 0.5: its own far-water contract, left unpatched (Sea sets the uniforms)");
-            else
-                Check(patched != null && patched.Contains("sea_NightFloor") && patched.Contains(CelestialShader.FarSkyReflection) && CelestialRenderer.FarFragment(patched) == null,
-                    "workspace Wmap: distant night floor and sea sky reflection apply once");
+            Check(source.Contains("seaNightFloor") || source.Contains("sea_NightFloor"), "workspace World Map declares the far-water uniforms Sea sets (World Map 0.5 or later)");
+            Check(typeof(CelestialShader).GetMethod("FarFragment") == null, "Sea has no text patch of World Map's far terrain any more");
         }
         else Check(false, "Wmap source available for the optional continuity check");
         Console.WriteLine(failures == 0 ? "ALL OK" : failures + " FAILED");

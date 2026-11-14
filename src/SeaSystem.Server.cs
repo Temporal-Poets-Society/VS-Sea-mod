@@ -257,7 +257,5 @@ namespace Sea
             save.StoreData(OverrideKey, ov == null ? Array.Empty<byte>() : SerializerUtil.Serialize(ov));
             save.StoreData(HistoryKey, SerializerUtil.Serialize(new WindOverrideHistory { Items = m.History }));
         }
-
-        // ---------------------------------------------------------------- client
     }
 }

@@ -37,8 +37,7 @@ namespace Sea
         readonly ConcurrentDictionary<string, HullRecords> hulls = new();
         readonly ConcurrentDictionary<string, DryFunction> dries = new();
         readonly object trainLock = new();
-        readonly Dictionary<(long, long), (WavePlace Place, long Used)> trainPlaces = new();
-        long trainUses;
+        readonly PlaceCache trainPlaces = new();   // (SE-0071 R3: the same cache as the server's probes)
         long weatherListener = -1;
         string weatherOwner;
         bool weatherRefusedLogged;
@@ -264,22 +263,7 @@ namespace Sea
         }
 
         // (caller holds trainLock) the cached place for this grid cell
-        WavePlace TrainPlace(double x, double z)
-        {
-            var key = ((long)Math.Floor(x / WavePlace.GridCell), (long)Math.Floor(z / WavePlace.GridCell));
-            if (!trainPlaces.TryGetValue(key, out var slot))
-            {
-                if (trainPlaces.Count >= 32)
-                {
-                    var oldest = key; long used = long.MaxValue;
-                    foreach (var kv in trainPlaces) if (kv.Value.Used < used) { used = kv.Value.Used; oldest = kv.Key; }
-                    trainPlaces.Remove(oldest);
-                }
-                slot = (new WavePlace(), 0);
-            }
-            trainPlaces[key] = (slot.Place, ++trainUses);
-            return slot.Place;
-        }
+        WavePlace TrainPlace(double x, double z) => trainPlaces.For(x, z);
 
         /// <summary>
         /// The trains at (x, z) at wave time `seconds`: each the height <c>amp · sin(kx·x + kz·z − omega·t + phase)</c> in m,
