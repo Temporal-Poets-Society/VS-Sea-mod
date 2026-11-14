@@ -300,7 +300,7 @@ namespace SeaTests
                     && !System.Text.RegularExpressions.Regex.IsMatch(cf, @"smoothstep\(viewDistance \* 0\.7"),
                     "glints and foam fade by the game's view distance as Sea sets it, not the shader's viewDistance a LOD mod raises (SE-0033)");
                 Check(cf.Contains("if (sea_Effects.x <= 0.0)") && cf.Contains("cameraUnderwater < 0.01") && cf.Contains("skyExposed > 0") && cf.Contains("c.a = max(c.a, max(sun, moon))") && cf.Contains("texColor = sea_Glints(")
-                    && cf.Contains("texColor = sea_SkyReflect(texColor, ray, fres * sea_Above, rgbaFog.rgb);") && cf.Contains("float sea_Above = 1.0 - smoothstep(0.1, 0.3, dot(eye, n));") && !cf.Replace("flatFogStart", "").Contains("Star") && !cf.Contains("texColor.a += added"),
+                    && cf.Contains("texColor = sea_SkyReflect(texColor, ray, fres * sea_Above, rgbaFog.rgb);") && cf.Contains("float sea_Above = sea_AboveFactor(eye, n);") && !cf.Replace("flatFogStart", "").Contains("Star") && !cf.Contains("texColor.a += added"),
                     "vanilla highlight retained behind disable; water-only sky gates; glints and the Fresnel sky reflection raise alpha (premultiplied OIT); no star reflections");
             }
 

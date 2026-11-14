@@ -141,6 +141,7 @@ namespace ShaderCheck
             CelestialLobes();
             CelestialVisible();
             SkyReflection();
+            AboveGate();
             FarGlintMatchesNear();
             FoamGpu();
             FlowLookGpu();
@@ -150,6 +151,44 @@ namespace ShaderCheck
 
             Console.WriteLine(failures == 0 ? "ALL OK" : $"{failures} FAILED");
             return failures == 0 ? 0 : 1;
+        }
+
+        // (SE-0063) The water seen from below reflects no sky and no glints; seen from above, even at a grazing angle across a
+        // slope leaning away, it reflects all of them
+        static void AboveGate()
+        {
+            const string v = "#version 330 core\nvoid main(){ vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0,1); }";
+            string f = "#version 330 core\nuniform float flatFogDensity;\nuniform float flatFogStart;\n" + CelestialShader.Declarations + @"
+uniform vec3 testEye;
+uniform vec3 testNormal;
+out vec4 outColor;
+void main(){ outColor = vec4(sea_AboveFactor(normalize(testEye), normalize(testNormal)), 0.0, 0.0, 1.0); }";
+            int vs = Compile(ShaderType.VertexShader, v, out string vl), fs = Compile(ShaderType.FragmentShader, f, out string fl);
+            if (vs == 0 || fs == 0) { Check(false, "from-below gate program compiles", vl + fl); return; }
+            int p = GL.CreateProgram(); GL.AttachShader(p, vs); GL.AttachShader(p, fs); GL.LinkProgram(p);
+            GL.GetProgram(p, GetProgramParameterName.LinkStatus, out int linked);
+            if (linked != 1) { Check(false, "from-below gate program links", GL.GetProgramInfoLog(p)); return; }
+            int tex = GL.GenTexture(), fb = GL.GenFramebuffer(), vao = GL.GenVertexArray();
+            GL.BindTexture(TextureTarget.Texture2D, tex);
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba32f, 1, 1, 0, PixelFormat.Rgba, PixelType.Float, IntPtr.Zero);
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, fb);
+            GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, tex, 0);
+            GL.BindVertexArray(vao); GL.Viewport(0, 0, 1, 1); GL.UseProgram(p);
+            float At(float ex, float ey, float ez, float nx, float ny, float nz)
+            {
+                GL.Uniform3(GL.GetUniformLocation(p, "testEye"), ex, ey, ez);
+                GL.Uniform3(GL.GetUniformLocation(p, "testNormal"), nx, ny, nz);
+                GL.DrawArrays(PrimitiveType.Triangles, 0, 3);
+                float[] r = new float[4]; GL.ReadPixels(0, 0, 1, 1, PixelFormat.Rgba, PixelType.Float, r); return r[0];
+            }
+            float down = At(0.3f, -1f, 0.2f, 0f, 1f, 0f);            // looking down on level water
+            float grazing = At(1f, -0.01f, 0f, 0.05f, 1f, 0f);       // near the horizon, the slope leaning 0.05 away
+            float below = At(0.2f, 1f, 0.1f, 0f, 1f, 0f);            // from below, looking up through the surface
+            float underCrest = At(1f, 1f, 0f, -0.3f, 1f, 0f);      // a crest passing over an eye at the waterline
+            Check(down == 1f && grazing == 1f && below == 0f && underCrest == 0f,
+                $"GPU: water seen from below reflects no sky and no glints (factor from below {below:0.00}, under a crest {underCrest:0.00}), seen from above all of them (looking down {down:0.00}, grazing across a slope leaning away {grazing:0.00})");
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+            GL.DeleteFramebuffer(fb); GL.DeleteTexture(tex); GL.DeleteVertexArray(vao); GL.DeleteProgram(p);
         }
 
         // (0.4.4) The sky reflection: little looking down, the sky's own colour at a grazing angle; and alpha rises with it

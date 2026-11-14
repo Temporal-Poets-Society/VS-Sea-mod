@@ -83,7 +83,7 @@ namespace Sea
         // out from 0.1 to 0.3, not cut at 0: near the horizon the eye looks down by 0.01 or so, and the interpolated slope
         // of a crest's far side or a short train leans past that where the mesh still shows it from above. From below the
         // dot is 0.5 or more
-        float sea_Above = 1.0 - smoothstep(0.1, 0.3, dot(eye, n));
+        float sea_Above = sea_AboveFactor(eye, n);
         float fres = 0.02 + 0.98 * pow(1.0 - clamp(dot(-eye, n), 0.0, 1.0), 5.0);
         // (0.4.4) the sky the game draws, reflected by Fresnel: faint looking down, the sky's own colour at the horizon.
         // Smooth in direction, so waves shade it without speckles; it continues into Wmap's distant sea.
@@ -189,6 +189,9 @@ float sea_SurfWater(vec2 p, float surf) {
 ";
 
         public const string Declarations = @"
+// (SE-0063) how much of the sky reflection and glints the side of the water the eye sees takes: all of it looking down on
+// it (eye and normal opposed), none from below (their dot 0.5 or more), eased from 0.1 to 0.3 for grazing views
+float sea_AboveFactor(vec3 eye, vec3 n) { return 1.0 - smoothstep(0.1, 0.3, dot(eye, n)); }
 in vec2 sea_SurfaceSlope;
 in float sea_SurfaceRough; // (0.4.7) the slope variance of trains too short for the pixel, faded out of sea_SurfaceSlope
 in vec3 sea_FoamCrest; // normalised long height, local crest compression, normalised falling velocity
