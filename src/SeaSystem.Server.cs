@@ -53,6 +53,10 @@ namespace Sea
                 SendClock(p);
             };
             api.Event.PlayerJoin += onPlayerJoin;
+            // (SE-0061) and again when the player starts playing: the client's world clock only runs from then (LevelFinalize),
+            // so the join's packet is ignored there; until now the next one (to Playing clients, every 5 s) snapped the sea
+            onPlayerNowPlaying = p => SendClock(p);
+            api.Event.PlayerNowPlaying += onPlayerNowPlaying;
             Listen(api.Event.RegisterGameTickListener(_ =>
             {
                 // the calendar as it is now (its speed changes while players sleep), in force a few seconds from now

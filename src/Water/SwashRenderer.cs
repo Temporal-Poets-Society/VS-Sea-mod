@@ -37,7 +37,11 @@ namespace Sea
         double collected = double.NegativeInfinity;
         int originX, originY, originZ;
 
-        struct Beach { public long X, Z; public double Sx, Sz; public float Dist, Height, Slope; public float L0, L1, L2, L3, L4, L5, L6, L7; }
+        struct Beach
+        {
+            public long X, Z; public double Sx, Sz; public float Dist, Height, Slope; public float L0, L1, L2, L3, L4, L5, L6, L7;
+            public readonly float Lee(int d) => d switch { 0 => L0, 1 => L1, 2 => L2, 3 => L3, 4 => L4, 5 => L5, 6 => L6, _ => L7 };
+        }
 
         public SwashRenderer(ICoreClientAPI capi, SeaSystem sys) { this.capi = capi; this.sys = sys; }
 
@@ -55,6 +59,19 @@ namespace Sea
             finally { LastMs = watch.Elapsed.TotalMilliseconds; }
         }
 
+        readonly float[] trainLee = new float[WavePlace.MaxWaves * 4];
+
+        /// <summary>(SE-0058) Train i's share past the land at a beach cell: <see cref="CoastMath.Reach(in CoastSample, double, double, double, double, double)"/>
+        /// with the train's part from <see cref="WavePlace.FillLee"/> (sector, fraction, wind-sea share, fetch power).</summary>
+        double TrainReach(Beach b, int i)
+        {
+            int o = i * 4;
+            if (trainLee[o] < 0) return 1;
+            int s = (int)trainLee[o], t = (s + 1) & 7;
+            double f = trainLee[o + 1], l = b.Lee(s) * (1 - f) + b.Lee(t) * f, ws = trainLee[o + 2];
+            return ws > 0 ? l + (Math.Pow(Math.Max(l, 0), trainLee[o + 3]) - l) * ws : l;
+        }
+
         readonly HashSet<(long, long)> seen = new();
         readonly List<(long, long)> drop = new();
         void Frame(float dt)
@@ -70,21 +87,22 @@ namespace Sea
             LastCells = beaches.Count;
             if (beaches.Count == 0 && wet.Count == 0) return;
 
-            var (wx, wz) = place.CoastWind;
             data ??= new MeshData(MaxQuads * 4, MaxQuads * 6, false, true, true, true);
             data.Clear();
             originX = (int)Math.Floor(eye.X); originY = (int)Math.Floor(rest); originZ = (int)Math.Floor(eye.Z);
             float fade = (float)(1 - Math.Exp(-Math.Clamp(dt, 0, 0.5) / WetSeconds));
             // (SE-0047) kept between frames: nothing allocated per frame
             seen.Clear();
+            // (SE-0058) what of each train's reach depends on the train alone, once a frame (as the shader gets it, SE-0042):
+            // per beach cell only the blend of its lee sectors is left (it was an atan2, a pow and smoothsteps per cell and train)
+            int trains = place.FillLee(trainLee);
             foreach (var b in beaches)
             {
                 // the sea reaching this beach (past the land), and its height now at the shore line in front of it
-                var c = new CoastSample { Lee0 = b.L0, Lee1 = b.L1, Lee2 = b.L2, Lee3 = b.L3, Lee4 = b.L4, Lee5 = b.L5, Lee6 = b.L6, Lee7 = b.L7 };
                 double e = 0, w = 0, eta = 0;
-                for (int i = 0; i < place.Count; i++)
+                for (int i = 0; i < trains; i++)
                 {
-                    double a = place.Amp[i] * CoastMath.Reach(c, place.Kx[i], place.Kz[i], place.Omega[i], wx, wz);
+                    double a = place.Amp[i] * TrainReach(b, i);
                     e += a * a; w += a * a * place.Omega[i];
                     eta += a * Math.Sin(place.Kx[i] * b.Sx + place.Kz[i] * b.Sz - place.Omega[i] * place.Time + place.Phase[i]);
                 }
@@ -180,15 +198,13 @@ namespace Sea
                     int l = CoastMath.ILee;
                     // the shore line in front of it: down the distance from the water (land +, water -) to where it is 0
                     float height = cell[CoastMath.ILandHeight], slope = cell[CoastMath.IBeachSlope];
-                    var lee = new float[8];
-                    Array.Copy(cell, l, lee, 0, 8);
                     double gx = Signed(i + 1, j) - Signed(i - 1, j), gz = Signed(i, j + 1) - Signed(i, j - 1), gl = Math.Sqrt(gx * gx + gz * gz);
                     double back = Math.Max(dist - 0.5, 0);
                     double sx = i + 0.5 - (gl > 1e-6 ? gx / gl * back : 0), sz = j + 0.5 - (gl > 1e-6 ? gz / gl * back : 0);
                     beaches.Add(new Beach
                     {
                         X = i, Z = j, Sx = sx, Sz = sz, Dist = dist, Height = height, Slope = slope,
-                        L0 = lee[0], L1 = lee[1], L2 = lee[2], L3 = lee[3], L4 = lee[4], L5 = lee[5], L6 = lee[6], L7 = lee[7],
+                        L0 = cell[l], L1 = cell[l + 1], L2 = cell[l + 2], L3 = cell[l + 3], L4 = cell[l + 4], L5 = cell[l + 5], L6 = cell[l + 6], L7 = cell[l + 7],
                     });
                 }
         }

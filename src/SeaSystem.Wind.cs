@@ -179,6 +179,8 @@ namespace Sea
                 model.Provider = provider;
                 Model = model;
             });
+            // (SE-0053) the coast map wraps on the world's ring (outside Change: it takes the map's own lock)
+            coast?.SetRing(model.Shape.RingStart, model.Shape.Circumference);
         }
 
         /// <summary>

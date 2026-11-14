@@ -104,8 +104,16 @@ namespace Sea
                 Listen(api.Event.RegisterGameTickListener(_ =>
                 {
                     if (!SurfOn) return;
+                    // (SE-0056) only around players within reach of the sea's level (inland or deep below, there is no coast
+                    // to keep), and the caches sized for them
+                    int watched = 0, sea = coastApi.World.SeaLevel;
                     foreach (var p in coastApi.World.AllOnlinePlayers)
-                        if (p?.Entity?.Pos is { } pos && pos.Dimension == 0) coast.Ask(pos.X, pos.Z, CoastAround);
+                        if (p?.Entity?.Pos is { } pos && pos.Dimension == 0 && Math.Abs(pos.Y - sea) < 64)
+                        {
+                            coast.Ask(pos.X, pos.Z, CoastAround);
+                            watched++;
+                        }
+                    coast.Watchers = watched;
                 }, 1000));
             // (SE-0017) vanilla's wind where the players are, read on the main thread for any other
             Listen(api.Event.RegisterGameTickListener(_ => RefreshVanillaWind(), 1000));
@@ -118,7 +126,9 @@ namespace Sea
         // (SE-0018) the tick listeners and events registered here, taken off again in Dispose
         readonly System.Collections.Generic.List<long> listeners = new();
         long Listen(long id) { listeners.Add(id); return id; }
-        PlayerDelegate onPlayerJoin;
+        PlayerDelegate onPlayerJoin, onPlayerNowPlaying;
+        // (SE-0061) the client's world clock runs (LevelFinalize): clock packets before it would be read against a clock at 0
+        bool clientClockRuns;
         Action onLevelFinalize;
 
         /// <summary>(0.6.0) Blocks around each player whose coast tiles the server keeps solved.</summary>
@@ -147,6 +157,7 @@ namespace Sea
                 // (GameWorldSave stays: the server disposes mods before its save on shutdown, which must still keep the
                 // fixed wind; ServerMain.Stop runs ServerSystemModHandler's shutdown before ServerSystemLoadAndSaveGame's)
                 if (sapi != null && onPlayerJoin != null) sapi.Event.PlayerJoin -= onPlayerJoin;
+                if (sapi != null && onPlayerNowPlaying != null) sapi.Event.PlayerNowPlaying -= onPlayerNowPlaying;
                 if (capi != null && onLevelFinalize != null) capi.Event.LevelFinalize -= onLevelFinalize;
             }
             catch (Exception e) { Mod?.Logger.Warning("Could not take Sea's listeners off: {0}", e.Message); }

@@ -24,6 +24,9 @@ namespace Sea
                 .SetMessageHandler<SeaClockPacket>(p =>
                 {
                     if (!double.IsFinite(p.Seconds)) return;
+                    // (SE-0061) before LevelFinalize the in-world clock stands at 0: the server sends the clock again once this
+                    // player is playing
+                    if (!clientClockRuns) return;
                     clock.OnServerTime(p.Seconds, LocalSeconds);
                     long now = WavePlace.SampleIndex(clock.Now(LocalSeconds));
                     if (p.Anchors != null) foreach (var a in p.Anchors) sampleHours.Add(a, now);
@@ -58,6 +61,7 @@ namespace Sea
             // the water shaders were compiled before our patch existed: recompile them with Sea's code
             onLevelFinalize = () =>
             {
+                clientClockRuns = true;
                 if (!Hooks.ShaderPatched || WaterRenderer.Injected) return;
                 api.Shader.ReloadShaders();
                 if (!WaterRenderer.Injected) Mod.Logger.Warning("Could not add Sea's code to the water shaders; waves may show inside ships");

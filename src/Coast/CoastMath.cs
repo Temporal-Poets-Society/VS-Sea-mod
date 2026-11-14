@@ -161,6 +161,46 @@ namespace Sea
         static float Water(float h) => float.IsNaN(h) ? MaxDepth : Math.Min(h, MaxDepth);
 
         /// <summary>
+        /// (SE-0057) The tile of a window that is all deep water (every column deeper than <see cref="MaxDepth"/>) or all
+        /// land, without the solve: the open sea in every column (one shared array, never changed), or each land column
+        /// with no water in reach. What <see cref="Solve"/> and <see cref="TileOf"/> give for such a window (SeaTests
+        /// compares them). Null for a window with both, or with shallow water.
+        /// </summary>
+        public static float[] UniformTile(float[] depth, int w, int margin, int tile)
+        {
+            bool anyLand = false, anyWater = false;
+            foreach (float h in depth)
+            {
+                if (IsLand(h)) anyLand = true;
+                else if (!float.IsNaN(h)) return null;   // shallow water: a coast to solve
+                else anyWater = true;
+                if (anyLand && anyWater) return null;
+            }
+            if (!anyLand) return OpenTile(tile);
+            var data = new float[tile * tile * Stride];
+            for (int z = 0; z < tile; z++)
+                for (int x = 0; x < tile; x++)
+                {
+                    int o = (z * tile + x) * Stride;
+                    data[o + ILandDist] = float.PositiveInfinity;
+                    data[o + ILandHeight] = -depth[(z + margin) * w + x + margin];
+                }
+            return data;
+        }
+
+        static float[] openTile;
+
+        /// <summary>A tile of open sea in every column (shared; never changed).</summary>
+        public static float[] OpenTile(int tile)
+        {
+            var t = openTile;
+            if (t != null && t.Length == tile * tile * Stride) return t;
+            t = new float[tile * tile * Stride];
+            for (int i = 0; i < tile * tile; i++) OpenColumn(t, i * Stride);
+            return openTile = t;
+        }
+
+        /// <summary>
         /// A window's tile: per column (row-major, z rows) <see cref="Stride"/> floats. (ox, oz): the world block of the
         /// window's column (0, 0), for the rip channels' places. The away direction is the travel time's gradient,
         /// smoothed over 3 × 3; the lee is looked for along fans of rays upwave; rips sit at fixed places along beaches.
@@ -209,13 +249,17 @@ namespace Sea
                     if (float.IsPositiveInfinity(time[i])) continue;
                     tileData[o + ITime] = time[i];
                     double sx = 0, sz = 0;
+                    int count = 0;
                     for (int dz = -1; dz <= 1; dz++)
                         for (int dx = -1; dx <= 1; dx++)
                         {
                             int j = (wz + dz) * w + wx + dx;
                             sx += gx[j]; sz += gz[j];
+                            if (gx[j] != 0 || gz[j] != 0) count++;
                         }
-                    double l = Math.Sqrt(sx * sx + sz * sz), trust = Fade(dist[i]);
+                    // (SE-0064) the trust also by how far the neighbours' directions agree (their mean resultant length): between
+                    // two shores they point opposite ways, and the surf's phase tore along the midline at full trust
+                    double l = Math.Sqrt(sx * sx + sz * sz), trust = Fade(dist[i]) * (count > 0 ? Math.Min(1, l / count) : 0);
                     if (l < 1e-9 || trust <= 0) continue;
                     double ax = sx / l, az = sz / l;
                     tileData[o + IAwayX] = (float)(ax * trust);

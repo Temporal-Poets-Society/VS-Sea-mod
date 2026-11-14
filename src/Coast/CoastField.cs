@@ -20,7 +20,24 @@ namespace Sea
     public sealed class CoastField
     {
         const int Chunk = 32;
-        const int MaxTiles = 512, MaxColumns = 1024;
+        // (SE-0056) for one player; the server raises them with the players it keeps the coast for (Watchers)
+        const int MinTiles = 512, MinColumns = 1024;
+        int MaxTiles = MinTiles, MaxColumns = MinColumns;
+        int uniformTiles;
+
+        /// <summary>(SE-0056) How many places the coast is kept around (the server's players near sea level): the caches hold
+        /// their 81 tiles and 169 chunk columns each with room to spare, instead of dropping tiles asked for again in a second.</summary>
+        public int Watchers
+        {
+            set
+            {
+                int n = Math.Max(1, value);
+                lock (gate) { MaxTiles = Math.Max(MinTiles, 128 * n); MaxColumns = Math.Max(MinColumns, 256 * n); }
+            }
+        }
+
+        /// <summary>(SE-0057) Tiles made without a solve (all deep or all land), for `.sea coast`.</summary>
+        public int UniformTiles => Volatile.Read(ref uniformTiles);
 
         readonly ICoreAPI api;
         readonly object gate = new();
@@ -111,6 +128,7 @@ namespace Sea
 
         bool CellLocked(long i, long j, float[] into)
         {
+            i = WrapBlock(i);
             var key = (Floor(i, CoastMath.Tile), Floor(j, CoastMath.Tile));
             if (!tiles.TryGetValue(key, out var e)) { Want(key); return false; }
             e.Used = ++uses;
@@ -124,6 +142,7 @@ namespace Sea
         {
             lock (gate)
             {
+                tx = WrapTile(tx);
                 if (tiles.TryGetValue((tx, tz), out var e)) { e.Used = ++uses; return e.Data; }
                 Want((tx, tz));
                 return null;
@@ -141,12 +160,52 @@ namespace Sea
                 for (long tz = z0; tz <= z1; tz++)
                     for (long tx = x0; tx <= x1; tx++)
                     {
-                        if (tiles.TryGetValue((tx, tz), out var e)) e.Used = ++uses;
-                        else Want((tx, tz));
+                        long wx = WrapTile(tx);
+                        if (tiles.TryGetValue((wx, tz), out var e)) e.Used = ++uses;
+                        else Want((wx, tz));
                     }
         }
 
         static long Floor(long v, int d) => v >= 0 ? v / d : -((-v + d - 1) / d);
+
+        // (SE-0053) a Cylinder World ring: tile and chunk-column keys (the same 32-block unit) and block columns are taken
+        // around it, so the tiles on both sides of the seam are the same tiles and the map runs on across it
+        long ringStartTile, ringTiles;
+
+        /// <summary>The world's ring didn't line up with the 32-block tiles: the coast stays off (Cylinder World's does).</summary>
+        public bool RingMisaligned { get; private set; }
+
+        /// <summary>(SE-0053) The ring the world wraps on (circumference 0: none). Tiles solved before are forgotten if it changes.</summary>
+        public void SetRing(double start, double circumference)
+        {
+            long t = 0, n = 0;
+            bool misaligned = false;
+            if (circumference > 0)
+            {
+                misaligned = start % CoastMath.Tile != 0 || circumference % CoastMath.Tile != 0;
+                if (!misaligned) { t = (long)(start / CoastMath.Tile); n = (long)(circumference / CoastMath.Tile); }
+            }
+            lock (gate)
+            {
+                RingMisaligned = misaligned;
+                if (t == ringStartTile && n == ringTiles) return;
+                ringStartTile = t; ringTiles = n;
+                tiles.Clear(); columns.Clear(); wanted.Clear(); dirty.Clear(); failedAt.Clear();
+                Interlocked.Increment(ref version);
+            }
+        }
+
+        /// <summary>(SE-0053) A tile or chunk-column index around the ring (unchanged without one).</summary>
+        public long WrapTile(long t) => ringTiles > 0 ? ringStartTile + Mod(t - ringStartTile, ringTiles) : t;
+
+        long WrapBlock(long b)
+        {
+            if (ringTiles <= 0) return b;
+            long start = ringStartTile * CoastMath.Tile, n = ringTiles * CoastMath.Tile;
+            return start + Mod(b - start, n);
+        }
+
+        static long Mod(long a, long m) { long r = a % m; return r < 0 ? r + m : r; }
 
         // any thread (the client marks chunks dirty from its relight thread too)
         void OnChunkDirty(Vec3i chunk, IWorldChunk _, EnumChunkDirtyReason reason)
@@ -192,8 +251,9 @@ namespace Sea
                 // the chunk columns under its window (tile = chunk size)
                 bool ready = true;
                 for (long cz = key.Item2 - r; cz <= key.Item2 + r && ready; cz++)
-                    for (long cx = key.Item1 - r; cx <= key.Item1 + r && ready; cx++)
+                    for (long ux = key.Item1 - r; ux <= key.Item1 + r && ready; ux++)
                     {
+                        long cx = WrapTile(ux);
                         bool have;
                         lock (gate) have = columns.ContainsKey((cx, cz));
                         if (have) continue;
@@ -240,8 +300,11 @@ namespace Sea
                     // every tile whose window covers this chunk column is solved again (kept as it is until then)
                     int r = (CoastMath.Margin + Chunk - 1) / Chunk;
                     for (long tz = key.Item2 - r; tz <= key.Item2 + r; tz++)
-                        for (long tx = key.Item1 - r; tx <= key.Item1 + r; tx++)
+                        for (long ux = key.Item1 - r; ux <= key.Item1 + r; ux++)
+                        {
+                            long tx = WrapTile(ux);
                             if (tiles.ContainsKey((tx, tz)) && !wanted.ContainsKey((tx, tz))) { Want((tx, tz)); resolves++; }
+                        }
                 }
             }
         }
@@ -277,7 +340,7 @@ namespace Sea
                 for (int j = 0; j < nz; j++)
                     for (int i = 0; i < nx; i++)
                     {
-                        if (!columns.TryGetValue((cx0 + i, cz0 + j), out var c)) return null;
+                        if (!columns.TryGetValue((WrapTile(cx0 + i), cz0 + j), out var c)) return null;
                         c.Used = ++uses;
                         cols[j * nx + i] = c.Depth;
                     }
@@ -301,10 +364,17 @@ namespace Sea
             {
                 var watch = Stopwatch.StartNew();
                 int w = CoastMath.Window, m = CoastMath.Margin;
-                var time = new float[w * w];
-                var dist = new float[w * w];
-                CoastMath.Solve(depth, w, time, dist);
-                var data = CoastMath.TileOf(depth, time, dist, w, m, CoastMath.Tile, key.Item1 * CoastMath.Tile - m, key.Item2 * CoastMath.Tile - m);
+                // (SE-0057) a window all deep or all land needs no solve (most of them: the open sea, inland): the same tile,
+                // without the solve's 1 MB of arrays and 1 to 2 ms
+                var data = CoastMath.UniformTile(depth, w, m, CoastMath.Tile);
+                if (data == null)
+                {
+                    var time = new float[w * w];
+                    var dist = new float[w * w];
+                    CoastMath.Solve(depth, w, time, dist);
+                    data = CoastMath.TileOf(depth, time, dist, w, m, CoastMath.Tile, key.Item1 * CoastMath.Tile - m, key.Item2 * CoastMath.Tile - m);
+                }
+                else Interlocked.Increment(ref uniformTiles);
                 double ms = watch.Elapsed.TotalMilliseconds;
                 lock (gate)
                 {

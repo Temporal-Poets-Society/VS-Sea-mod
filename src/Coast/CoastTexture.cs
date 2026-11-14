@@ -35,7 +35,9 @@ namespace Sea
         /// </summary>
         public void Update(CoastField field, double camX, double camZ, double seconds)
         {
-            long tx = CoastField.TileOf(camX) - Tiles / 2, tz = CoastField.TileOf(camZ) - Tiles / 2;
+            // (SE-0055) centred on the camera: its tile rounded, not floored, so the map reaches 112 to 144 blocks every way
+            // (96 to 160 before), and the shader eases its coast out over the outer 16
+            long tx = (long)Math.Round(camX / CoastMath.Tile) - Tiles / 2, tz = (long)Math.Round(camZ / CoastMath.Tile) - Tiles / 2;
             long nx = tx * CoastMath.Tile, nz = tz * CoastMath.Tile;
             bool moved = nx != ox || nz != oz || texture == 0;
             if (!moved && field.Version == version && !(missing && seconds - refilled > RefillSeconds)) return;

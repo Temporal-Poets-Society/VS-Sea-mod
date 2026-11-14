@@ -176,6 +176,16 @@ void sea_CoastAt(vec2 q) {
         sea_K.lb += w * texelFetch(sea_CoastTex, p + ivec2(2, 0), 0);
         sea_K.t3 += w * texelFetch(sea_CoastTex, p + ivec2(3, 0), 0);
     }
+    // (SE-0055) over the map's outer 16 blocks the coast eases into the open sea it has beyond, so the drawn coast ends
+    // without an edge (the CPU's coast, the same on every side, has no rim: past it the drawn water is the open sea's)
+    float sea_Rim = min(min(f.x, f.y), min(n - 1.0 - f.x, n - 1.0 - f.y));
+    if (sea_Rim < 16.0) {
+        float fade = smoothstep(0.0, 16.0, sea_Rim);
+        sea_K.c = mix(vec4(sea_MaxDepth, 0.0, 0.0, 0.0), sea_K.c, fade);
+        sea_K.la = mix(vec4(1.0), sea_K.la, fade);
+        sea_K.lb = mix(vec4(1.0), sea_K.lb, fade);
+        sea_K.t3 = mix(vec4(0.0, 128.0, 0.0, 0.0), sea_K.t3, fade);
+    }
     // (nothing here changes the waves: the open sea's numbers exactly, as the CPU takes them)
     if (!sea_Affects(sea_K)) { sea_CoastOpen(); return; }
     // over a rip channel the seaward current holds the surf back: its travel time is T (1 + U / c)

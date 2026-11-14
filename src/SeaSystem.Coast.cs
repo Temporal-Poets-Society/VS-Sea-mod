@@ -27,7 +27,8 @@ namespace Sea
         /// (0.6.0) Waves feel the sea floor: the config's Surf, in the world itself (not on a Cylinder World ring, whose
         /// coordinates wrap where the coast map's don't).
         /// </summary>
-        public bool SurfOn => coast != null && Config?.Surf != false && !(Spectrum?.Circumference > 0);
+        // (SE-0053) on a ring too: the coast map wraps on it (off only for a ring that doesn't line up with its tiles)
+        public bool SurfOn => coast != null && Config?.Surf != false && !coast.RingMisaligned;
 
         /// <summary>(0.6.0) The coast's numbers at a world position (Coastal false off the coast, or before its tile is solved).</summary>
         public CoastSample CoastAt(double x, double z) =>
