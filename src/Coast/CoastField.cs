@@ -217,7 +217,9 @@ namespace Sea
             if (reason != EnumChunkDirtyReason.MarkedDirty && reason != EnumChunkDirtyReason.NewlyLoaded) return;
             int sea = api.World.SeaLevel, y0 = (sea - (int)CoastMath.MaxDepth - 3) / Chunk, y1 = (sea + 2) / Chunk;
             if (chunk.Y < y0 || chunk.Y > y1) return;   // (other dimensions are far above)
-            lock (gate) if (columns.ContainsKey((chunk.X, chunk.Z))) dirty.Add((chunk.X, chunk.Z));
+            // (SE-0053 review) an edit in the seam band's copy marks its wrapped column
+            long wx = WrapTile(chunk.X);
+            lock (gate) if (columns.ContainsKey((wx, chunk.Z))) dirty.Add((wx, chunk.Z));
         }
 
         /// <summary>
@@ -239,7 +241,9 @@ namespace Sea
                 long cut = Environment.TickCount64 - StaleMs;
                 staleKeys.Clear();
                 foreach (var kv in wanted) if (kv.Value < cut) staleKeys.Add(kv.Key);
-                foreach (var k in staleKeys) wanted.Remove(k);
+                // (SE-0068 review) a redo whose tile was forgotten meanwhile has nothing to redo
+                foreach (var k in redo) if (!tiles.ContainsKey(k)) staleKeys.Add(k);
+                foreach (var k in staleKeys) { wanted.Remove(k); if (!tiles.ContainsKey(k)) redo.Remove(k); }
                 askOrder.Clear();
                 foreach (var kv in wanted) askOrder.Add(kv);
                 askOrder.Sort(NewestFirst);
@@ -263,7 +267,7 @@ namespace Sea
                         lock (gate) have = columns.ContainsKey((cx, cz));
                         if (have) continue;
                         if (scans <= 0) { ready = false; break; }
-                        var depth = TimedScan(ba, cx, cz, sea);
+                        var depth = ScanWrapped(ba, cx, cz, sea);
                         if (depth == null) { ready = false; break; }   // not loaded: try again later
                         scans--;
                         lock (gate)
@@ -294,7 +298,7 @@ namespace Sea
             foreach (var key in marked)
             {
                 scans--;
-                var depth = TimedScan(ba, key.Item1, key.Item2, sea);
+                var depth = ScanWrapped(ba, key.Item1, key.Item2, sea);
                 lock (gate)
                 {
                     rescans++;
@@ -319,6 +323,15 @@ namespace Sea
             for (int i = 0; i < a.Length; i++)
                 if (a[i] != b[i] && !(float.IsNaN(a[i]) && float.IsNaN(b[i]))) return false;
             return true;
+        }
+
+        // (SE-0053 review) a wrapped column, or where it is not loaded the band's copy a circumference either way (near the
+        // seam the player's side holds the copy; the band is the same on both sides, so both answer the same depths)
+        float[] ScanWrapped(IBlockAccessor ba, long cx, long cz, int sea)
+        {
+            var depth = TimedScan(ba, cx, cz, sea);
+            if (depth != null || ringTiles <= 0) return depth;
+            return TimedScan(ba, cx - ringTiles, cz, sea) ?? TimedScan(ba, cx + ringTiles, cz, sea);
         }
 
         float[] TimedScan(IBlockAccessor ba, long cx, long cz, int sea)

@@ -183,11 +183,13 @@ void sea_CoastAt(vec2 q) {
         sea_K.lb += w * texelFetch(sea_CoastTex, p + ivec2(2, 0), 0);
         sea_K.t3 += w * texelFetch(sea_CoastTex, p + ivec2(3, 0), 0);
     }
-    // (SE-0055) over the map's outer 16 blocks the coast eases into the open sea it has beyond, so the drawn coast ends
-    // without an edge (the CPU's coast, the same on every side, has no rim: past it the drawn water is the open sea's)
-    float sea_Rim = min(min(f.x, f.y), min(n - 1.0 - f.x, n - 1.0 - f.y));
-    if (sea_Rim < 16.0) {
-        float fade = smoothstep(0.0, 16.0, sea_Rim);
+    // (SE-0055) from 94 to 110 blocks from the camera (square distance) the coast eases into the open sea, so the drawn
+    // coast ends without an edge, and by the camera's distance, not the map's rim, so it doesn't jump when the map moves
+    // a tile (the map, centred on the camera's tile, always covers 110 blocks each way, column centres). The CPU's coast has no such end:
+    // past it the drawn water is the open sea's
+    float sea_Far = max(abs(q.x), abs(q.y));
+    if (sea_Far > 94.0) {
+        float fade = 1.0 - smoothstep(94.0, 110.0, sea_Far);
         sea_K.c = mix(vec4(sea_MaxDepth, 0.0, 0.0, 0.0), sea_K.c, fade);
         sea_K.la = mix(vec4(1.0), sea_K.la, fade);
         sea_K.lb = mix(vec4(1.0), sea_K.lb, fade);
