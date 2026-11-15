@@ -34,7 +34,7 @@
 <p>Sea does not add an Earth play style or generate terrain. To create an Earth world, follow <a href="https://mods.vintagestory.at/earth">Earth's installation instructions</a>, including its required companions and data parts.</p>
 
 <h2>Settings and commands</h2>
-<p>The <strong>Earth</strong> tab in world settings offers <strong>Storm wave height</strong>: 1, 1.5 or 2.2, with 1 as the default. Advanced settings are in <code>VintagestoryData/ModConfig/sea.json</code>, including overall wave scale, fallback sea wind, reflections and night visibility. Restart the world or server after changing these saved settings.</p>
+<p>Storm wave height follows <code>StormHeightScale</code> in the server's <code>sea.json</code>; an admin can set it per world with <code>/worldconfig seaStormHeight 1.5</code> (<code>json</code>, 1, 1.5 or 2.2). Advanced settings are in <code>VintagestoryData/ModConfig/sea.json</code>, including overall wave scale, fallback sea wind, reflections and night visibility. Restart the world or server after changing these saved settings.</p>
 <ul>
   <li><code>/sea</code> reports the wind and waves at your location; <code>.sea</code> shows client diagnostics.</li>
   <li><code>.sea night</code>, <code>.sea sky</code> and <code>.sea glint</code>, followed by a number from 0 to 4, adjust the view for the current session. Use <code>default</code> or <code>.sea reset</code> to return to the configured values.</li>

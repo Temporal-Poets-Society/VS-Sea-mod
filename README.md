@@ -1,5 +1,10 @@
 # Sea — waves that follow the wind, the same sea for everyone (Vintage Story 1.22)
 
+**0.6.1 (15 November 2026):** **Storm wave height** is no longer on the world-creation screen's Earth tab. New worlds
+still take the server's `sea.json` (`StormHeightScale`, its default), and an admin still sets a world's height with
+`/worldconfig seaStormHeight 1.5` (`json`, `1`, `1.5` or `2.2`); restart the world or server to apply. Nothing else
+changed (SEA-D80).
+
 **0.6.0 (14 November 2026; [wiki](https://github.com/Temporal-Poets-Society/VS-Sea-mod/wiki)):**
 waves on coasts (surf, lee, reflection, longshore currents and swash), steeper storms, spray off the open sea's crests,
 the open sea contracts, and the findings of three code reviews fixed. Requires Vintage Story 1.22.0 or later.
@@ -59,8 +64,8 @@ features were checked in game on one client.
   from below no longer shows the sky; `sea.json` with an error is left as it is; `/sea setwind` takes a decimal comma
   and works from the server console; a joining player gets the wave clock at once; the server self-test runs only when
   asked for (`SEA_SELFTEST=1`).
-- **A new world's storm height** (the Earth tab's `seaStormHeight`) is the server's `sea.json` by default (SEA-D78); worlds
-  made before keep their choice.
+- **A new world's storm height** (`seaStormHeight`, on the Earth tab until 0.6.1) is the server's `sea.json` by default
+  (SEA-D78); worlds made before keep their choice.
 - **SheyderMod:** Sea's water code goes into its water shader, and Sea keeps the water's reflections: SheyderMod's own
   water reflection (a flat mirror over the water that laid a second, sharp sun over Sea's glitter path) is skipped
   while Sea draws the water (SEA-D76). Its other features, its water ripples among them, stay on; nothing in its
