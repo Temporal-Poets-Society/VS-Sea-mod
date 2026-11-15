@@ -28,7 +28,7 @@ Temperature and geography are not roles here: they already go through vanilla. E
 
 ## 3. Rules for every contract
 
-**R1. Only .NET base types cross a mod boundary.** No mod ships or references another mod's DLL to use a contract. This is how Earth already binds Sea's `SetWindProvider` (reflection, BCL delegates). Sea's typed API (`SeaSystem`, `WavePlace`, `IWaterClipSource`, `IDrySpaces`) stays as it is for mods that already compile against `Sea.dll` (Ships, Magelan, Sea monsters, Wmap).
+**R1. Only .NET base types cross a mod boundary.** No mod ships or references another mod's DLL to use a contract. This is how Earth already binds Sea's `SetWindProvider` (reflection, BCL delegates). Sea's typed API (`SeaSystem`, `WavePlace`, `IWaterClipSource`, `IDrySpaces`) stays as it is for mods that compile against `Sea.dll` (Ships' Sea bridge, Magelan). World Map does not compile against `Sea.dll`: it reads a few typed members by reflection (section 15). Sea Monsters reads only the contracts.
 
 **R2. Discovery through `api.ObjectCache`.** Each role is one entry, on each side, under the key `seacontracts:<role>`. Its value is a `Dictionary<string, object>` of named members: delegates, plus these plain values:
 
@@ -68,12 +68,18 @@ A producer that lost a role to a higher priority (say a priority-50 default on a
 | `storm` | `Func<double x, double z, double hours, (double Presence, double WindMps, string Kind)>` | `Presence` 0–1, all storms together; `WindMps` the storms' own wind; `Kind` of the strongest: `squall`, `gale`, `hurricane`, or null |
 | `rain` | `Func<double x, double z, double hours, (double Cloudness, double Precipitation)>` | both 0–1, vanilla's meaning of rain-cloud overlay and precipitation |
 | `writesVanilla` | `bool` | true: this producer drives vanilla's wind, rain, clouds, region patterns and weather events, and no other mod may |
+| `pressure` | `Func<double x, double z, double hours, double>` or absent | the air pressure at sea level, hPa; NaN while the producer has no weather yet. *Added 15 November within version 1 (R6): Earth 2.0.0, the value World Map 0.5.3's barometer reads from Earth's model (Earth EA-0132)* |
 
 The `Kind` codes are Rough Seas' (`SeaState.StormCode`), so his storm consumers (lightning, the Extreme Weathers tornado bridge) map without translation.
 
 **Before the role (Sea 0.5.2, Earth 1.x):** Sea's `SetWindProvider(name, windAt, prevailingAt)` (`src/SeaSystem.cs`) carries wind only, in vanilla units. Earth calls it by reflection (`EarthWeather.LinkSea`). Earth's model knew the rest internally (`WeatherModel.Sample`: rain chance, cloud cover, pressure, storms; `WeatherStorms.Influence`), but nothing exported it. Earth 2.0.0 exports it as this role.
 
 **Sea keeps `SetWindProvider`** as a facade: when a `weather` role exists, Sea reads it (dividing m/s by 25) and the facade only matters for older Earth builds.
+
+**Who reads the role:**
+- **Sea** (`SeaContracts.FollowWeather`, once a second): `owner`, `wind`, `prevailing`. An owner that isn't Sea becomes its wind provider under the owner's name, unless a provider already decides Sea's wind (Earth's own `SetWindProvider("earth")` comes first, so nothing changes). `version`, `priority` and `revision` are not read. Offline: SeaTests (`ConsumerSurface`).
+- **Ships**, without Sea's bridge: `wind` (section 12).
+- **Cylinder World 1.1.0** (Cworld `src/SeamWeatherSync.cs:248,339-399`, CW-D38): `owner`, `writesVanilla`, `revision` and `rain`, plus whether a Harmony owner other than `cylinderworld.rain` patches vanilla's `GetRainCloudness`. While such an owner answers a finite `rain`, its seam rain fold steps aside. It doesn't read `version`.
 
 ## 5. Vanilla's wind as a vector
 
@@ -232,3 +238,15 @@ His metres per block come from the world's `polarEquatorDistance`; on an Earth w
 3. Earth + Rough Seas: his waves build behind Earth's storms, and only Earth writes vanilla weather.
 4. Dedicated server and two clients: the same `trains`, `height` and `pose` at the same place and time on all three. *In game, 7 November, one client: `/sea probe` (server) and `.sea probe` (client) gave identical height, shelter, pose and trains on open sea and at 21 of 21 fresh shore points. That held only after a fix: the server solved coast tiles only where something sampled, so a first ask at a shore answered as open sea there (SEA-D68). `.sea drawn` measured the drawn water against the per-place answer: 0.0000 m apart out to 512 blocks, also at force 11, because a uniform wind gives every place the same trains (O1 can only show where the wind varies across space, as on Earth). Two clients and an Earth world are not checked.*
 5. Earth's `weather` role read by a mod that knows neither Earth nor Sea, and Sea following it. *In game, 13 November (AgentBridge bench, singleplayer, one client; Earth 2.0.0-rc.7 with re-claiming, Sea 0.6.0-pre.1, Earth's probe mod `tools/weatherprobe`, which reads `api.ObjectCache` with base types only): on a 1:100 Earth world in the Gulf of Riga, the server (`/wprobe`) and the client (`.wprobe`) gave the same owner (`earth`), version, priority, revision, `writesVanilla` and every member's answer to six decimals at the same place and hours: a calm hour, a gale near its peak (presence 0.90, the storm's own wind 27.4 m/s, kind `gale`, gusts 31 m/s) and a rainy hour (precipitation 0.24). Sea's `seastate.at` wind equalled the role's gusty wind exactly on both sides (3.3 m waves under the gale); Sea's provider is `earth` on both, the same name whether it came from the role or from Earth's `SetWindProvider`. Vanilla's wind at sea level was the role's wind / 25 as a vector (0.00° apart) on both sides; only Earth's `earth.windvector` transpiles the two X readers, and the client's `seacontracts:vanillawind-vector` is `earth`. `/sea probe` and `.sea probe` matched. R2: a priority-50 rival entry was replaced by Earth's within a second on both sides, a priority-150 one kept Earth out (logged once), and Earth took the role back as soon as that one was removed. Rough Seas, multiplayer and a dedicated server are not checked.*
+
+## 15. Sea's typed API read by reflection
+
+Outside the contracts, two mods read Sea's typed API by reflection, without a build reference. A rename, a new overload or a changed type compiles everywhere and breaks only in their worlds, mostly silently. Each binding is checked offline, looked up the way its consumer looks it up; change a member, its check and this table together.
+
+| Consumer | What it reads | How | Checked by |
+|---|---|---|---|
+| World Map 0.5.x (`src/Integrations/SeaWinds.cs:28-92`; the wind layer and the barometer's wind) | the mod system `Sea.SeaSystem` and its `Model` property; `WindModel.Prevailing(double, double, double)` and `At(double, double, double, bool)` (gusts false), whose `Wind` result's `X` and `Z` must be `double` fields; `BeltName(double, double)` returning `string` (null since 0.4.0); `Mode`, compared with `"Off"`; `Shape.DaysPerYear`, `Shape.HoursPerDay` as `double`; static `Sea.Beaufort.Name(double)` | the exact type name; methods by `GetMethod(name, types)` compiled into expressions; values by `GetField`, else `GetProperty`. A failed binding leaves the wind layer out, and a missing year length falls back to 108 days of 24 hours | SeaTests, `ConsumerSurface` |
+| World Map 0.5.x far programs | the far-water uniforms `sea_NightFloor`, `sea_SkyReflect`, `sea_WaveCount`, `sea_Wave`, `sea_WaveFactor`, `sea_Sunset`, `sea_Glint`, `sea_Sun`, `sea_Moon`, `sea_SunColor`, `sea_Weather`, which World Map declares under the names before SEA-D57 (`seaNightFloor`, ...) and Sea sets under either (`WaterShader.Legacy`) | GLSL names; the waves only where the asset domain is `wmap` | ShaderCheck, with World Map's tree next door or in `WMAP_ROOT` |
+| Earth 2.0 (`src/RequiredMods.cs:96-105`, `EarthWeather.LinkSea`/`UnlinkSea`) | `SeaSystem.SetWindProvider(string, Func<double, double, double, bool, (double, double)>, Func<double, double, double, (double, double)>)` returning `bool`, and `ClearWindProvider(string)`, with the provider name `earth`. Earth also leaves vanilla's `CloudTick` alone where the Harmony owner `sea` patches it (Sea 0.3), and Sea 0.4 and later patch no vanilla weather (Sea's server self-test) | `GetModSystem("Sea.SeaSystem")`; the exact signature among the public instance methods. Without it, Earth logs that Sea keeps its own wind | SeaTests, `ConsumerSurface`; in game, Sea's server self-test |
+
+Cylinder World reads nothing of Sea's. It reads the `weather` role (section 4), and Sea reads Cylinder World's `SeamParams` (Cworld `docs/REFLECTION-SURFACE.md`).

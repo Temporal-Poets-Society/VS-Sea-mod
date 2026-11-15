@@ -123,7 +123,8 @@ namespace ShaderCheck
                     {
                         int fp = Build("Wmap 0.5 " + far + " with its far-water contract", Load(Path.Combine(wm, "shaders"), far + ".vsh"), Load(Path.Combine(wm, "shaders"), far + ".fsh"), defs);
                         if (fp == 0) continue;
-                        foreach (string u in new[] { "sea_NightFloor", "sea_SkyReflect", "sea_WaveCount", "sea_Wave", "sea_WaveFactor", "sea_Sunset", "sea_Glint", "sea_Sun", "sea_SunColor", "sea_Weather" })
+                        // all 11 far-water uniforms World Map 0.5 declares (under the names before SEA-D57) and Sea sets
+                        foreach (string u in new[] { "sea_NightFloor", "sea_SkyReflect", "sea_WaveCount", "sea_Wave", "sea_WaveFactor", "sea_Sunset", "sea_Glint", "sea_Sun", "sea_Moon", "sea_SunColor", "sea_Weather" })
                         {
                             string old = WaterShader.Legacy(u);
                             Check(GL.GetUniformLocation(fp, u) >= 0 || GL.GetUniformLocation(fp, u + "[0]") >= 0

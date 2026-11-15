@@ -22,10 +22,13 @@ contracts: `docs\open-sea-contracts.md`; engine facts: `docs\engine-notes.md`.
 
 ## Test
 - `dotnet run --project tests\SeaTests` (offline: waves, wind, sea state, shader injection, dry hulls, configs).
-  It builds Sea.csproj in Debug for the contract snapshot (SE-0044). Run it in Debug (the default): with `-c Release` the
+  It builds Sea.csproj in Debug for the contract snapshot (SE-0044), and on that DLL checks what World Map and Earth
+  read by reflection and Sea's reader of the weather role (`ConsumerSurface`, open-sea-contracts sections 4 and 15).
+  Run it in Debug (the default): with `-c Release` the
   Sea project's own Release build would package `release\sea-<version>.zip` and refuse when that zip exists.
 - `dotnet run --project tests\ShaderCheck`: compiles the water shaders on this GPU and compares the dry cut
   pixel by pixel; needs a desktop session. Run it after any shader change (the offline tests only see the text).
+  With World Map's tree next door (or `WMAP_ROOT`) it also checks the 11 far-water uniforms Sea sets in its programs.
   `-- --vertex-cost` adds GPU timings of the water's vertex stage (SEA-D74); in game `.sea cost` times Sea's Use
   postfixes.
 - `dotnet run --project tests\SkyIntegrationCheck -- --vanilla`, and without `--vanilla` against the installed
@@ -50,6 +53,8 @@ contracts: `docs\open-sea-contracts.md`; engine facts: `docs\engine-notes.md`.
   storm's sea was lost that way, SE-0018).
 - The waves must stay the same on the server and every client (server wave clock, SEA-D06/D07); SeaTests checks
   it. Shader names use the `sea_` prefix (SEA-D57).
-- The open sea contracts (`seacontracts:*`) are read by Earth, Ships and Sea Monsters, and proposed to Rough Seas
-  but not agreed with hoblin: keep them compatible. Earth owns weather (D23); Sea takes its wind from a provider.
+- The open sea contracts (`seacontracts:*`) are read by Earth, Ships and Sea Monsters (Cylinder World reads Earth's
+  `weather` role), and proposed to Rough Seas but not agreed with hoblin: keep them compatible. Earth owns weather
+  (D23); Sea takes its wind from a provider. World Map and Earth also read Sea's typed API by reflection
+  (open-sea-contracts section 15): keep those names, types and kinds, or change the check with them.
 - Not checked: multiplayer, Rough Seas alongside, Terra Prety and Watersheds (SE-0029).
