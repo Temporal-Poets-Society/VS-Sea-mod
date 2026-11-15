@@ -27,6 +27,7 @@
     <Compile Include="CoastChecks.cs" />
     <Compile Include="ReviewChecks.cs" />
     <Compile Include="ContractSnapshot.cs" />
+    <Compile Include="ConsumerSurface.cs" />
     <Compile Include="CoastBench.cs" />
     <Compile Include="InjectionChecks.cs" />
     <Compile Include="FablePassChecks.cs" />

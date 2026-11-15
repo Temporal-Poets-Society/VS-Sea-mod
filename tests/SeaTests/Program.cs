@@ -173,6 +173,8 @@ namespace SeaTests
             BoatChecks.Run(Check);
             ContractChecks.Run(Check);
             ContractSnapshot.Run(Check);
+            Console.WriteLine("what World Map and Earth bind by reflection, and Sea's reader of the weather role");
+            ConsumerSurface.Run(Check);
             CoastBench.Run();
             InjectionChecks.Run(Check);
             FablePassChecks.Run(Check);
