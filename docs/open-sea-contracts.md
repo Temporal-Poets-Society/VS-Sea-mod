@@ -68,6 +68,7 @@ A producer that lost a role to a higher priority (say a priority-50 default on a
 | `storm` | `Func<double x, double z, double hours, (double Presence, double WindMps, string Kind)>` | `Presence` 0–1, all storms together; `WindMps` the storms' own wind; `Kind` of the strongest: `squall`, `gale`, `hurricane`, or null |
 | `rain` | `Func<double x, double z, double hours, (double Cloudness, double Precipitation)>` | both 0–1, vanilla's meaning of rain-cloud overlay and precipitation |
 | `writesVanilla` | `bool` | true: this producer drives vanilla's wind, rain, clouds, region patterns and weather events, and no other mod may |
+| `pressure` | `Func<double x, double z, double hours, double>` or absent | the air pressure at sea level, hPa; NaN while the producer has no weather yet. *Added 15 November within version 1 (R6): Earth 2.0.0, the value World Map 0.5.3's barometer reads from Earth's model (Earth EA-0132)* |
 
 The `Kind` codes are Rough Seas' (`SeaState.StormCode`), so his storm consumers (lightning, the Extreme Weathers tornado bridge) map without translation.
 
