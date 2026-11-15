@@ -67,7 +67,11 @@ namespace SeaTests
             check(root.GetProperty("playStyles").GetArrayLength() == 0 && attrs.Length == 1
                 && attrs[0].GetProperty("code").GetString() == "seaStormHeight"
                 && attrs[0].GetProperty("category").GetString() == "earth" && !attrs[0].GetProperty("onlyDuringWorldCreate").GetBoolean(),
-                "only the storm-height setting remains in the Earth tab");
+                "only the storm-height setting is declared, changeable after creation");
+            // (SEA-D80) off the world-creation screen: vanilla still writes the default ("json") into every new world
+            // (WorldConfig.allDefaultValues) and /worldconfig still sets it
+            check(attrs[0].TryGetProperty("onCustomizeScreen", out var shown) && shown.ValueKind == JsonValueKind.False,
+                "storm height is not on the world-creation screen (onCustomizeScreen false); set with /worldconfig");
             var storm = attrs[0];
             // (SE-0066) the default is the server's sea.json; the three heights stay as they were
             check(storm.GetProperty("dataType").GetString() == "DropDown" && storm.GetProperty("default").GetString() == "json"
