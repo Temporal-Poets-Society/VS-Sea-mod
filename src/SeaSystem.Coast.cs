@@ -12,8 +12,12 @@ namespace Sea
     /// <summary>(SE-0046) The coast's public face: the coast map, surf, swash and spray, currents and lee.</summary>
     public partial class SeaSystem
     {
-        /// <summary>(0.6.0) Client: water running up the beaches (null on a server).</summary>
+        /// <summary>(0.6.0) Client: water running up the beaches (null on a server, and while <see cref="SwashDrawn"/> is false).</summary>
         public SwashRenderer Swash => swash;
+
+        /// <summary>(0.6.2, SEA-D81, SE-0076) Whether the client draws swash: off until it is reworked (it drew whole pale
+        /// squares, on grass too, and a patchwork on sand).</summary>
+        public static readonly bool SwashDrawn = false;
 
         /// <summary>(0.6.0) Client: the surf spray (null on a server).</summary>
         public SurfSpray Spray => surfSpray;
@@ -24,11 +28,11 @@ namespace Sea
         public CoastField Coast => coast;
 
         /// <summary>
-        /// (0.6.0) Waves feel the sea floor: the config's Surf, in the world itself (not on a Cylinder World ring, whose
-        /// coordinates wrap where the coast map's don't).
+        /// (0.6.0) Waves feel the sea floor near coasts. (0.6.2, SEA-D82) Only with the config's Coasts on, which is off
+        /// by default until the coast is reworked.
         /// </summary>
         // (SE-0053) on a ring too: the coast map wraps on it (off only for a ring that doesn't line up with its tiles)
-        public bool SurfOn => coast != null && Config?.Surf != false && !coast.RingMisaligned;
+        public bool SurfOn => coast != null && Config?.Coasts == true && !coast.RingMisaligned;
 
         /// <summary>(0.6.0) The coast's numbers at a world position (Coastal false off the coast, or before its tile is solved).</summary>
         public CoastSample CoastAt(double x, double z) =>

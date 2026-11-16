@@ -89,9 +89,9 @@ namespace Sea
             double x = ep.Pos.X, z = ep.Pos.Z;
             var n = sys.Coast.Counts;
             var k = sys.Coast.Costs;
-            string head = $"Surf {(sys.SurfOn ? "on" : "off (config Surf, or a world ring that doesn't fit the 32-block tiles)")}; coast map: {n.Tiles} tiles ({sys.Coast.UniformTiles} of all that came all sea or all land, without a solve), {n.Columns} chunk columns scanned, {n.Wanted} waiting. "
+            string head = $"Coasts {(sys.SurfOn ? "on" : "off (config Coasts, off by default since 0.6.2; or a world ring that doesn't fit the 32-block tiles)")}; coast map: {n.Tiles} tiles ({sys.Coast.UniformTiles} of all that came all sea or all land, without a solve), {n.Columns} chunk columns scanned, {n.Wanted} waiting. "
                 + $"Cost: {k.Scans} column scans at {k.ScanMs:0.00} ms each (main thread), {k.Solves} tile solves at {k.SolveMs:0.0} ms each, longest {k.SolveMaxMs:0.0} ms (background); "
-                + $"{k.Rescans} columns scanned again after block changes, {k.Resolves} tiles solved again. Swash: {sys.Swash?.LastCells ?? 0} beach cells, {sys.Swash?.LastMs ?? 0:0.00} ms last frame. "
+                + $"{k.Rescans} columns scanned again after block changes, {k.Resolves} tiles solved again. Swash: {(sys.Swash == null ? "off in this version" : $"{sys.Swash.LastCells} beach cells, {sys.Swash.LastMs:0.00} ms last frame")}. "
                 + $"Map: {sys.CoastUploads.Refreshes} refreshes, uploaded {sys.CoastUploads.Whole} whole and {sys.CoastUploads.Tiles} single tiles, {sys.CoastUploads.MB:0.0} MB (a whole map is 4 MB).";
             var c = sys.CoastAt(x, z);
             if (!c.Affects) return head + " Here: open sea (deeper than " + CoastMath.MaxDepth + " blocks, no land upwave, or not solved yet).";

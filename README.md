@@ -1,5 +1,12 @@
 # Sea — waves that follow the wind, the same sea for everyone (Vintage Story 1.22)
 
+**0.6.2 (16 November 2026):** **Coasts are off by default** until they are reworked (SEA-D82, SE-0077): near coasts
+the waves showed borders where they turn toward the shore. The open sea's waves now run up to every shore, as before
+0.6.0 on Earth worlds. The new setting `Coasts` in `sea.json` (false) brings back the surf, lee, reflection, currents
+and rips; it replaces `Surf`, so a `sea.json` that 0.6.0 or 0.6.1 wrote with `"Surf": true` goes off too. **Swash is
+off** whatever the setting (SEA-D81, SE-0076): it drew the water running up the shore as whole pale squares, on grass
+as well as sand, and as a patchwork of light and dark squares on sandy beaches. Nothing else changed.
+
 **0.6.1 (15 November 2026):** **Storm wave height** is no longer on the world-creation screen's Earth tab. New worlds
 still take the server's `sea.json` (`StormHeightScale`, its default), and an admin still sets a world's height with
 `/worldconfig seaStormHeight 1.5` (`json`, `1`, `1.5` or `2.2`); restart the world or server to apply. Nothing else
@@ -15,7 +22,8 @@ features were checked in game on one client.
   takes to reach the shore from each column. Over shallow water the swell turns until its crests run along the beach,
   grows as the water shallows, is held to a height the depth allows (significant height at most 0.6 × depth) and
   steepens into breakers with a peaked crest and a steep shoreward face. Breaking surf draws whitewater and throws
-  spray. Boats, ships and the open contracts ride the same surface the shader draws. Config `Surf` (on).
+  spray. Boats, ships and the open contracts ride the same surface the shader draws. Config `Surf` (on); since 0.6.2
+  `Coasts`, off by default (SEA-D82).
 - **The lee of land.** Islands and headlands keep waves off the water behind them, deep water too: per column the coast
   map looks upwave in 8 directions for land and lets less through the nearer it is. Swell and long waves bend in
   behind it by that share; the wind's own sea comes back with the fetch, its short waves first and its longer waves
@@ -32,7 +40,8 @@ features were checked in game on one client.
   seaward. Rafts, sailboats and Ships' rowboats drift with the current; ships do in Ships.
 - **Swash.** Each wave runs up the beach as a thin sheet with a white front, as high as Stockdon's run-up for the
   sea reaching that stretch of beach (sheltered coves get less), timed by the surf's own phase at the nearest shore
-  point, so it runs up one part of a beach after another. The sand stays dark and wet for a few seconds.
+  point, so it runs up one part of a beach after another. The sand stays dark and wet for a few seconds. *Off since
+  0.6.2 until it is reworked (SEA-D81).*
 - **Steeper storms.** A gale's sea keeps the old shape (30 times as long as it is high); stronger winds make it
   steeper, down to 18 times at Beaufort 12, as a young storm sea is. Force 12 is now 5.5 blocks high and 99 long,
   every 8 s (was 165 long, 10.3 s). In a storm the whitecaps break more easily and leave a longer shoulder.
@@ -414,7 +423,7 @@ Nothing about the wind or the waves is sent while you play, except a clock:
 | `SeaWindStrength` | 0.3 | without a wind provider: that steady wind's strength, 0–1.5 (0 = a calm sea) (0.4.0) |
 | `CelestialReflections` | 1 | sun/moon trails; 0 restores vanilla highlights; range 0–2 |
 | `SkyReflections` | 1 | the sky reflected by Fresnel, near and on Wmap's distant sea (0.4.4; no star reflections); 1 physical; 0 disables; range 0–2 |
-| `Surf` | true | (0.6.0) waves feel the sea floor near coasts: they turn toward the beach, steepen, break (whitewater, spray) and drive a longshore current. On a Cylinder World ring too |
+| `Coasts` | false | (0.6.2, SEA-D82; 0.6.0–0.6.1 `Surf`, on) waves feel the sea floor near coasts: they turn toward the beach, steepen, break (whitewater, spray), are held back behind land, thrown back by cliffs and drive currents and rips. On a Cylinder World ring too. Off by default until the coast is reworked (SE-0077); clients follow the server's value |
 | `NightVisibility` | 1 | outdoor ambient night floor, real twilight and local-moon correction on the client's rendering ([night light](docs/night-light.md)); 1 = clear moonless 0.10, high full moon 0.40 (0.4.7-night; 0.4.4–0.4.7-pre: 0.15 / 0.45, now 1.5); 0 keeps the game's own night and twilight; range 0–2 |
 
 A negative, NaN or infinite number goes back to its default when the server loads the file (0.3.7); `SeaWindFrom` may

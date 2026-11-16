@@ -39,9 +39,14 @@ namespace Sea
 
         // Protobuf members 16 and 17 were cosmetic wakes. Retired in 0.5.1; never reuse.
 
-        /// <summary>(0.6.0) Waves feel the sea floor near coasts: they turn toward the beach, steepen, break and drive a
-        /// longshore current (CoastMath). Clients follow the server's value.</summary>
-        [ProtoMember(18, IsRequired = true)] public bool Surf = true;
+        // Protobuf member 18 was Surf (0.6.0-0.6.1, on by default). Retired in 0.6.2 for Coasts, so that every sea.json
+        // that wrote "Surf": true goes off with the new default; never reuse. Old files keep "Surf" until the server writes
+        // the file back without it.
+
+        /// <summary>(0.6.2, SEA-D82) Waves feel the sea floor near coasts: they turn toward the beach, steepen, break, are
+        /// held back behind land, thrown back by cliffs and drive currents and rips (CoastMath). Off by default until the
+        /// coast is reworked (SE-0077). Clients follow the server's value.</summary>
+        [ProtoMember(19, IsRequired = true)] public bool Coasts = false;
 
         /// <summary>
         /// The loaded world's choices over the checked sea.json defaults. Work on a copy so world choices are

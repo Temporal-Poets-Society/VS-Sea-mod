@@ -15,6 +15,9 @@ namespace Sea
     /// sea's own phase at the point of the shore line in front of it, where the shader's breakers meet the shore, so the
     /// waves run up a beach along it as they come in at an angle, not all at once. Drawn as thin translucent quads
     /// on the sand: the film, white at its front, and sand darkened where it has just been wet.
+    /// (0.6.2, SEA-D81) Not registered while <see cref="SeaSystem.SwashDrawn"/> is false. What to rework (SE-0076): it draws
+    /// on any land at the water (grass too); each cell's reach divides by the floor slope next to the water, which whole-block
+    /// depths make 0.02 or 0.5, so neighbours reach 50 × or 2 × the run-up; and every cell is one flat-coloured square.
     /// </summary>
     public sealed class SwashRenderer : IRenderer
     {

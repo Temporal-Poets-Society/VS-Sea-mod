@@ -47,9 +47,13 @@ namespace Sea
             // (0.6.0) spray and, from a gale, spindrift off the open sea's breaking crests
             crestSpray = new CrestSpray(api, this);
             Listen(api.Event.RegisterGameTickListener(_ => { if (Model != null) crestSpray.Tick(); }, 100));
-            // (0.6.0) water running up the beaches
-            swash = new SwashRenderer(api, this);
-            api.Event.RegisterRenderer(swash, EnumRenderStage.Opaque, "sea-swash");
+            // (0.6.0) water running up the beaches. (0.6.2, SEA-D81, SE-0076) off until it is reworked: it drew whole pale
+            // squares, on grass too, and a patchwork on sand. The renderer stays in the code for the rework; Swash is null.
+            if (SwashDrawn)
+            {
+                swash = new SwashRenderer(api, this);
+                api.Event.RegisterRenderer(swash, EnumRenderStage.Opaque, "sea-swash");
+            }
             SeaCommands.RegisterClient(api, this);
             // (SE-0039) a step-down from an earlier world of this game session still holds: say so in this world's log
             if (Hooks.StepDowns() is string steps)
