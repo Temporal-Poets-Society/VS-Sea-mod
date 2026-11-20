@@ -30,6 +30,7 @@ defaults are used.
 | `StormHeightScale` | `1` | 0 to 4 | Storm seas' height (and length), used by worlds whose `seaStormHeight` is `json`. Blended in between wind strengths 0.4 and 0.8; breezes stay the same. |
 | `SeaWindFrom` | `270` | any compass bearing | Without a weather mod: where the steady wind the sea follows blows from, in degrees (270 = west). The waves only, not sailing. |
 | `SeaWindStrength` | `0.3` | 0 to 1.5 | Without a weather mod: that wind's strength (0 = a calm sea). The waves only, not sailing. |
+| `SailboatsByWind` | `true` | | The vanilla sailboat sails by the wind (no drive within 40° of it, best on a reach) and turns its yard to it. `false`: the game's own sail, full speed whatever the wind. Ships' ships have their own `SailByWind` in `ships.json`. Since 0.6.3. See [Boats](Boats). |
 | `Coasts` | `false` | | Waves feel the sea floor near coasts: they turn, steepen, break and drive currents. Off by default since 0.6.2 until the coasts are reworked; set `true` to try them. See [Coasts](Coasts). |
 | `CelestialReflections` | `1` | 0 to 2 | Sun glitter and moon trail; 0 gives vanilla's sun highlight. |
 | `SkyReflections` | `1` | 0 to 2 | The sky reflected in the water; 1 is physically right, 0 off. |

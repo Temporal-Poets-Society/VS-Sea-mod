@@ -37,7 +37,7 @@ itself as Sea's wind provider when both are installed; without Earth Sea takes v
 
 | Feature | Without Earth | Notes |
 |---|---|---|
-| Wind | Vanilla's (strength only, no direction); the sea follows the config's steady wind | Self-test: `WindAt` is vanilla's, Sea patches none of vanilla's weather, the sea state is the steady wind's. Vanilla's weather stays vanilla's (no storms, no directional rain or clouds) |
+| Wind | Vanilla's (blowing east; with a wind direction mod such as Pelagus Winds or Wind Vanes, its direction) for ships and sailboats; the sea follows the config's steady wind | Self-test: `WindAt` is vanilla's, a direction another mod adds is kept (SE-0079), Sea patches none of vanilla's weather, the sea state is the steady wind's. Vanilla's weather stays vanilla's (no storms, no directional rain or clouds) |
 | Sea state, waves, the wave clock | Works | Self-test: the waves are the same for every caller |
 | Latitudes | Vanilla's realistic climate: a triangle wave in z between the poles | Only shown by `/sea` |
 | Sheltered water | Vanilla `OceanMap` | Self-test: 0.20 at the inland spawn of seed 4242 |

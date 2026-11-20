@@ -18,6 +18,7 @@
 | **Rough Seas** | A separate mod with its own waves. Running both together hasn't been tested; both draw the sea's waves. Sea publishes its wind, waves and hulls in an open form that any mod can read without depending on Sea; Rough Seas doesn't use it so far. |
 | **LOD mods** (Doden's Landscapes, Vintage Horizons, Farseer, ChunkLOD) | Not supported with the suite's worlds; World Map is the far terrain. Sea's glitter and foam fade by your own view distance setting. |
 | **Terrain mods** that keep the game's ocean map | Work: lakes and the open sea are told apart from the same map. A world type without an ocean map (superflat) keeps vanilla's ripples, while boats there still rock on small waves that aren't drawn (a known mismatch). |
+| **Wind direction mods** (Pelagus Winds, Wind Vanes & Randomized Winds, Simple Wind Direction) | Since 0.6.3, without Earth: ships and the vanilla sailboat sail by the direction they give the wind. The waves keep the steady wind from `sea.json`. Not tested in game with these mods. To sail without the wind, `SailboatsByWind` false in `sea.json` (vanilla sailboats) and `SailByWind` false in `ships.json` (Ships). |
 | **Other weather or wind mods** | Sea changes none of the game's weather. A mod that wants the sea to follow its wind either publishes the open weather role or registers as Sea's wind provider. |
 | **Shader packs** that change the water shader's lines | Sea may not get its code in: then vanilla waves and no dry hulls, with a warning in the log and in `.sea`. |
 

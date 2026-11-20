@@ -13,7 +13,9 @@ Sea doesn't make weather. The wind its waves follow is, in this order:
 1. **An admin's fixed wind** (`/sea setwind`), while it lasts.
 2. **A weather mod's wind**, normally **Earth**: its real prevailing winds by month, travelling storms and gusts.
 3. **Otherwise a steady wind from the config** (`SeaWindFrom`, `SeaWindStrength`): by default a medium breeze from the
-   west. Vanilla's own wind changes from moment to moment and has no direction, so the sea can't follow it.
+   west. The game's own wind changes from moment to moment and isn't the same on every player's game, so the sea
+   can't follow it. Boats and ships do: they sail by the game's wind, from the west or from wherever a wind direction
+   mod (Pelagus Winds, Wind Vanes) turns it (since 0.6.3).
 
 `/sea` says which one it is.
 

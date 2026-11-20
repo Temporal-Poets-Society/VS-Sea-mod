@@ -293,7 +293,9 @@ namespace Sea
             string name = sys.WindProviderName;
             if (name != null) return name;
             var m = sys.Model;
-            return m == null ? "vanilla (no wind provider such as Earth; no direction)" : $"vanilla (no wind provider such as Earth; no direction; the sea follows a steady {m.SteadySeaWind})";
+            // (SE-0079) vanilla's own wind blows east; a wind direction mod turns it, and ships and sailboats follow that
+            const string vanilla = "vanilla (no wind provider such as Earth; east unless a wind mod turns it";
+            return m == null ? vanilla + ")" : $"{vanilla}; the sea follows a steady {m.SteadySeaWind})";
         }
 
         public static string Report(SeaSystem sys, EntityPos pos)

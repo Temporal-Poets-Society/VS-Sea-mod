@@ -21,7 +21,9 @@ is athwart; reaching it braces toward the windward side. No manual trimming cont
 The gameplay polar has a 40° upwind no-go cone and useful close-hauled drive at 45° on either tack. Beam wind 0.3
 has native sail thrust; strength scales drive, capped at twice native thrust. Best drive is 90–120° off the wind,
 75% downwind. Furled-sail rowing and native rudder controls remain. There is no leeway or capsizing model.
-Wind comes from `SeaSystem.WindAt`: admin override, provider (normally Earth), otherwise native strength blowing east.
+Wind comes from `SeaSystem.WindAt`: admin override, provider (normally Earth), otherwise the game's own wind vector
+(vanilla's blows east; a wind direction mod such as Pelagus Winds or Wind Vanes turns it, SE-0079). `SailboatsByWind`
+false in `sea.json` turns this off: the sailboat's sail is vanilla's throttle again (SEA-D83).
 Without Sea, native propulsion remains unchanged. Sea never references a Ships assembly.
 
 ## Water aboard

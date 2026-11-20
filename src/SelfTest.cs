@@ -306,6 +306,23 @@ namespace Sea
             var off = System.Threading.Tasks.Task.Run(() => (sys.WindAt(x, z), sys.WindAt(x + 3, z - 5))).Result;
             Check(Math.Abs(off.Item1.X - w.X) < 1e-9 && Math.Abs(off.Item2.X - w.X) < 1e-9,
                 $"no provider, from another thread: the wind the main thread read there ({off.Item1.X:0.000})");
+
+            // (SE-0079) a wind direction mod (Pelagus Winds, Wind Vanes...) turns vanilla's vector after vanilla's handler:
+            // ships and sailboats get its direction, here and on other threads; the sea still follows the steady wind
+            OnGetWindSpeedDelegate turned = (Vec3d at, ref Vec3d speed) => { speed.X = -0.3; speed.Z = 0.4; };
+            sapi.Event.OnGetWindSpeed += turned;
+            Wind tw, tOff;
+            try
+            {
+                tw = sys.WindAt(x, z);
+                tOff = System.Threading.Tasks.Task.Run(() => sys.WindAt(x, z)).Result;
+            }
+            finally { sapi.Event.OnGetWindSpeed -= turned; }
+            var steadyBefore = m.SeaWind(x, z, h);
+            Check(Math.Abs(tw.X + 0.3) < 1e-9 && Math.Abs(tw.Z - 0.4) < 1e-9 && Math.Abs(tOff.Z - 0.4) < 1e-9
+                && steadyBefore.X == m.SteadySeaWind.X && steadyBefore.Z == m.SteadySeaWind.Z,
+                $"no provider, a wind direction mod: its direction is kept ({tw}, from another thread {tOff}); the sea keeps the steady wind");
+            sys.WindAt(x, z);   // (vanilla's own reading kept again for the region)
             var steady = m.SteadySeaWind;
             var st = m.SeaAt(x, z, h);
             var sw0 = m.SeaWind(x, z, h);

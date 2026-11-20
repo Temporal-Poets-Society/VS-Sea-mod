@@ -854,6 +854,14 @@ namespace SeaTests
                     && new SeaConfig { StormHeightScale = float.PositiveInfinity }.Checked().StormHeightScale == 1,
                     "storm height multiplier reaches clients unchanged; negative/non-finite values return to 1");
 
+                // (SEA-D83) sailboats sail by the wind unless the server says not: off reaches clients as off (a false
+                // left out would read as the default, true), and a 0.6.2 server's packet without member 20 reads as on
+                sent.Config.SailboatsByWind = false;
+                got = Vintagestory.API.Util.SerializerUtil.Deserialize<SeaParamsPacket>(Vintagestory.API.Util.SerializerUtil.Serialize(sent)).Config;
+                var before = Vintagestory.API.Util.SerializerUtil.Deserialize<SeaConfig>(Vintagestory.API.Util.SerializerUtil.Serialize(new OldSeaConfig { WaveScale = 1 }));
+                Check(d.SailboatsByWind && !got.SailboatsByWind && before.SailboatsByWind,
+                    "SailboatsByWind is on by default, off reaches clients as off, an older server's config reads as on");
+
                 // (0.4.0) a 0.3 server's config (members 1-8 were Sea's weather, now retired) still reads: those are skipped
                 var old = new OldSeaConfig { WindModel = "Steady", PrevailingStrength = 2, Variability = 3, Gusts = 4, StormFrequency = 5, StormRadius = 6, StormSpeed = 7, SeasonShift = 8, WaveScale = 0.5f, CelestialReflections = 0 };
                 var read = Vintagestory.API.Util.SerializerUtil.Deserialize<SeaConfig>(Vintagestory.API.Util.SerializerUtil.Serialize(old));

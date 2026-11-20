@@ -373,8 +373,20 @@ namespace SeaBoatProbe
                 harmony.Patch(original, postfix: new HarmonyMethod(patch));
                 var turn = boat.SeatsToMotion(0.05f);
                 Check(turn.Y > 0, "native rudder control remains available");
+                // (SEA-D83) SailboatsByWind off: vanilla's thrust even dead into the wind, the hook still in
+                sea.SetWindProvider("boat-head", (x, z, h, g) => (0.3, 0), null);
+                boat.Pos.Yaw = -(float)Math.PI / 2;
+                double headOn = boat.SeatsToMotion(0.05f).X;
+                sea.Config.SailboatsByWind = false;
+                double headOff = boat.SeatsToMotion(0.05f).X;
+                Check(headOn < 1e-9 && Math.Abs(headOff - vanilla) < 1e-9,
+                    $"SailboatsByWind off: the sail is vanilla's throttle again, into the wind too ({headOff:0.0000}, vanilla {vanilla:0.0000})");
             }
-            finally { seat.Passenger = null; seat.controls.Left = false; boat.Pos.Yaw = yaw; boat.WatchedAttributes.SetInt("sailPosition", 0); }
+            finally
+            {
+                sea.Config.SailboatsByWind = true; sea.ClearWindProvider("boat-head");
+                seat.Passenger = null; seat.controls.Left = false; boat.Pos.Yaw = yaw; boat.WatchedAttributes.SetInt("sailPosition", 0);
+            }
         }
     }
     public class Driver : EntityPlayer

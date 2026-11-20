@@ -23,8 +23,11 @@ storm. No ship mod is needed.
 - The drive follows the wind: the game's normal sail power in a medium breeze, half in a light one, none in a calm,
   and up to twice from a strong breeze on. Water in the boat slows it.
 - The wind is Earth's on Earth worlds, or an admin's fixed wind. Without a weather mod the sail takes the game's own
-  wind strength at that place, always from the west; `SeaWindFrom` and `SeaWindStrength` drive the waves only.
+  wind at that place: its strength, from the west, or from wherever a wind direction mod (Pelagus Winds, Wind Vanes)
+  turns it (since 0.6.3). `SeaWindFrom` and `SeaWindStrength` drive the waves only.
 - There is no leeway and no capsizing.
+- **Don't want it?** An admin sets `SailboatsByWind` to `false` in [Settings](Settings): the sail is the game's own
+  again, full speed whatever the wind, and the yard stays square. The waves and water aboard stay.
 
 ## Water aboard (sailboat)
 

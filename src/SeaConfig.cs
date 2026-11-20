@@ -27,7 +27,8 @@ namespace Sea
 
         /// <summary>
         /// (0.4.0) Without a wind provider (no Earth): the compass bearing the steady wind the sea follows blows from.
-        /// Vanilla's wind has no direction and isn't the same on every side, so the sea can't follow it.
+        /// Vanilla's wind (east, or as a wind direction mod turns it) changes from tick to tick and isn't the same on every
+        /// side, so the sea can't follow it; ships and sailboats do (SE-0079).
         /// </summary>
         [ProtoMember(13, IsRequired = true)] public float SeaWindFrom = 270;
         /// <summary>(0.4.0) Without a wind provider: the strength of that steady wind (0.3 medium breeze; 0 = a calm sea).</summary>
@@ -47,6 +48,12 @@ namespace Sea
         /// held back behind land, thrown back by cliffs and drive currents and rips (CoastMath). Off by default until the
         /// coast is reworked (SE-0077). Clients follow the server's value.</summary>
         [ProtoMember(19, IsRequired = true)] public bool Coasts = false;
+
+        /// <summary>(SEA-D83, SE-0079) Vanilla sailboats sail by the wind (its direction against the heading: a no-go cone
+        /// upwind, best on a reach) and brace their yard to it. Off, the sail is vanilla's throttle again (full speed
+        /// whatever the wind) and the yard stays square; waves, flooding and dry hulls are unchanged. Named like Ships'
+        /// own <c>SailByWind</c>, which does the same for its ships. Clients follow the server's value.</summary>
+        [ProtoMember(20, IsRequired = true)] public bool SailboatsByWind = true;
 
         /// <summary>
         /// The loaded world's choices over the checked sea.json defaults. Work on a copy so world choices are

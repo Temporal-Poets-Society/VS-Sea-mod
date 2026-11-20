@@ -17,8 +17,8 @@ namespace Sea
 
         /// <summary>
         /// The wind at a place now: an admin's fixed wind, else the provider's (gusts included), else vanilla's
-        /// strength, blowing east like vanilla's. (SE-0015) An admin's change of the fixed wind counts from its wave
-        /// sample on, as for the waves, so the server and every client switch at the same moment.
+        /// (blowing east, or the way a wind direction mod turns it; SE-0079). (SE-0015) An admin's change of the fixed
+        /// wind counts from its wave sample on, as for the waves, so the server and every client switch at the same moment.
         /// </summary>
         public Wind WindAt(double x, double z) => WindAt(x, z, Hours, NowSample);
 
@@ -32,7 +32,7 @@ namespace Sea
             if (m != null && m.Decides(hours, sample)) return m.At(x, z, hours, true, sample);
             var p = provider;
             if (p != null) return p.At(x, z, hours, true);
-            return new Wind(VanillaWind(x, z), 0);
+            return VanillaWind(x, z);
         }
 
         /// <summary>(SE-0015) The wave sample now on this side: what "now" means for an admin's fixed wind.</summary>
@@ -49,25 +49,26 @@ namespace Sea
         // ---------------------------------------------------------------- (SE-0017) vanilla's wind
 
         int mainThread = -1;
-        readonly System.Collections.Generic.Dictionary<(int, int), double> vanillaWind = new();
-        double lastVanillaWind;
+        readonly System.Collections.Generic.Dictionary<(int, int), Wind> vanillaWind = new();
+        Wind lastVanillaWind;
         const int VanillaWindCells = 256;
 
         /// <summary>
-        /// Vanilla's wind strength at a place. Its weather is read through the block accessor, which belongs to the main
-        /// thread: there it's read and kept per map region; other threads get the region's kept value (refreshed every
-        /// second around the players), else the last one read.
+        /// Vanilla's wind at a place, as the vector the game's wind lookup gives (+X east, +Z south). Vanilla's own weather
+        /// sets only X, its strength, so it blows east; (SE-0079) a wind direction mod (Pelagus Winds, Wind Vanes, Simple
+        /// Wind Direction and the like) turns that vector, and the direction is kept. Its weather is read through the block
+        /// accessor, which belongs to the main thread: there it's read and kept per map region; other threads get the
+        /// region's kept value (refreshed every second around the players), else the last one read.
         /// </summary>
-        double VanillaWind(double x, double z)
+        Wind VanillaWind(double x, double z)
         {
             int rs = Math.Max(1, RegionSize);
             var key = ((int)Math.Floor(x / rs), (int)Math.Floor(z / rs));
             if (Environment.CurrentManagedThreadId == mainThread)
             {
-                double w;
-                try { w = api.World.BlockAccessor.GetWindSpeedAt(new Vec3d(x, api.World.SeaLevel, z)).X; }
+                Wind w;
+                try { w = Vanilla(api.World.BlockAccessor.GetWindSpeedAt(new Vec3d(x, api.World.SeaLevel, z))); }
                 catch (Exception) { return lastVanillaWind; }
-                if (!double.IsFinite(w)) w = 0;
                 lock (vanillaWind)
                 {
                     if (vanillaWind.Count >= VanillaWindCells && !vanillaWind.ContainsKey(key)) vanillaWind.Clear();
@@ -76,8 +77,12 @@ namespace Sea
                 }
                 return w;
             }
-            lock (vanillaWind) return vanillaWind.TryGetValue(key, out double kept) ? kept : lastVanillaWind;
+            lock (vanillaWind) return vanillaWind.TryGetValue(key, out var kept) ? kept : lastVanillaWind;
         }
+
+        /// <summary>(SE-0079) The game's wind vector as Sea's wind: X and Z kept; calm when either isn't a number.</summary>
+        internal static Wind Vanilla(Vec3d v) =>
+            v != null && double.IsFinite(v.X) && double.IsFinite(v.Z) ? new Wind(v.X, v.Z) : default;
 
         /// <summary>Main thread, once a second: vanilla's wind where the players are, for other threads (only while it's in use).</summary>
         void RefreshVanillaWind()

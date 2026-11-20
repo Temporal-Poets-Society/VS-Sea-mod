@@ -26,4 +26,12 @@ built in the main checkout from `d333fde` (0 warnings). (A first 0.6.2 build wit
   Cylinder World and Magelan).
 - In game: the author, with this build installed, 16 November: "Coast looks ok now".
 
-Not tagged, pushed or uploaded.
+## Published (16 November 2026, on the author's word: "Yes, publish")
+
+- Private: tag `v0.6.2` on `4e6b666`, pushed to `origin` with `main`.
+- Public (`tps`): a release snapshot `c3bcec5` on top of `e47ae88` (0.6.1), tagged `v0.6.2`. From this release
+  Sea's public repo gets snapshots, as Earth's does, instead of the private history.
+- GitHub release [v0.6.2](https://github.com/Temporal-Poets-Society/VS-Sea-mod/releases/tag/v0.6.2) (Latest) with
+  `sea-0.6.2.zip`; downloaded back: 208,192 bytes, the same SHA-256.
+- Wiki from `v0.6.2`'s `docs/wiki` (wiki commit `0cd1f80`).
+- Mod DB: not uploaded (the author's).

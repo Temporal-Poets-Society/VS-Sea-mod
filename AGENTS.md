@@ -1,17 +1,20 @@
 # Sea (`sea`)
 
 Waves that travel with the wind and are the same on the server and every client, drawn by Sea's own water-shader
-code; ships and vanilla boats ride them, ship hulls stay dry inside, and coasts get surf, lee and currents. Suite
+code; ships and vanilla boats ride them, ship hulls stay dry inside, and coasts get surf, lee and currents (off by
+default since 0.6.2, SEA-D82). Suite
 rules: `C:\VS mods\AGENTS.md`. Current state: the card `C:\VS mods\overview\mods\sea.md`. Open issues:
 `tools\Update-Backlog.ps1 -Mod sea` from `C:\VS mods` (prefix SE). Decisions: `docs\DECISIONS.md` (SEA-Dnn); the
 contracts: `docs\open-sea-contracts.md`; engine facts: `docs\engine-notes.md`.
 
 ## Repository
 - Trunk `main`, tracking the private `origin` (`andrisberzins-1/VS-Sea-mod`): all work, branches and the release
-  tags (`v0.5.1`, `v0.5.2`, `v0.6.0`); old lines are `archive/*` tags.
-- Public `tps` (`Temporal-Poets-Society/VS-Sea-mod`, with a wiki) gets semi-clean release versions only: `main`
-  as of each release and that release's tag `vX.Y.Z` with a GitHub release carrying the zip (suite rule, 13 November
-  2026; first full release `v0.6.0`). Between releases it is behind on purpose. Push there only on the author's word.
+  tags (`v0.5.1` to `v0.6.2`); old lines are `archive/*` tags.
+- Public `tps` (`Temporal-Poets-Society/VS-Sea-mod`, with a wiki) gets release versions only, each tagged `vX.Y.Z`
+  with a GitHub release carrying the zip. Up to 0.6.1 it got `main` itself (shared history); from 0.6.2 a release
+  snapshot on top of `tps/main` (`git archive <tag>` into a clone of `tps`, commit, tag, push), as Earth's does.
+  The public tags are not the private ones: don't fetch `tps` tags into this repo. Between releases it is behind on
+  purpose. Push there only on the author's word.
 
 ## Build
 - `dotnet build Sea.csproj -c Release` gives `release\sea-<version>.zip`. It refuses to overwrite an existing zip:

@@ -1,5 +1,12 @@
 # Sea — waves that follow the wind, the same sea for everyone (Vintage Story 1.22)
 
+**0.6.3 (20 November 2026):** **Wind direction mods steer the sails** (SEA-D83, SE-0079). Without Earth, Sea used
+only the east–west part of the game's wind, so a mod that gives the wind a direction (Pelagus Winds, Wind Vanes &
+Randomized Winds, Simple Wind Direction) didn't reach ships and sailboats: a north wind read as calm. Sea now keeps
+the direction; with the game's own wind nothing changes. The waves still follow the steady wind in `sea.json`. New
+setting `SailboatsByWind` (on): off, the vanilla sailboat's sail is the game's own throttle again, full speed whatever
+the wind; Ships' ships have their own `SailByWind` in `ships.json`.
+
 **0.6.2 (16 November 2026):** **Coasts are off by default** until they are reworked (SEA-D82, SE-0077): near coasts
 the waves showed borders where they turn toward the shore. The open sea's waves now run up to every shore, as before
 0.6.0 on Earth worlds. The new setting `Coasts` in `sea.json` (false) brings back the surf, lee, reflection, currents
@@ -293,9 +300,14 @@ Sea doesn't make weather (0.4.0). The wind the sea and ships follow is, in this 
    prevailing winds by month, travelling storms and gusts). Ships get its wind with gusts; the sea state follows it
    without them.
 3. **Otherwise vanilla's** wind for ships and other mods (`WindAt`): its strength, blowing east, since vanilla's wind
-   has no direction. The sea can't follow that (it changes from tick to tick and reaches each client at another
-   moment), so it follows a **steady wind from the config** (`SeaWindFrom`, `SeaWindStrength`; by default a medium
-   breeze, 0.3, from the west), the same on every side.
+   has no direction. A wind direction mod (Pelagus Winds, Wind Vanes & Randomized Winds, Simple Wind Direction and the
+   like) turns the game's wind, and ships, vanilla sailboats and other mods then get that direction (SE-0079). The sea
+   can't follow vanilla's wind (it changes from tick to tick and reaches each client at another moment), so it follows
+   a **steady wind from the config** (`SeaWindFrom`, `SeaWindStrength`; by default a medium breeze, 0.3, from the
+   west), the same on every side.
+
+Vanilla sailboats sail by this wind (a no-go cone upwind, best on a reach). `SailboatsByWind` false in `sea.json` makes
+their sail vanilla's throttle again; Ships has its own `SailByWind` in `ships.json` for its ships (SEA-D83).
 
 `/sea` and `.sea` say which one it is. Vanilla's own weather effects (trees, rain, clouds, wind sound, wind chill) are
 the provider's to drive, or vanilla's without one: a fixed wind from `/sea setwind` only reaches Sea's sea and ships.
@@ -424,6 +436,7 @@ Nothing about the wind or the waves is sent while you play, except a clock:
 | `CelestialReflections` | 1 | sun/moon trails; 0 restores vanilla highlights; range 0–2 |
 | `SkyReflections` | 1 | the sky reflected by Fresnel, near and on Wmap's distant sea (0.4.4; no star reflections); 1 physical; 0 disables; range 0–2 |
 | `Coasts` | false | (0.6.2, SEA-D82; 0.6.0–0.6.1 `Surf`, on) waves feel the sea floor near coasts: they turn toward the beach, steepen, break (whitewater, spray), are held back behind land, thrown back by cliffs and drive currents and rips. On a Cylinder World ring too. Off by default until the coast is reworked (SE-0077); clients follow the server's value |
+| `SailboatsByWind` | true | (SEA-D83) vanilla sailboats sail by the wind: its direction against the heading sets their speed (none within 40° of the wind) and they brace their yard to it. Off, the sail is vanilla's throttle (full speed whatever the wind); waves, flooding and dry hulls stay. Ships' ships have their own `SailByWind` in `ships.json`; clients follow the server's value |
 | `NightVisibility` | 1 | outdoor ambient night floor, real twilight and local-moon correction on the client's rendering ([night light](docs/night-light.md)); 1 = clear moonless 0.10, high full moon 0.40 (0.4.7-night; 0.4.4–0.4.7-pre: 0.15 / 0.45, now 1.5); 0 keeps the game's own night and twilight; range 0–2 |
 
 A negative, NaN or infinite number goes back to its default when the server loads the file (0.3.7); `SeaWindFrom` may

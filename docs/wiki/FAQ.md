@@ -18,6 +18,15 @@ It has water in it. Bail it dry first.
 **Why can't I sail straight into the wind?**
 Nobody can: within 40° of the wind a sail gives no drive. Tack at 45° or more off the wind.
 
+**I'd rather not sail by the wind (for now).**
+An admin sets `SailboatsByWind` to `false` in `sea.json` for the vanilla sailboat, and `SailByWind` to `false` in
+`ships.json` for Ships' ships. Their sails then give full speed whatever the wind. Sea still keeps the water out of the
+hulls.
+
+**My wind vane points one way, but my sail acts as if the wind blew another way.**
+Fixed in 0.6.3: without Earth, Sea now keeps the direction a wind direction mod (Pelagus Winds, Wind Vanes) gives the
+game's wind. The waves still run with the steady wind from `sea.json`.
+
 **Storms are too tame (or too wild) for my server.**
 Set the world's storm height: `/worldconfig seaStormHeight 2.2` for the biggest seas the world option gives, `1` for Sea's normal ones, then
 restart. Or change `StormHeightScale` in `sea.json` for every world that uses `json`.

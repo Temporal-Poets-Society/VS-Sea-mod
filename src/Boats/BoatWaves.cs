@@ -102,7 +102,12 @@ namespace Sea
             float turn = r.xangle - __instance.mountAngle.X, lean = r.zangle - __instance.mountAngle.Z;
             __instance.mountAngle.Set((float)pose.Roll, 0, (float)pose.Pitch);
             r.xangle = (float)pose.Roll + turn; r.yangle = 0; r.zangle = (float)pose.Pitch + lean;
-            if (Sailed(__instance) && __instance.AnimManager?.Animator != null)
+            // (SEA-D83) with SailboatsByWind off the yard stays as vanilla sets it
+            if (Sailed(__instance) && __instance.AnimManager?.Animator != null && s.Sea.Config?.SailboatsByWind == false)
+            {
+                if (__instance.AnimManager.IsAnimationActive("seasailtrim")) __instance.AnimManager.StopAnimation("seasailtrim");
+            }
+            else if (Sailed(__instance) && __instance.AnimManager?.Animator != null)
             {
                 var wind = s.Sea.WindAt(__instance.Pos.X, __instance.Pos.Z);
                 double target = BoatWaveMath.SailTrim(wind.X, wind.Z, __instance.Pos.Yaw, s.Trim);
@@ -135,9 +140,13 @@ namespace Sea
                 || !__instance.Swimming && !__instance.FeetInLiquid || __instance.Pos.Dimension != 0 || __instance.WatchedAttributes.GetInt("sailPosition") <= 0) return;
             var sea = SeaSystem.For(__instance.Api.Side);
             if (sea?.Model == null) return;
-            var wind = sea.WindAt(__instance.Pos.X, __instance.Pos.Z);
-            // The native method supplies only sail thrust in X while unfurled; steering remains in Y.
-            __result.X *= BoatWaveMath.SailDrive(wind.X, wind.Z, __instance.Pos.Yaw);
+            // The native method supplies only sail thrust in X while unfurled; steering remains in Y. (SEA-D83) With
+            // SailboatsByWind off the thrust stays vanilla's, whatever the wind; shipped water still slows her.
+            if (sea.Config?.SailboatsByWind != false)
+            {
+                var wind = sea.WindAt(__instance.Pos.X, __instance.Pos.Z);
+                __result.X *= BoatWaveMath.SailDrive(wind.X, wind.Z, __instance.Pos.Yaw);
+            }
             __result.X *= Math.Max(0, 1 - NativeBoats.Fill(__instance));
         }
 
