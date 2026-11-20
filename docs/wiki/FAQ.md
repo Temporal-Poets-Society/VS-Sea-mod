@@ -24,8 +24,8 @@ An admin sets `SailboatsByWind` to `false` in `sea.json` for the vanilla sailboa
 hulls.
 
 **My wind vane points one way, but my sail acts as if the wind blew another way.**
-Fixed in 0.6.3: without Earth, Sea now keeps the direction a wind direction mod (Pelagus Winds, Wind Vanes) gives the
-game's wind. The waves still run with the steady wind from `sea.json`.
+Fixed in 0.6.3 for the vanilla sailboat and in 0.6.4 for Ships' ships with Wind Vanes: without Earth, Sea now keeps the
+direction a wind direction mod (Pelagus Winds, Wind Vanes) gives the game's wind. The waves still run with the steady wind from `sea.json`.
 
 **Storms are too tame (or too wild) for my server.**
 Set the world's storm height: `/worldconfig seaStormHeight 2.2` for the biggest seas the world option gives, `1` for Sea's normal ones, then

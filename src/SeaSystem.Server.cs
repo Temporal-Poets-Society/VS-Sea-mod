@@ -45,6 +45,8 @@ namespace Sea
             if (readable) api.StoreModConfig(Config, ConfigFile);
 
             serverChannel = api.Network.GetChannel(ChannelName);
+            // (SEA-D84) Wind Vanes turns the wind on clients only; the server takes its angle (null without the mod)
+            windVanes = WindVanesAdapter.Find(api, Mod.Logger);
             // Cylinder World sets up its ring at WorldReady
             api.Event.ServerRunPhase(EnumServerRunPhase.RunGame, BuildServerModel);
             onPlayerJoin = p =>

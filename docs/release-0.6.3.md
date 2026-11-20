@@ -32,7 +32,11 @@ built in the release worktree from `72af48d` (0 warnings), 9 files, `modinfo.jso
 - Not seen in game; not run with Pelagus Winds or Wind Vanes installed (how they set the wind is read from their Mod
   DB pages; vanilla 1.22.7's own handler sets only X).
 
-## Published
+## Published (20 November 2026, on the author's word: "Yes, publish")
 
-Nothing yet: the tag `v0.6.3` is local. Pushing to `origin` and `tps`, the GitHub release, the wiki and the Mod DB
-upload wait for the author's word.
+- Private: tag `v0.6.3` on `b461c87`, pushed to `origin` with `main` (then at `2c79c47`, SE-0080's test fix).
+- Public (`tps`): a release snapshot `a29242b` on top of `c3bcec5` (0.6.2), tagged `v0.6.3`.
+- GitHub release [v0.6.3](https://github.com/Temporal-Poets-Society/VS-Sea-mod/releases/tag/v0.6.3) (Latest) with
+  `sea-0.6.3.zip`; downloaded back: 209,001 bytes, the same SHA-256.
+- Wiki from `v0.6.3`'s `docs/wiki` (wiki commit `8d95431`: Boats, Compatibility, FAQ, Settings, Waves and wind).
+- Mod DB: not uploaded (the author's; package in `C:\VS mods\work\moddb-release-2026-11-20\sea\`).

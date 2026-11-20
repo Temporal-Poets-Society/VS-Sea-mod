@@ -80,6 +80,7 @@ namespace SeaBoatProbe
                 try { breathe.Check(); }
                 finally { AccessTools.Field(typeof(SeaSystem), "Boats").SetValue(sea, water); }
             }
+            bool ocean = OpenOcean;   // (SE-0080) the whole run is open sea: put back what was set, not false
             try
             {
                 OpenOcean = true;
@@ -118,7 +119,7 @@ namespace SeaBoatProbe
             }
             finally
             {
-                sea.SetOverride(oldWind); OpenOcean = false; FrozenTime = double.NaN;
+                sea.SetOverride(oldWind); OpenOcean = ocean; FrozenTime = double.NaN;
                 AccessTools.Field(typeof(SeaSystem), "clientInstance").SetValue(null, oldClient);
                 AccessTools.Field(typeof(SeaSystem), "Boats").SetValue(sea, oldBoats);
                 sea.RemoveDrySpaces(water); sea.RemoveWaterClipSource(water);

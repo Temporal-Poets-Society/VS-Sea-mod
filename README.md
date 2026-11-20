@@ -1,5 +1,10 @@
 # Sea — waves that follow the wind, the same sea for everyone (Vintage Story 1.22)
 
+**0.6.4 (20 November 2026):** **Ships follow Wind Vanes too** (SEA-D84, SE-0079). Wind Vanes & Randomized Winds
+(which carries Pelagus Winds) turns the wind only on players' games; its server keeps the game's east wind. The vanilla
+sailboat, moved by its rider's game, followed it since 0.6.3, but Ships' ships, sailed on the server, didn't, while
+their wind display showed Wind Vanes' direction. With Wind Vanes loaded, Sea's server now takes its wind angle.
+
 **0.6.3 (20 November 2026):** **Wind direction mods steer the sails** (SEA-D83, SE-0079). Without Earth, Sea used
 only the east–west part of the game's wind, so a mod that gives the wind a direction (Pelagus Winds, Wind Vanes &
 Randomized Winds, Simple Wind Direction) didn't reach ships and sailboats: a north wind read as calm. Sea now keeps
@@ -301,7 +306,8 @@ Sea doesn't make weather (0.4.0). The wind the sea and ships follow is, in this 
    without them.
 3. **Otherwise vanilla's** wind for ships and other mods (`WindAt`): its strength, blowing east, since vanilla's wind
    has no direction. A wind direction mod (Pelagus Winds, Wind Vanes & Randomized Winds, Simple Wind Direction and the
-   like) turns the game's wind, and ships, vanilla sailboats and other mods then get that direction (SE-0079). The sea
+   like) turns the game's wind, and ships, vanilla sailboats and other mods then get that direction (SE-0079). Wind Vanes
+   turns it only on clients; on the server Sea reads Wind Vanes' angle itself (SEA-D84). The sea
    can't follow vanilla's wind (it changes from tick to tick and reaches each client at another moment), so it follows
    a **steady wind from the config** (`SeaWindFrom`, `SeaWindStrength`; by default a medium breeze, 0.3, from the
    west), the same on every side.

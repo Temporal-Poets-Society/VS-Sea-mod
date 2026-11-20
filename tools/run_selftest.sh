@@ -5,6 +5,7 @@
 #   dotnet build -c Release && tools/run_selftest.sh [--with-cworld]
 # Packages (each may also be a mod folder):
 #   SEA_ZIP  default this checkout's release/sea-<modinfo version>.zip, else its bin/Release/mod
+#   EXTRA_ZIPS other mods for the server, separated by | (for example Wind Vanes)
 #   CW_ZIP   (--with-cworld) default the newest cylinderworld-*.zip in the suite's Cworld/release or the player's
 #            VintagestoryData/Mods
 # TESTSERVER (default <this checkout>/testserver) holds the server's data; PORT overrides the template's port.
@@ -51,6 +52,8 @@ rm -f "$TS/Mods/"*.zip
 rm -rf "$TS/Mods/sea" "$TS/Mods/cylinderworld"
 add "$SEA_ZIP" sea
 [ "$WITH_CWORLD" = 1 ] && add "$CW_ZIP" cylinderworld
+# EXTRA_ZIPS: other mod zips for the server, separated by | (SEA-D84: Wind Vanes); the self-test checks the ones it knows
+if [ -n "${EXTRA_ZIPS:-}" ]; then IFS='|' read -ra extra <<< "$EXTRA_ZIPS"; for z in "${extra[@]}"; do echo "also: $z"; cp "$z" "$TS/Mods/"; done; fi
 rm -rf "$TS/Saves" "$TS/Logs"
 [ -f "$TS/serverconfig.json" ] || cp "$TEMPLATE" "$TS/serverconfig.json"
 

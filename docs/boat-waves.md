@@ -74,8 +74,11 @@ no cut extends outside the exterior or leaves free interior uncovered at that re
 frame/matrix/seat/selection methods, both rowing controls, wind propulsion, shape animation-frame generation,
 the real camera Harmony callbacks with crest/trough inputs, actual entity-save serialization, bucket cooldown,
 legitimate floodwater, and native sinking. Rowing-boat checks include 328 rendered boundary points with combined
-pitch, roll and native lean. Storm intake uses a controlled open-ocean shelter factor and strength 1.5 over four
-simulated minutes; it is not a claim that every sheltered lake floods at that wind.
+pitch, roll and native lean. The test pool counts as open sea for the whole run (a controlled shelter factor of 1:
+inland water, as at the test world's spawn, has had no waves since 0.5.3, and on flat water the heave checks would
+pass as 0 = 0; SE-0080), and a check makes sure the boats move. Storm intake uses strength 1.5 over four simulated
+minutes; it is not a claim that every sheltered lake floods at that wind. `tools/Test-Boats.ps1` starts the server
+with `SEA_SELFTEST=1`: without it a dedicated server installs none of the client patches the probe calls (SE-0067).
 
 See `overview/verification/boat-storm-fixes.json` for exact packages and checks. Earlier pre.13 centre-only tests
 were insufficient to accept the hull boundary; the author's screenshot is the regression evidence. Neither server

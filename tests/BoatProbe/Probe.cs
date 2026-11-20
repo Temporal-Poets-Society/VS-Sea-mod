@@ -87,6 +87,11 @@ namespace SeaBoatProbe
                         ba.SetBlock(y == by ? stone : 0, bp);
                         ba.SetBlock(y > by && y <= by + 8 ? water : 0, bp, BlockLayersAccess.Fluid);
                     }
+            // (SE-0080) Sea's waves reach only the sea: since 0.5.3 inland water (oceanity 0, as at this world's spawn) has
+            // none, and on a flat pool every "follows heave" check passes as 0 = 0 while the wave clock check fails. The
+            // pool stands for the open sea for the whole run (the ocean map's factor 1), so every tick, pose and check
+            // sees the same surface; the sea state follows the config's steady wind (no provider, no Earth).
+            OpenOcean = true;
             foreach (string code in withShips ? new[] { "game:boat-raft-oak", "game:boat-sailed-oak", "ships:rowboat-oak" }
                 : new[] { "game:boat-raft-oak", "game:boat-sailed-oak" })
             {
@@ -109,12 +114,16 @@ namespace SeaBoatProbe
         }
         void Observe()
         {
-            FrozenTime = sea.WaveTime;
+            FrozenTime = observedAt = sea.WaveTime;
             foreach (var boat in boats)
             {
                 Check(boat.Alive && (boat.Swimming || boat.FeetInLiquid) && !boat.OnGround, $"native physics floats {boat.Code} (state={boat.State}, swimming={boat.Swimming}, wet={boat.FeetInLiquid}, ground={boat.OnGround}, y={boat.Pos.Y:0.000})");
                 bool active = BoatWaves.TryGetPose(boat, out var pose);
                 Check(active && double.IsFinite(pose.Heave + pose.Pitch + pose.Roll), "Sea samples a finite pose for " + boat.Code);
+                // (SE-0080) the heave checks below compare against this pose: on flat water they'd pass as 0 = 0
+                // (any motion: the heave alone may be crossing zero at this moment)
+                Check(Math.Abs(pose.Heave) + Math.Abs(pose.Pitch) + Math.Abs(pose.Roll) > 1e-3,
+                    $"the pool carries waves, so the heave checks test something: {boat.Code} (heave {pose.Heave:0.0000} m, pitch {pose.Pitch:0.0000}, roll {pose.Roll:0.0000})");
                 first[boat.EntityId] = pose.Heave;
                 bool swimming = boat.Swimming;
                 boat.Swimming = false;
@@ -151,8 +160,9 @@ namespace SeaBoatProbe
             {
                 foreach (var boat in boats)
                 {
-                    Check(BoatWaves.TryGetPose(boat, out var p) && Math.Abs(p.Heave - first[boat.EntityId]) > 1e-5,
-                        "wave following changes with the shared wave clock: " + boat.Code);
+                    bool posed = BoatWaves.TryGetPose(boat, out var p);
+                    Check(posed && Math.Abs(p.Heave - first[boat.EntityId]) > 1e-5,
+                        $"wave following changes with the shared wave clock: {boat.Code} (heave {first[boat.EntityId]:0.00000} m at {observedAt:0.00} s, {p.Heave:0.00000} m at {sea.WaveTime:0.00} s; wave factor {sea.WaveFactorAt(boat.Pos.X, boat.Pos.Z):0.000}, open-sea height {sea.WaveHeightAt(boat.Pos.X, boat.Pos.Z):0.0000} m)");
                     boat.OnGround = true;
                     Check(!BoatWaves.TryGetPose(boat, out _), "beached boat has no artificial wave lift: " + boat.Code);
                     boat.OnGround = false;
@@ -164,6 +174,7 @@ namespace SeaBoatProbe
             }), 1200);
         }
         public static double FrozenTime = double.NaN;
+        double observedAt;
         public static bool OpenOcean;
         public static void OceanFactor(ref double __result) { if (OpenOcean) __result = 1; }
         public static void WaveTime(ref double __result) { if (double.IsFinite(FrozenTime)) __result = FrozenTime; }
@@ -178,10 +189,9 @@ namespace SeaBoatProbe
             for (int i = 0; i < 30; i++) { FrozenTime = time + i * .2; NativeBoats.Tick(boat, .2f); }
             Check(NativeBoats.Fill(boat) == 0, "native sailboat stays dry in calm water");
             sea.SetOverride(new WindOverride { Strength = 1.5, FromDegrees = 270, StartHours = sea.Hours - 48 });
-            OpenOcean = true;
             for (int i = 0; i < 1200; i++) { FrozenTime = time + i * .2; NativeBoats.Tick(boat, .2f); }
             Check(NativeBoats.Fill(boat) > .01, $"1.5 storm ships actual wave water over the gunwale (fill={NativeBoats.Fill(boat):0.000})");
-            sea.SetOverride(oldWind); FrozenTime = time; OpenOcean = false;
+            sea.SetOverride(oldWind); FrozenTime = time;
             boat.WatchedAttributes.SetFloat(NativeBoats.FloodKey, .5f);
             var clip = water.Clip(boat);
             var low = NativeBoats.Point(clip, clip.CentreOffset, -clip.DryDepth + .05, 0);

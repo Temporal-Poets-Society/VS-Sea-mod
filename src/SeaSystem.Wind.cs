@@ -53,6 +53,9 @@ namespace Sea
         Wind lastVanillaWind;
         const int VanillaWindCells = 256;
 
+        /// <summary>(SEA-D84) On the server with Wind Vanes loaded: its wind direction for the game's wind; otherwise null.</summary>
+        internal WindVanesAdapter windVanes;
+
         /// <summary>
         /// Vanilla's wind at a place, as the vector the game's wind lookup gives (+X east, +Z south). Vanilla's own weather
         /// sets only X, its strength, so it blows east; (SE-0079) a wind direction mod (Pelagus Winds, Wind Vanes, Simple
@@ -69,6 +72,9 @@ namespace Sea
                 Wind w;
                 try { w = Vanilla(api.World.BlockAccessor.GetWindSpeedAt(new Vec3d(x, api.World.SeaLevel, z))); }
                 catch (Exception) { return lastVanillaWind; }
+                // (SEA-D84) Wind Vanes turns the wind only on clients: the server takes its angle here (null without it)
+                var vanes = windVanes;
+                if (vanes != null) w = vanes.Turn(w);
                 lock (vanillaWind)
                 {
                     if (vanillaWind.Count >= VanillaWindCells && !vanillaWind.ContainsKey(key)) vanillaWind.Clear();

@@ -1,17 +1,17 @@
-SEA 0.6.3 - MOD DB UPLOAD
-(the Mod DB has 0.6.2; this replaces it)
-Updated 20 November 2026 (0.6.3: wind direction mods steer the sails, SailboatsByWind). The release package is C:\VS mods\work\moddb-release-2026-11-20\sea\.
+SEA 0.6.4 - MOD DB UPLOAD
+(the Mod DB has 0.6.2; this replaces it; 0.6.3 was on GitHub only)
+Updated 20 November 2026 (0.6.4: wind direction mods steer the sails, Wind Vanes on the server too, SailboatsByWind). The release package is C:\VS mods\work\moddb-release-2026-11-20\sea\.
 
 FILE
-Name:     sea-0.6.3.zip
-Size:     209,001 bytes
-SHA-256:  164b502d2a17cd639e9281f6e7bab35deccd50f2028fd5b5f58310fae3fdf0b1
-Same file as the GitHub release v0.6.3 once published (release record: docs/release-0.6.3.md).
+Name:     sea-0.6.4.zip
+Size:     210,263 bytes
+SHA-256:  d90b5affbbab1cb8dbfa23e8db9ca217d19b049dc9bf08ca3610e773a2c37a91
+Same file as the GitHub release v0.6.4 once published (release record: docs/release-0.6.4.md).
 
 MOD
 Name:     Sea
 Mod id / URL alias: sea
-Version:  0.6.3
+Version:  0.6.4
 Author:   Andris
 Side:     Both: install the same version on the server and on every client (requiredOnClient and requiredOnServer
           are true).
@@ -29,11 +29,11 @@ Category: Game Mod
 Tags:     Graphics, Immersion, Travel & Exploration (add Sea or Boats if the site offers them)
 Description: paste description.html (docs/moddb-description.html) in the editor's source view (<>), not the visual
           editor.
-Changelog for the file: changelog.txt in the release package (0.6.3 only; the Mod DB has 0.6.2).
+Changelog for the file: changelog.txt in the release package (0.6.3 and 0.6.4; the Mod DB has 0.6.2).
 Logo:     the repository has no logo file; keep the page's current logo.
 
 LINKS
-GitHub release: https://github.com/Temporal-Poets-Society/VS-Sea-mod/releases/tag/v0.6.3
+GitHub release: https://github.com/Temporal-Poets-Society/VS-Sea-mod/releases/tag/v0.6.4
 Wiki:           https://github.com/Temporal-Poets-Society/VS-Sea-mod/wiki
 Source code:    https://github.com/Temporal-Poets-Society/VS-Sea-mod
 Issues:         https://github.com/Temporal-Poets-Society/VS-Sea-mod/issues if issues are enabled on the repository;
@@ -50,4 +50,4 @@ NOTES
   the wiki link opens before saving the page.
 - Screenshots, if wanted: current in-game captures of open water, storm crests, surf on a beach, a sailboat on a tack,
   sunset or moonlit reflections. Don't use old wake images.
-- Verification: docs/release-0.6.3.md. Not seen in game; not run with Pelagus Winds or Wind Vanes installed.
+- Verification: docs/release-0.6.4.md and 0.6.3. Self-tested on a server with Wind Vanes 1.2.8; not seen in game.

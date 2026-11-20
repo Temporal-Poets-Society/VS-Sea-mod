@@ -298,6 +298,19 @@ namespace Sea
         void ProviderChecks(SeaSystem sys, WindModel m, double x, double z, int sea)
         {
             double h = sys.Hours;
+            // (SEA-D84) with Wind Vanes on the server: the game's wind there is still vanilla's (it turns the wind only on
+            // clients), and Sea's wind takes its angle with vanilla's strength. Off for the rest of these checks.
+            var vanes = sys.windVanes;
+            if (vanes != null)
+            {
+                var vv = sapi.World.BlockAccessor.GetWindSpeedAt(new Vec3d(x, sea, z));
+                double a = vanes.Angle;
+                var vw = sys.WindAt(x, z);
+                double s = Math.Sqrt(vv.X * vv.X + vv.Z * vv.Z);
+                Check(Math.Abs(vw.Strength - s) < 1e-6 && (s < 1e-3 || Math.Abs(vw.X - Math.Sin(a) * s) < 1e-3 && Math.Abs(vw.Z - Math.Cos(a) * s) < 1e-3),
+                    $"Wind Vanes: the server's game wind ({vv.X:0.000}, {vv.Z:0.000}) turned to its angle {a * 180 / Math.PI:0}° for ships: {vw} ({vw.X:0.000}, {vw.Z:0.000})");
+                sys.windVanes = null;
+            }
             var v = sapi.World.BlockAccessor.GetWindSpeedAt(new Vec3d(x, sea, z));
             var w = sys.WindAt(x, z);
             Check(m.Mode == WindMode.Off && !sys.Controls(h) && Math.Abs(w.X - v.X) < 1e-9 && w.Z == 0,
@@ -378,6 +391,7 @@ namespace Sea
             v = sapi.World.BlockAccessor.GetWindSpeedAt(new Vec3d(x, sea, z));
             w = sys.WindAt(x, z);
             Check(sys.WindProviderName == null && Math.Abs(w.X - v.X) < 1e-9 && w.Z == 0, "cleared: vanilla's wind again");
+            sys.windVanes = vanes;
         }
     }
 }

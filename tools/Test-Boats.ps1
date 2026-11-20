@@ -25,7 +25,13 @@ if ($WithShips) {
     WorldConfig=@{WorldName='Disposable Sea boat acceptance';Seed='4242';SaveFileLocation="$run\Saves\boats.vcdbs";MapSizeY=256;
         WorldType='standard';PlayStyle='creativebuilding';WorldConfiguration=@{worldWidth='8192';worldLength='8192';gameMode='creative'}}} |
     ConvertTo-Json -Depth 12 | Set-Content -LiteralPath "$run\serverconfig.json"
-$process = Start-Process -FilePath (Get-Command dotnet).Source -ArgumentList @('VintagestoryServer.dll','--dataPath',('"'+$run+'"')) -WorkingDirectory $GamePath -WindowStyle Hidden -PassThru -RedirectStandardOutput "$run\console.log" -RedirectStandardError "$run\stderr.log"
+# (SE-0080) since SE-0067 a dedicated server installs Sea's client patches (boats ride waves, hulls heave, ...) only
+# with SEA_SELFTEST=1; the probe calls them, so the server gets it. Sea's own self-test also needs sea-selftest.json,
+# which this run doesn't write. Set for the child only: the caller's environment is put back.
+$selfTest = $env:SEA_SELFTEST
+$env:SEA_SELFTEST = '1'
+try { $process = Start-Process -FilePath (Get-Command dotnet).Source -ArgumentList @('VintagestoryServer.dll','--dataPath',('"'+$run+'"')) -WorkingDirectory $GamePath -WindowStyle Hidden -PassThru -RedirectStandardOutput "$run\console.log" -RedirectStandardError "$run\stderr.log" }
+finally { $env:SEA_SELFTEST = $selfTest }
 [pscustomobject]@{RunPath=$run;ProcessId=$process.Id;WithShips=[bool]$WithShips} | ConvertTo-Json
 if ($Wait) {
     if (-not $process.WaitForExit(180000)) { Stop-Process -Id $process.Id; throw "Boat test exceeded 180 seconds: $run" }
